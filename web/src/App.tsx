@@ -1,136 +1,60 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import Login from "./pages/Login";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Register from "./pages/Register";
+import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-import ProtectedRoute from "./components/ProtectedRoute";
-
-// moduły
-import Schedule from "./pages/Schedule";
+import EventDashboard from "./pages/EventDashboard";
 import Guests from "./pages/Guests";
-import Documents from "./pages/Documents";
-import Vendors from "./pages/Vendors";
-import Finance from "./pages/Finance";
-import Notifications from "./pages/Notifications";
-import Inspiration from "./pages/Inspiration";
-import WeddingDay from "./pages/WeddingDay";
-import Reports from "./pages/Reports";
-import Integrations from "./pages/Integrations";
-import Admin from "./pages/Admin";
 
-function App() {
+
+function PrivateRoute({ children }: { children: JSX.Element }) {
+  const token = localStorage.getItem("token");
+  return token ? children : <Navigate to="/login" replace />;
+}
+
+export default function App() {
   return (
-    <Router>
+    <BrowserRouter>
       <Routes>
-        {/* Publiczne */}
-        <Route path="/login" element={<Login />} />
+        <Route
+          path="/"
+          element={
+            localStorage.getItem("token") ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <Navigate to="/register" replace />
+            )
+          }
+        />
         <Route path="/register" element={<Register />} />
-
-        {/* Chronione */}
+        <Route path="/login" element={<Login />} />
         <Route
           path="/dashboard"
           element={
-            <ProtectedRoute>
+            <PrivateRoute>
               <Dashboard />
-            </ProtectedRoute>
+            </PrivateRoute>
           }
         />
         <Route
-          path="/schedule"
+          path="/event/:id"
           element={
-            <ProtectedRoute>
-              <Schedule />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/guests"
-          element={
-            <ProtectedRoute>
-              <Guests />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/documents"
-          element={
-            <ProtectedRoute>
-              <Documents />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/vendors"
-          element={
-            <ProtectedRoute>
-              <Vendors />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/finance"
-          element={
-            <ProtectedRoute>
-              <Finance />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/notifications"
-          element={
-            <ProtectedRoute>
-              <Notifications />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/inspiration"
-          element={
-            <ProtectedRoute>
-              <Inspiration />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/wedding-day"
-          element={
-            <ProtectedRoute>
-              <WeddingDay />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/reports"
-          element={
-            <ProtectedRoute>
-              <Reports />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/integrations"
-          element={
-            <ProtectedRoute>
-              <Integrations />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin"
-          element={
-            <ProtectedRoute>
-              <Admin />
-            </ProtectedRoute>
+            <PrivateRoute>
+              <EventDashboard />
+            </PrivateRoute>
           }
         />
 
-        {/* Root – przekierowanie */}
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route
+  path="/event/:id/guests"
+  element={
+    <PrivateRoute>
+      <Guests />
+    </PrivateRoute>
+  }
+/>
 
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        
       </Routes>
-    </Router>
+    </BrowserRouter>
   );
 }
-
-export default App;

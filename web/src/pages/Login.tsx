@@ -1,65 +1,60 @@
 import { useState } from "react";
-import axios from "axios";
-import { useNavigate, Link } from "react-router-dom"; // 👈 dodajemy Link
-import { useAuthStore } from "../store/auth";
+import { useNavigate } from "react-router-dom";
+import { api } from "../lib/api";
+import { useAuthStore } from "../store/auth"; // <-- dodaj import
 
 export default function Login() {
-  const [email, setEmail] = useState("test@test.com");
-  const [password, setPassword] = useState("test123");
-  const [message, setMessage] = useState<string | null>(null);
-  const loginStore = useAuthStore();
   const navigate = useNavigate();
+  const { login } = useAuthStore(); // <-- pobieramy akcję login
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [error, setError] = useState("");
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm({ ...form, [e.target.name]: e.target.value });
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMessage(null);
     try {
-      const res = await axios.post("http://localhost:4000/login", { email, password });
-      const token = res.data.token;
-      loginStore.login(token);
-      setMessage("Zalogowano");
-      navigate("/dashboard"); // 👈 automatyczny redirect
+      const res = await api.login(form);
+
+      login(res.token); // <-- zapisujemy token w zustand
+      navigate("/dashboard"); // przekierowanie po zalogowaniu
     } catch (err: unknown) {
-      console.error("Login error", err);
-      if (axios.isAxiosError(err)) {
-        setMessage(err.response?.data?.message || "Błąd logowania");
+      if (err instanceof Error) {
+        setError(err.message);
       } else {
-        setMessage("Nieoczekiwany błąd");
+        setError("Nieznany błąd");
       }
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-100">
-      <form onSubmit={handleLogin} className="bg-white p-6 rounded-2xl shadow-md w-80">
-        <h2 className="text-xl font-bold mb-4 text-center">Logowanie</h2>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
+      <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow-md w-80">
+        <h2 className="text-2xl font-bold mb-4 text-center">Logowanie</h2>
+        {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
         <input
+          name="email"
           type="email"
           placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full mb-3 p-2 border rounded"
+          value={form.email}
+          onChange={handleChange}
+          className="w-full mb-2 p-2 border rounded"
         />
         <input
+          name="password"
           type="password"
           placeholder="Hasło"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full mb-3 p-2 border rounded"
+          value={form.password}
+          onChange={handleChange}
+          className="w-full mb-4 p-2 border rounded"
         />
         <button
           type="submit"
-          className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+          className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
         >
-          Zaloguj
+          Zaloguj się
         </button>
-        <p className="text-center mt-3">
-          Nie masz konta?{" "}
-          <Link to="/register" className="text-blue-500">
-            Zarejestruj się
-          </Link>
-        </p>
-        {message && <p className="mt-3 text-center">{message}</p>}
       </form>
     </div>
   );

@@ -1,34 +1,16 @@
-export type Relation =
-  | "rodzic"
-  | "dziadkowie"
-  | "wujostwo"
-  | "kuzynostwo"
-  | "znajomy"
-  | "usługodawca";
-
-export type Side = "panna młoda" | "pan młody";
-
-export type RSVP = "tak" | "nie" | "brak odpowiedzi";
-
-export interface SubGuest {
-  id: number;
-  firstName: string;
-  relation: string;
+export interface GuestPayload {
+  id?: string;
+  event_id: string;
+  parent_guest_id?: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  email?: string;
+  relation?: string;
+  side?: string;
+  rsvp?: string;
   allergens?: string;
   notes?: string;
-  rsvp: RSVP;
 }
 
-export interface Guest {
-  id: number;
-  firstName: string;
-  lastName: string;
-  phone: string;
-  email: string;
-  relation: Relation;
-  side: Side;
-  allergens?: string;
-  notes?: string;
-  rsvp: RSVP;
-  subGuests: SubGuest[];
-}
+export type Guest = GuestPayload & { SubGuests?: Guest[] };
