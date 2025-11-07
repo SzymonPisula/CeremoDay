@@ -79,6 +79,9 @@ app.use("/auth", authRoutes);
 app.use("/events", eventRoutes);
 app.use("/guests", guestRouter);
 
+app.use("/uploads", express.static("uploads"));
+
+
 // =======================
 // START SERWERA
 // =======================

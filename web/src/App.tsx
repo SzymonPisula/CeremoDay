@@ -4,6 +4,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import EventDashboard from "./pages/EventDashboard";
 import Guests from "./pages/Guests";
+import Documents from "./pages/Documents";
 
 
 function PrivateRoute({ children }: { children: JSX.Element }) {
@@ -49,6 +50,14 @@ export default function App() {
   element={
     <PrivateRoute>
       <Guests />
+    </PrivateRoute>
+  }
+/>
+<Route
+  path="/event/:id/documents"
+  element={
+    <PrivateRoute>
+      <Documents />
     </PrivateRoute>
   }
 />
