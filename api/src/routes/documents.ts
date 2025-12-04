@@ -7,26 +7,19 @@ import fs from "fs";
 const router = express.Router();
 
 const uploadDir = "uploads/documents";
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 const storage = multer.diskStorage({
-  destination: (_req: Request, _file: Express.Multer.File, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (_req: Request, file: Express.Multer.File, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  },
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
 });
 
 const upload = multer({
   storage,
-  fileFilter: (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
+  fileFilter: (_req, file, cb: FileFilterCallback) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    if (![".pdf", ".png", ".jpg", ".jpeg"].includes(ext)) {
+    if (![".pdf", ".png", ".jpg", ".jpeg"].includes(ext))
       return cb(new Error("Tylko PDF, JPG, PNG"));
-    }
     cb(null, true);
   },
 });
@@ -62,15 +55,18 @@ router.delete("/:id", async (req: Request, res: Response) => {
 // --- UPLOAD ---
 router.post("/:id/upload", upload.single("file"), async (req: Request, res: Response) => {
   const file = (req as Request & { file?: Express.Multer.File }).file;
-
-  if (!file) {
-    return res.status(400).json({ error: "Nie przesłano pliku" });
-  }
+  if (!file) return res.status(400).json({ error: "Nie przesłano pliku" });
 
   const filePath = `/uploads/documents/${file.filename}`;
+  const doc = await Document.findByPk(req.params.id);
+  if (!doc) return res.status(404).json({ error: "Dokument nie istnieje" });
 
-  await Document.update({ file_path: filePath }, { where: { id: req.params.id } });
-  res.json({ filePath });
+  const attachments = doc.attachments || [];
+  attachments.push({ id: crypto.randomUUID(), name: file.originalname, url: filePath, created_at: new Date().toISOString() });
+
+  await Document.update({ attachments }, { where: { id: req.params.id } });
+  const updatedDoc = await Document.findByPk(req.params.id);
+  res.json(updatedDoc);
 });
 
 export default router;

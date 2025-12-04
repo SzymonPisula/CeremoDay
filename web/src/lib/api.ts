@@ -1,8 +1,9 @@
 import { useAuthStore } from "../store/auth";
 import type { Guest, GuestPayload } from "../types/guest";
 import type { Document, DocumentPayload } from "../types/document";
+import type { Vendor } from "../types/vendor";
 
-const BASE_URL = "http://localhost:4000";
+export const BASE_URL = "http://localhost:4000";
 
 async function request<T = unknown>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = useAuthStore.getState().token;
@@ -66,7 +67,8 @@ export const api = {
 
   // Documents
   getDocuments: (eventId: string) =>
-    request<Document[]>(`/documents/${eventId}`),
+  request<Document[]>(`/documents?event_id=${eventId}`),
+
 
   createDocument: (body: DocumentPayload) =>
     request<Document>(`/documents`, { method: "POST", body: JSON.stringify(body) }),
@@ -81,29 +83,38 @@ export const api = {
 
   // Upload attachments (frontend only, backend musi obsłużyć)
   uploadAttachment: async (id: string, file: File) => {
-    const token = useAuthStore.getState().token;
-    const formData = new FormData();
-    formData.append("file", file);
+  const formData = new FormData();
+  formData.append("file", file);
 
-    const res = await fetch(`${BASE_URL}/documents/${id}/attachments`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-
-    if (!res.ok) throw new Error(`Błąd uploadu: ${res.statusText}`);
-    return res.json() as Promise<{ name: string; url: string }>;
-  },
-  uploadDocument: (id: string, formData: FormData) =>
-  fetch(`${BASE_URL}/documents/${id}/upload`, {
+  const res = await fetch(`${BASE_URL}/documents/${id}/upload`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${useAuthStore.getState().token ?? ""}`,
-    },
+    headers: { Authorization: `Bearer ${useAuthStore.getState().token ?? ""}` },
     body: formData,
-  }).then(async (res) => {
-    if (!res.ok) throw new Error("Błąd uploadu pliku");
-    return res.json();
-  }),
+  });
+
+  if (!res.ok) throw new Error(`Błąd uploadu: ${res.statusText}`);
+  return res.json();
+},
+
+  // Poprawna wersja
+uploadDocument: async (id: string, file: File) => {
+  const token = useAuthStore.getState().token;
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${BASE_URL}/documents/${id}/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+
+  if (!res.ok) throw new Error("Błąd uploadu pliku");
+  return res.json() as Promise<Document>;
+},
+
+getVendors: (location: string, radius: number, category: string) =>
+  request<Vendor[]>(`/api/google/places?location=${location}&radius=${radius}&type=${category}`)
+
+
 
 };

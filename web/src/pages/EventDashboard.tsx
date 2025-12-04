@@ -16,6 +16,7 @@ export default function EventDashboard() {
         <Link to={`/event/${id}/finance`} className="p-4 bg-white shadow rounded hover:bg-gray-100 text-center">💰 Finanse</Link>
         <Link to={`/event/${id}/notifications`} className="p-4 bg-white shadow rounded hover:bg-gray-100 text-center">🔔 Powiadomienia</Link>
         <Link to={`/event/${id}/reports`} className="p-4 bg-white shadow rounded hover:bg-gray-100 text-center">📊 Raporty</Link>
+        <Link to={`/event/${id}/inspirations`} className="p-4 bg-white shadow rounded hover:bg-gray-100 text-center">📊 Inspiracje</Link>
       </div>
     </div>
   );

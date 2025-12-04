@@ -5,6 +5,7 @@ import Dashboard from "./pages/Dashboard";
 import EventDashboard from "./pages/EventDashboard";
 import Guests from "./pages/Guests";
 import Documents from "./pages/Documents";
+import Inspirations from "./pages/Inspiration";
 
 
 function PrivateRoute({ children }: { children: JSX.Element }) {
@@ -62,6 +63,14 @@ export default function App() {
   }
 />
 
+<Route
+  path="/event/:id/inspirations"
+  element={
+    <PrivateRoute>
+      <Inspirations />
+    </PrivateRoute>
+  }
+/>
         
       </Routes>
     </BrowserRouter>

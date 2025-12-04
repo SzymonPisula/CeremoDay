@@ -1,6 +1,6 @@
 export type DocumentStatus = "pending" | "done";
 
-export type DocumentType = "civil" | "church" | "other";
+export type DocumentType = "civil" | "church" | "concordat" | "other";
 
 export interface DocumentAttachment {
   id: string;
