@@ -10,7 +10,7 @@ export default function EventDashboard() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <Link to={`/event/${id}/guests`} className="p-4 bg-white shadow rounded hover:bg-gray-100 text-center">👥 Goście</Link>
-        <Link to={`/event/${id}/schedule`} className="p-4 bg-white shadow rounded hover:bg-gray-100 text-center">📅 Harmonogram</Link>
+        <Link to={`/event/${id}/tasks`} className="p-4 bg-white shadow rounded hover:bg-gray-100 text-center">📅 Harmonogram</Link>
         <Link to={`/event/${id}/documents`} className="p-4 bg-white shadow rounded hover:bg-gray-100 text-center">📑 Dokumenty</Link>
         <Link to={`/event/${id}/vendors`} className="p-4 bg-white shadow rounded hover:bg-gray-100 text-center">🏪 Usługodawcy</Link>
         <Link to={`/event/${id}/finance`} className="p-4 bg-white shadow rounded hover:bg-gray-100 text-center">💰 Finanse</Link>

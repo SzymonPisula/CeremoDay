@@ -6,6 +6,7 @@ import { User } from "./User";
 export class EventUser extends Model {
   public event_id!: string;
   public user_id!: string;
+  public role!: "owner" | "coorganizer" | "guest";
 }
 
 EventUser.init(
@@ -20,6 +21,16 @@ EventUser.init(
       allowNull: false,
       references: { model: User, key: "id" },
     },
+    role: {
+      type: DataTypes.ENUM("owner", "coorganizer", "guest"),
+      allowNull: false,
+      defaultValue: "coorganizer", 
+    },
   },
-  { sequelize, modelName: "EventUser", tableName: "event_users", timestamps: false }
+  {
+    sequelize,
+    modelName: "EventUser",
+    tableName: "event_users",
+    timestamps: false,
+  }
 );

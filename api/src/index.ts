@@ -11,6 +11,7 @@ import documentsRouter from './routes/documents';
 import vendorRoutes from "./routes/vendors";
 import googlePlacesRouter from "./routes/googlePlaces";
 import inspirationRoutes from "./routes/inspirationsRoutes";
+import tasksRouter from "./routes/tasks";
 
 
 // =======================
@@ -81,6 +82,7 @@ app.use("/auth", authRoutes);
 app.use("/events", eventRoutes);
 app.use("/guests", guestRouter);
 app.use("/documents", documentsRouter);
+app.use("/tasks", tasksRouter);
 
 app.use("/uploads", express.static("uploads"));
 app.use("/events", vendorRoutes); 

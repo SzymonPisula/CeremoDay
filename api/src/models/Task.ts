@@ -1,31 +1,146 @@
-import { DataTypes, Model } from "sequelize";
+// CeremoDay/api/src/models/Task.ts
+import {
+  DataTypes,
+  Model,
+  Optional,
+  Sequelize,
+} from "sequelize";
 import { sequelize } from "../config/database";
 
-export class Task extends Model {
+export type TaskStatus = "pending" | "in_progress" | "done";
+
+export type TaskCategory =
+  | "FORMALNOSCI"
+  | "ORGANIZACJA"
+  | "USLUGI"
+  | "DEKORACJE"
+  | "LOGISTYKA"
+  | "DZIEN_SLUBU";
+
+export interface TaskAttributes {
+  id: string;
+  event_id: string;
+
+  title: string;
+  description?: string | null;
+
+  status: TaskStatus;
+
+  category?: TaskCategory | null;
+
+  due_date?: Date | null;
+
+  auto_generated?: boolean;
+  generated_from?: string | null;
+
+  created_at?: Date;
+  updated_at?: Date;
+}
+
+export type TaskCreationAttributes = Optional<
+  TaskAttributes,
+  | "id"
+  | "description"
+  | "status"
+  | "category"
+  | "due_date"
+  | "auto_generated"
+  | "generated_from"
+  | "created_at"
+  | "updated_at"
+>;
+
+export class Task
+  extends Model<TaskAttributes, TaskCreationAttributes>
+  implements TaskAttributes
+{
   public id!: string;
   public event_id!: string;
-  public category?: string;
-  public title?: string;
-  public description?: string;
-  public status?: string;
-  public priority?: number;
-  public due_date?: Date;
-  public created_at?: Date;
+
+  public title!: string;
+  public description!: string | null;
+
+  public status!: TaskStatus;
+  public category!: TaskCategory | null;
+
+  public due_date!: Date | null;
+
+  public auto_generated!: boolean;
+  public generated_from!: string | null;
+
+  public readonly created_at!: Date;
+  public readonly updated_at!: Date;
 }
 
 Task.init(
   {
-    id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
-    event_id: { type: DataTypes.UUID, allowNull: false },
-    category: { type: DataTypes.STRING },
-    title: { type: DataTypes.STRING },
-    description: { type: DataTypes.TEXT },
-    status: { type: DataTypes.STRING },
-    priority: { type: DataTypes.INTEGER },
-    due_date: { type: DataTypes.DATE },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+    id: {
+      type: DataTypes.UUID,
+      primaryKey: true,
+      defaultValue: DataTypes.UUIDV4,
+    },
+    event_id: {
+      type: DataTypes.UUID,
+      allowNull: false,
+    },
+    title: {
+      type: DataTypes.STRING(255),
+      allowNull: false,
+    },
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    status: {
+      type: DataTypes.ENUM("pending", "in_progress", "done"),
+      allowNull: false,
+      defaultValue: "pending",
+    },
+    category: {
+      type: DataTypes.ENUM(
+        "FORMALNOSCI",
+        "ORGANIZACJA",
+        "USLUGI",
+        "DEKORACJE",
+        "LOGISTYKA",
+        "DZIEN_SLUBU"
+      ),
+      allowNull: true,
+    },
+    due_date: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    auto_generated: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    generated_from: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+    },
+    created_at: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: (Sequelize as any).literal("CURRENT_TIMESTAMP"),
+    },
+    updated_at: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: (Sequelize as any).literal(
+        "CURRENT_TIMESTAMP"
+      ),
+    },
   },
-  { sequelize, tableName: "tasks", timestamps: false }
+  {
+    sequelize,
+    tableName: "tasks",
+    modelName: "Task",
+    timestamps: true,
+    createdAt: "created_at",
+    updatedAt: "updated_at",
+  }
 );
 
-
+export default Task;
