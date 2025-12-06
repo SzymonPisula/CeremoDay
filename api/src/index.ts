@@ -10,8 +10,12 @@ import guestRouter from "./routes/guest";
 import documentsRouter from './routes/documents'; 
 import vendorRoutes from "./routes/vendors";
 import googlePlacesRouter from "./routes/googlePlaces";
-import inspirationRoutes from "./routes/inspirationsRoutes";
+import inspirationsRouter from "./routes/inspirations";
 import tasksRouter from "./routes/tasks";
+import vendorsRuralRouter from "./routes/vendorsRural";
+import "./models/RuralVenue";
+import "./models/Vendor";
+import vendorsRouter from "./routes/vendors";
 
 
 // =======================
@@ -83,11 +87,13 @@ app.use("/events", eventRoutes);
 app.use("/guests", guestRouter);
 app.use("/documents", documentsRouter);
 app.use("/tasks", tasksRouter);
+app.use("/vendors/rural", vendorsRuralRouter);
+app.use("/vendors", vendorsRouter);
 
 app.use("/uploads", express.static("uploads"));
 app.use("/events", vendorRoutes); 
 app.use("/api/google", googlePlacesRouter);
-app.use("/api", inspirationRoutes);
+app.use("/inspirations", inspirationsRouter);
 
 
 // =======================

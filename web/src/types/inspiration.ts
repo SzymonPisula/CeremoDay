@@ -1,25 +1,54 @@
-// web/src/types/inspiration.ts
-export interface Item {
+// CeremoDay/web/src/types/inspiration.ts
+
+export type InspirationCategory =
+  | "DEKORACJE"
+  | "KWIATY"
+  | "STROJE"
+  | "PAPETERIA"
+  | "INNE";
+
+export interface InspirationBoard {
   id: string;
-  board_id: string;
   event_id: string;
-  url: string;
-  source_type: "upload" | "pinterest" | "instagram" | "gallery";
-  category?: "decorations" | "flowers" | "outfits";
-  tags?: string[];
-  note?: string;
-  position?: number;
+
+  name: string;
+  description?: string | null;
+
+  color?: string | null;
+  emoji?: string | null;
+
   created_at?: string;
   updated_at?: string;
 }
 
-export interface Board {
-  id: string;
-  event_id: string;
+export interface InspirationBoardPayload {
   name: string;
-  description?: string;
-  cover_image?: string;
-  history?: any[];
+  description?: string | null;
+  color?: string | null;
+  emoji?: string | null;
+}
+
+export interface InspirationItem {
+  id: string;
+  board_id: string;
+
+  title: string;
+  description?: string | null;
+
+  category?: InspirationCategory | null;
+  tags?: string | null;
+
+  image_url?: string | null;
+  source_url?: string | null;
+
   created_at?: string;
   updated_at?: string;
+}
+
+export interface InspirationItemPayload {
+  title: string;
+  description?: string | null;
+  category?: InspirationCategory | null;
+  tags?: string | null;
+  source_url?: string | null;
 }

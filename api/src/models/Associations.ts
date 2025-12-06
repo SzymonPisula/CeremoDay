@@ -15,8 +15,8 @@ import { UserSetting } from "./UserSetting";
 import { EventSetting } from "./EventSetting";
 import { EventUser } from "./EventUser";
 
-import { InspirationsBoard } from "./InspirationsBoard";
-import { InspirationsItem } from "./InspirationsItem";
+import { InspirationBoard } from "./InspirationBoard";
+import { InspirationItem } from "./InspirationItem";
 
 export function applyAssociations() {
   // User ↔ Event
@@ -70,27 +70,27 @@ export function applyAssociations() {
   // === INSPIRATIONS ===
 
   // Board ↔ Event
-  InspirationsBoard.belongsTo(Event, { foreignKey: "event_id", as: "event" });
-  Event.hasMany(InspirationsBoard, { foreignKey: "event_id", as: "inspiration_boards" });
+  InspirationBoard.belongsTo(Event, { foreignKey: "event_id", as: "event" });
+  Event.hasMany(InspirationBoard, { foreignKey: "event_id", as: "inspiration_boards" });
 
   // Item ↔ Board
-  InspirationsItem.belongsTo(InspirationsBoard, {
+  InspirationItem.belongsTo(InspirationBoard, {
     foreignKey: "board_id",
     as: "board",
   });
 
-  InspirationsBoard.hasMany(InspirationsItem, {
+  InspirationBoard.hasMany(InspirationItem, {
     foreignKey: "board_id",
     as: "items",
     onDelete: "CASCADE",
   });
 
   // Item ↔ Event
-  InspirationsItem.belongsTo(Event, {
+  InspirationItem.belongsTo(Event, {
     foreignKey: "event_id",
     as: "event",
   });
-  Event.hasMany(InspirationsItem, {
+  Event.hasMany(InspirationItem, {
     foreignKey: "event_id",
     as: "inspiration_items",
   });

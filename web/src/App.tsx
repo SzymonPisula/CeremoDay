@@ -7,6 +7,7 @@ import Guests from "./pages/Guests";
 import Documents from "./pages/Documents";
 import Inspirations from "./pages/Inspiration";
 import Tasks from "./pages/Tasks";
+import Vendors from "./pages/Vendors";
 
 
 function PrivateRoute({ children }: { children: JSX.Element }) {
@@ -80,6 +81,16 @@ export default function App() {
     </PrivateRoute>
   }
 />
+
+<Route
+  path="/event/:id/vendors"
+  element={
+    <PrivateRoute>
+      <Vendors />
+    </PrivateRoute>
+  }
+/>
+  
         
       </Routes>
     </BrowserRouter>

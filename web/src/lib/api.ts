@@ -7,6 +7,12 @@ import type {
 } from "../types/document";
 import type { Vendor } from "../types/vendor";
 import type { Task, TaskPayload } from "../types/task";
+import type {
+  InspirationBoard,
+  InspirationItem,
+  InspirationBoardPayload,
+  InspirationItemPayload,
+} from "../types/inspiration";
 
 export const BASE_URL = "http://localhost:4000";
 
@@ -333,4 +339,144 @@ deleteTask: (id: string) =>
         location
       )}&radius=${radius}&type=${encodeURIComponent(category)}`
     ),
+
+
+    // -----------------------------
+  // RURAL VENUES / SALE GMINNE
+  // -----------------------------
+  getRuralVenues: (params: {
+    county?: string;
+    minCapacity?: number;
+    maxCapacity?: number;
+    q?: string;
+  }) => {
+    const searchParams = new URLSearchParams();
+
+    if (params.county) {
+      searchParams.append("county", params.county);
+    }
+    if (params.minCapacity !== undefined) {
+      searchParams.append("minCapacity", String(params.minCapacity));
+    }
+    if (params.maxCapacity !== undefined) {
+      searchParams.append("maxCapacity", String(params.maxCapacity));
+    }
+    if (params.q && params.q.trim()) {
+      searchParams.append("q", params.q.trim());
+    }
+
+    const queryString = searchParams.toString();
+    const url = queryString
+      ? `/vendors/rural/search?${queryString}`
+      : "/vendors/rural/search";
+
+    return request<Vendor[]>(url);
+  },
+
+  // -----------------------------
+  // CUSTOM VENDORS / USŁUGODAWCY WYDARZENIA
+  // -----------------------------
+  getEventVendors: (eventId: string) =>
+    request<Vendor[]>(`/vendors?event_id=${eventId}`),
+
+  createVendor: (body: {
+    event_id: string;
+    name: string;
+    type?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    website?: string;
+    google_maps_url?: string;
+    notes?: string;
+    lat?: number | null;
+    lng?: number | null;
+  }) => request<Vendor>("/vendors", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }),
+
+  updateVendor: (id: string, body: Partial<{
+    name: string;
+    type: string;
+    address: string;
+    phone: string;
+    email: string;
+    website: string;
+    google_maps_url: string;
+    notes: string;
+    lat: number | null;
+    lng: number | null;
+  }>) => request<Vendor>(`/vendors/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  }),
+
+  deleteVendor: (id: string) =>
+    request<void>(`/vendors/${id}`, { method: "DELETE" }),
+
+
+  
+
+      // -----------------------------
+  // INSPIRATIONS / INSPIRACJE
+  // -----------------------------
+  getInspirationBoards: (eventId: string) =>
+    request<InspirationBoard[]>(`/inspirations/events/${eventId}/boards`),
+
+  createInspirationBoard: (eventId: string, body: InspirationBoardPayload) =>
+    request<InspirationBoard>(`/inspirations/events/${eventId}/boards`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  updateInspirationBoard: (boardId: string, body: Partial<InspirationBoardPayload>) =>
+    request<InspirationBoard>(`/inspirations/boards/${boardId}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  deleteInspirationBoard: (boardId: string) =>
+    request<void>(`/inspirations/boards/${boardId}`, {
+      method: "DELETE",
+    }),
+
+  getInspirationItems: (boardId: string) =>
+    request<InspirationItem[]>(`/inspirations/boards/${boardId}/items`),
+
+  createInspirationItem: (boardId: string, body: InspirationItemPayload) =>
+    request<InspirationItem>(`/inspirations/boards/${boardId}/items`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  updateInspirationItem: (itemId: string, body: Partial<InspirationItemPayload>) =>
+    request<InspirationItem>(`/inspirations/items/${itemId}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  deleteInspirationItem: (itemId: string) =>
+    request<void>(`/inspirations/items/${itemId}`, {
+      method: "DELETE",
+    }),
+
+  uploadInspirationImage: async (itemId: string, file: File) => {
+    const token = useAuthStore.getState().token;
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch(`${BASE_URL}/inspirations/items/${itemId}/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+
+    if (!res.ok) {
+      throw new Error("Błąd uploadu pliku inspiracji");
+    }
+
+    return (await res.json()) as InspirationItem;
+  },
+
 };

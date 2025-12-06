@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { InspirationsBoard } from "../models/InspirationsBoard";
-import { InspirationsItem } from "../models/InspirationsItem";
+import { InspirationsBoard } from "../models/InspirationBoard";
+import { InspirationsItem } from "../models/InspirationItem";
 import { generateThumbnail } from "../helpers/generateThumbnail";
 
 // === BOARDS ===

@@ -6,7 +6,9 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "import:rural-venues": "npx ts-node src/scripts/importRuralVenues.ts",
+    "geocode:rural-venues": "npx ts-node src/scripts/geocodeRuralVenues.ts"
   },
   "keywords": [],
   "author": "",
@@ -25,7 +27,8 @@
     "node-fetch": "^3.3.2",
     "sequelize": "^6.37.7",
     "sharp": "^0.34.5",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

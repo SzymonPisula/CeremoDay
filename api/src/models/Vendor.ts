@@ -1,45 +1,145 @@
-import { DataTypes, Model } from "sequelize";
+// CeremoDay/api/src/models/Vendor.ts
+import {
+  DataTypes,
+  Model,
+  Optional,
+  Sequelize,
+} from "sequelize";
 import { sequelize } from "../config/database";
 
-export class Vendor extends Model {
+export interface VendorAttributes {
+  id: string;
+  event_id: string; // przypięty do konkretnego wydarzenia
+
+  name: string;
+  type: string | null; // np. HALL, DJ, PHOTO itd.
+
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  google_maps_url: string | null;
+
+  notes: string | null;
+
+  lat: number | null;
+  lng: number | null;
+
+  created_at?: Date;
+  updated_at?: Date;
+}
+
+export type VendorCreationAttributes = Optional<
+  VendorAttributes,
+  | "id"
+  | "type"
+  | "address"
+  | "phone"
+  | "email"
+  | "website"
+  | "google_maps_url"
+  | "notes"
+  | "lat"
+  | "lng"
+  | "created_at"
+  | "updated_at"
+>;
+
+export class Vendor
+  extends Model<VendorAttributes, VendorCreationAttributes>
+  implements VendorAttributes
+{
   public id!: string;
   public event_id!: string;
-  public type?: string;
-  public name?: string;
-  public contact_name?: string;
-  public phone?: string;
-  public email?: string;
-  public website?: string;
-  public price_estimate?: number;
-  public rating?: number;
-  public selected?: boolean;
-  public notes?: string;
-  public created_at?: Date;
+
+  public name!: string;
+  public type!: string | null;
+
+  public address!: string | null;
+  public phone!: string | null;
+  public email!: string | null;
+  public website!: string | null;
+  public google_maps_url!: string | null;
+
+  public notes!: string | null;
+
+  public lat!: number | null;
+  public lng!: number | null;
+
+  public readonly created_at!: Date;
+  public readonly updated_at!: Date;
 }
 
 Vendor.init(
   {
-    id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
-    event_id: { type: DataTypes.UUID, allowNull: false },
-    type: { type: DataTypes.ENUM('venue','catering','music','photographer','videographer','decor','transport','entertainment') },
-    name: { type: DataTypes.STRING },
-    contact_name: { type: DataTypes.STRING },
-    phone: { type: DataTypes.STRING },
-    email: { type: DataTypes.STRING },
-    website: { type: DataTypes.STRING },
-    address: { type: DataTypes.STRING },
-    latitude: { type: DataTypes.DECIMAL(10,8) },
-    longitude: { type: DataTypes.DECIMAL(11,8) },
-    price_estimate: { type: DataTypes.DECIMAL },
-    price_range: { type: DataTypes.ENUM('low','medium','high') },
-    rating: { type: DataTypes.DECIMAL(2,1) },
-    selected: { type: DataTypes.BOOLEAN, defaultValue: false },
-    notes: { type: DataTypes.TEXT },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-    updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+    id: {
+      type: DataTypes.UUID,
+      primaryKey: true,
+      defaultValue: DataTypes.UUIDV4,
+    },
+    event_id: {
+      type: DataTypes.UUID,
+      allowNull: false,
+    },
+    name: {
+      type: DataTypes.STRING(255),
+      allowNull: false,
+    },
+    type: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+    },
+    address: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+    },
+    phone: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+    },
+    email: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    website: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+    },
+    google_maps_url: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    notes: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    lat: {
+      type: DataTypes.DECIMAL(10, 7),
+      allowNull: true,
+    },
+    lng: {
+      type: DataTypes.DECIMAL(10, 7),
+      allowNull: true,
+    },
+    created_at: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: (Sequelize as any).literal("CURRENT_TIMESTAMP"),
+    },
+    updated_at: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: (Sequelize as any).literal("CURRENT_TIMESTAMP"),
+    },
   },
-  { sequelize, tableName: "vendors", timestamps: false }
+  {
+    sequelize,
+    tableName: "vendors",
+    modelName: "Vendor",
+    timestamps: true,
+    createdAt: "created_at",
+    updatedAt: "updated_at",
+  }
 );
 
-
-
+export default Vendor;
