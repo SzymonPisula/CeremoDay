@@ -1,46 +1,63 @@
 // CeremoDay/web/src/components/vendors/RuralVenuesMap.tsx
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import type { LatLngExpression } from "leaflet";
-import type { Vendor } from "../../types/vendor";
-
-type VendorWithLatLng = Vendor & {
-  lat?: number | null;
-  lng?: number | null;
-  // na wszelki wypadek – niektóre Vendor-y mogą mieć już location
-  location?: {
-    lat: number | null;
-    lng: number | null;
-  } | null;
-};
+import type { Vendor, VendorLocation } from "../../types/vendor";
 
 type Props = {
-  venues: VendorWithLatLng[];
+  venues: Vendor[];
+};
+
+type VendorWithCoords = Vendor & {
+  _coords: VendorLocation;
 };
 
 export default function RuralVenuesMap({ venues }: Props) {
   console.log("🌍 RuralVenuesMap renderuje się, venues:", venues);
 
-  const venuesWithCoords = venues.filter(
-    (v): v is VendorWithLatLng & { lat: number; lng: number } => {
-      const fromLocation =
-        v.location?.lat != null && v.location?.lng != null;
-      const fromRoot =
-        typeof v.lat === "number" && typeof v.lng === "number";
+  // Normalizujemy źródło współrzędnych:
+  //  1) vendor.location.lat/lng
+  //  2) vendor.lat / vendor.lng (top-level)
+  const venuesWithCoords: VendorWithCoords[] = venues.flatMap((v) => {
+    const latCandidate = v.location?.lat ?? v.lat ?? null;
+    const lngCandidate = v.location?.lng ?? v.lng ?? null;
 
-      return fromLocation || fromRoot;
+    if (
+      latCandidate === null ||
+      lngCandidate === null ||
+      typeof latCandidate !== "number" ||
+      typeof lngCandidate !== "number" ||
+      Number.isNaN(latCandidate) ||
+      Number.isNaN(lngCandidate)
+    ) {
+      return [];
     }
-  );
+
+    const coords: VendorLocation = {
+      lat: latCandidate,
+      lng: lngCandidate,
+    };
+
+    return [{ ...v, _coords: coords }];
+  });
 
   console.log("📍 Liczba venue z koordynatami:", venuesWithCoords.length);
+  if (venuesWithCoords.length > 0) {
+    console.log(
+      "📍 Przykładowe współrzędne:",
+      venuesWithCoords.slice(0, 3).map((v) => ({
+        id: v.id,
+        lat: v._coords.lat,
+        lng: v._coords.lng,
+        name: v.name,
+      }))
+    );
+  }
 
   const defaultCenter: LatLngExpression = [52.0, 19.0];
 
   const center: LatLngExpression =
     venuesWithCoords.length > 0
-      ? [
-          venuesWithCoords[0].location?.lat ?? venuesWithCoords[0].lat,
-          venuesWithCoords[0].location?.lng ?? venuesWithCoords[0].lng,
-        ]
+      ? [venuesWithCoords[0]._coords.lat, venuesWithCoords[0]._coords.lng]
       : defaultCenter;
 
   return (
@@ -57,10 +74,10 @@ export default function RuralVenuesMap({ venues }: Props) {
         />
 
         {venuesWithCoords.map((v) => {
-          const markerLat = v.location?.lat ?? v.lat!;
-          const markerLng = v.location?.lng ?? v.lng!;
-
-          const position: LatLngExpression = [markerLat, markerLng];
+          const position: LatLngExpression = [
+            v._coords.lat,
+            v._coords.lng,
+          ];
 
           return (
             <Marker key={v.id} position={position}>
@@ -76,6 +93,11 @@ export default function RuralVenuesMap({ venues }: Props) {
                   {v.county && (
                     <div className="mt-1 text-slate-500">
                       Powiat: {v.county}
+                    </div>
+                  )}
+                  {v.source === "RURAL" && (
+                    <div className="mt-1 text-[10px] text-slate-400">
+                      Źródło: baza gminna
                     </div>
                   )}
                 </div>

@@ -13,6 +13,15 @@ import type {
   InspirationBoardPayload,
   InspirationItemPayload,
 } from "../types/inspiration";
+import type {
+  Budget,
+  BudgetPayload,
+  Expense,
+  ExpenseCreatePayload,
+  ExpenseUpdatePayload,
+  FinanceSummary,
+} from "../types/finance";
+
 
 export const BASE_URL = "http://localhost:4000";
 
@@ -478,5 +487,118 @@ deleteTask: (id: string) =>
 
     return (await res.json()) as InspirationItem;
   },
+
+  // -----------------------------
+  // FINANCE / BUDŻET I WYDATKI
+  // -----------------------------
+  getFinanceBudget: (eventId: string): Promise<Budget | null> =>
+    request<Budget | null>(`/finance/${eventId}/budget`),
+
+  saveFinanceBudget: (
+    eventId: string,
+    payload: BudgetPayload
+  ): Promise<Budget> =>
+    request<Budget>(`/finance/${eventId}/budget`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getFinanceExpenses: (eventId: string): Promise<Expense[]> =>
+    request<Expense[]>(`/finance/${eventId}/expenses`).then((list) =>
+      // Zamiana stringów z DECIMAL na number
+      list.map((e) => ({
+        ...e,
+        planned_amount:
+          e.planned_amount != null
+            ? Number(e.planned_amount)
+            : null,
+        actual_amount:
+          e.actual_amount != null
+            ? Number(e.actual_amount)
+            : null,
+      }))
+    ),
+
+  createFinanceExpense: (
+    eventId: string,
+    payload: Omit<ExpenseCreatePayload, "event_id">
+  ): Promise<Expense> =>
+    request<Expense>(`/finance/${eventId}/expenses`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((e) => ({
+      ...e,
+      planned_amount:
+        e.planned_amount != null ? Number(e.planned_amount) : null,
+      actual_amount:
+        e.actual_amount != null ? Number(e.actual_amount) : null,
+    })),
+
+  updateFinanceExpense: (
+    eventId: string,
+    expenseId: string,
+    payload: ExpenseUpdatePayload
+  ): Promise<Expense> =>
+    request<Expense>(`/finance/${eventId}/expenses/${expenseId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }).then((e) => ({
+      ...e,
+      planned_amount:
+        e.planned_amount != null ? Number(e.planned_amount) : null,
+      actual_amount:
+        e.actual_amount != null ? Number(e.actual_amount) : null,
+    })),
+
+  deleteFinanceExpense: (
+    eventId: string,
+    expenseId: string
+  ): Promise<void> =>
+    request<void>(`/finance/${eventId}/expenses/${expenseId}`, {
+      method: "DELETE",
+    }),
+
+  getFinanceSummary: (eventId: string): Promise<FinanceSummary> =>
+    request<FinanceSummary>(`/finance/${eventId}/summary`),
+
+  exportFinanceExpensesXlsx: async (eventId: string): Promise<Blob> => {
+  const token = useAuthStore.getState().token;
+
+  const res = await fetch(`${BASE_URL}/finance/${eventId}/expenses/export-xlsx`, {
+    method: "GET",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Błąd eksportu wydatków (${res.status}): ${text || res.statusText}`);
+  }
+
+  return res.blob();
+},
+
+
+// -----------------------------
+// REPORTS / RAPORTY
+// -----------------------------
+getReportsSummary: (eventId: string) =>
+  request<import("../types/reports").ReportsSummary>(`/reports/${eventId}/summary`),
+
+downloadReportsPdf: async (eventId: string): Promise<Blob> => {
+  const token = useAuthStore.getState().token;
+
+  const res = await fetch(`${BASE_URL}/reports/${eventId}/pdf`, {
+    method: "GET",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Błąd generowania PDF (${res.status}): ${text || res.statusText}`);
+  }
+
+  return res.blob();
+},
+
 
 };

@@ -8,6 +8,8 @@ import Documents from "./pages/Documents";
 import Inspirations from "./pages/Inspiration";
 import Tasks from "./pages/Tasks";
 import Vendors from "./pages/Vendors";
+import Finance from "./pages/Finance";
+import Reports from "./pages/Reports";
 
 
 function PrivateRoute({ children }: { children: JSX.Element }) {
@@ -87,6 +89,24 @@ export default function App() {
   element={
     <PrivateRoute>
       <Vendors />
+    </PrivateRoute>
+  }
+/>
+
+<Route
+  path="/event/:id/finance"
+  element={
+    <PrivateRoute>
+      <Finance />
+    </PrivateRoute>
+  }
+/>
+
+<Route
+  path="/event/:id/reports"
+  element={
+    <PrivateRoute>
+      <Reports />
     </PrivateRoute>
   }
 />

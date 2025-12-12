@@ -57,25 +57,57 @@ router.get(
         order: [["name", "ASC"]],
       });
 
-      // Mapujemy do ujednoliconego formatu "Vendor"
+      console.log("🧩 /vendors/rural/search – liczba rekordów:", venues.length);
+      console.log(
+        "🧩 Przykładowe współrzędne z bazy:",
+        venues.slice(0, 5).map((v) => ({
+          id: v.id,
+          lat: v.lat,
+          lng: v.lng,
+        }))
+      );
+
       const result = venues.map((v) => {
+        // Uwaga: lat/lng mogą być stringami (DECIMAL z MySQL)
+        const rawLat = v.lat;
+        const rawLng = v.lng;
+
         const lat =
-          v.lat !== null && v.lat !== undefined
-            ? Number(v.lat)
-            : null;
+          rawLat === null || rawLat === undefined
+            ? null
+            : Number.parseFloat(String(rawLat));
         const lng =
-          v.lng !== null && v.lng !== undefined
-            ? Number(v.lng)
-            : null;
+          rawLng === null || rawLng === undefined
+            ? null
+            : Number.parseFloat(String(rawLng));
+
+        const hasValidCoords =
+          lat !== null &&
+          lng !== null &&
+          !Number.isNaN(lat) &&
+          !Number.isNaN(lng);
+
+        if (!hasValidCoords && (lat !== null || lng !== null)) {
+          console.warn("⚠️ Nieprawidłowe współrzędne dla venue", {
+            id: v.id,
+            rawLat,
+            rawLng,
+            lat,
+            lng,
+          });
+        }
 
         return {
           id: v.id,
           name: v.name,
           address: v.address,
-          location:
-            lat !== null && lng !== null
-              ? { lat, lng }
-              : null,
+          // UJEDNOLICONY format dla frontu
+          location: hasValidCoords ? { lat, lng } : null,
+
+          // Dodatkowo surowe lat/lng – na wszelki wypadek i do debugowania
+          lat: hasValidCoords ? lat : null,
+          lng: hasValidCoords ? lng : null,
+
           max_participants: v.max_participants ?? undefined,
           equipment: v.equipment ?? undefined,
           rental_info: v.rental_info ?? undefined,

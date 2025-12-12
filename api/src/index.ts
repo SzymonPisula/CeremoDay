@@ -16,6 +16,8 @@ import vendorsRuralRouter from "./routes/vendorsRural";
 import "./models/RuralVenue";
 import "./models/Vendor";
 import vendorsRouter from "./routes/vendors";
+import financeRoutes from "./routes/finance";
+import reportsRouter from "./routes/reports";
 
 
 // =======================
@@ -89,6 +91,8 @@ app.use("/documents", documentsRouter);
 app.use("/tasks", tasksRouter);
 app.use("/vendors/rural", vendorsRuralRouter);
 app.use("/vendors", vendorsRouter);
+app.use("/finance", financeRoutes);
+app.use("/reports", reportsRouter);
 
 app.use("/uploads", express.static("uploads"));
 app.use("/events", vendorRoutes); 
