@@ -600,5 +600,21 @@ downloadReportsPdf: async (eventId: string): Promise<Blob> => {
   return res.blob();
 },
 
+// -----------------------------
+// INTERVIEW / WYWIAD
+// -----------------------------
+getInterview: (eventId: string) =>
+  request<import("../types/interview").InterviewResponse | null>(`/interview/${eventId}`, {
+    method: "GET",
+  }),
+
+saveInterview: (eventId: string, payload: import("../types/interview").InterviewPayload) =>
+  request<import("../types/interview").InterviewResponse>(`/interview/${eventId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  }),
+
+
+
 
 };

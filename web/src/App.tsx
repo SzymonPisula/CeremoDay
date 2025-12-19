@@ -10,6 +10,7 @@ import Tasks from "./pages/Tasks";
 import Vendors from "./pages/Vendors";
 import Finance from "./pages/Finance";
 import Reports from "./pages/Reports";
+import Interview from "./pages/Interview";
 
 
 function PrivateRoute({ children }: { children: JSX.Element }) {
@@ -111,6 +112,17 @@ export default function App() {
   }
 />
   
+<Route
+  path="/event/:id/interview"
+  element={
+    <PrivateRoute>
+      <Interview />
+    </PrivateRoute>
+  }
+/>
+
+<Route path="/event/:id/interview/edit" element={<Interview />} />
+
         
       </Routes>
     </BrowserRouter>
