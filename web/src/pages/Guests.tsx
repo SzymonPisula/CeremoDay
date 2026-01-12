@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import type { Guest, GuestPayload } from "../types/guest";
+import Select from "../ui/Select";
 
 const Modal: React.FC<{ onClose: () => void; title?: string; children: React.ReactNode }> = ({
   onClose,
@@ -61,14 +62,14 @@ const Modal: React.FC<{ onClose: () => void; title?: string; children: React.Rea
 
       {/* zawartość */}
       <div
-        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 animate-fadeIn overflow-y-auto max-h-[90vh]"
+        className="relative w-full max-w-2xl p-6 overflow-y-auto max-h-[90vh] animate-fadeIn rounded-2xl shadow-2xl border border-white/10 bg-emerald-950/70 text-white backdrop-blur-xl"
         style={{
           zIndex: 10000000,
           position: "relative",
         }}
       >
         {title && (
-          <h3 className="text-xl font-semibold mb-4 text-center">{title}</h3>
+          <h3 className="text-xl font-semibold mb-4 text-center text-white">{title}</h3>
         )}
         {children}
       </div>
@@ -124,6 +125,49 @@ const Guests: React.FC = () => {
     allergens: "",
     notes: "",
   });
+
+  // UI helpers (spójny „CRM vibe” w całej aplikacji)
+  const inputBase =
+    "w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-white placeholder:text-white/35 outline-none focus:border-[#c8a04b]/50 focus:ring-2 focus:ring-[#c8a04b]/15 transition";
+  const textareaBase = inputBase + " min-h-[96px]";
+const btnSecondary =
+  "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium " +
+  "bg-white/5 text-white border border-white/10 " +
+  "hover:bg-white/10 hover:border-white/15 " +
+  "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/40 " +
+  "transition";
+
+const btnGold =
+  "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " +
+  "bg-gradient-to-r from-[#d7b45a] to-[#b98b2f] text-[#0b1b14] " +
+  "shadow-[0_10px_30px_-18px_rgba(215,180,90,0.9)] " +
+  "hover:brightness-105 active:translate-y-[1px] " +
+  "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/45 " +
+  "transition";
+
+
+  const chip =
+    "inline-flex items-center gap-2 px-3 py-1 rounded-full " +
+    "border border-white/10 bg-white/5 text-white/80 text-xs";
+const RELATION_OPTIONS = [
+  { value: "dziadkowie", label: "Dziadkowie" },
+  { value: "wujostwo", label: "Wujostwo" },
+  { value: "kuzynostwo", label: "Kuzynostwo" },
+  { value: "przyjaciele", label: "Przyjaciele" },
+  { value: "znajomi", label: "Znajomi" },
+  { value: "praca", label: "Praca" },
+] as const;
+
+const SIDE_OPTIONS = [
+  { value: "pani_mlodej", label: "Pani młodej" },
+  { value: "pana_mlodego", label: "Pana młodego" },
+] as const;
+
+const RSVP_OPTIONS = [
+  { value: "confirmed", label: "Potwierdzone" },
+  { value: "declined", label: "Odmowa" },
+  { value: "unknown", label: "Nieznane" },
+] as const;
 
   useEffect(() => {
     if (!eventId) return;
@@ -248,26 +292,7 @@ const Guests: React.FC = () => {
   });
 };
 
-const handleDeleteSubGuest = (subId: string, parentId: string) => {
-  setConfirmModal({
-    open: true,
-    message: "Czy na pewno chcesz usunąć tego podgościa?",
-    onConfirm: async () => {
-      try {
-        await api.deleteGuest(subId);
-        setGuests((prev) =>
-          prev.map((g) =>
-            g.id === parentId
-              ? { ...g, SubGuests: g.SubGuests?.filter((s) => s.id !== subId) }
-              : g
-          )
-        );
-      } catch (err) {
-        console.error(err);
-      }
-    },
-  });
-};
+
 
   const handleSaveEdit = async () => {
     if (!editingGuest) return;
@@ -311,6 +336,30 @@ setGuests((prev) =>
   }
 };
 
+type RelationKey = (typeof RELATION_OPTIONS)[number]["value"];
+type SideKey = (typeof SIDE_OPTIONS)[number]["value"];
+type RsvpKey = (typeof RSVP_OPTIONS)[number]["value"];
+
+const byValue = <T extends string>(opts: ReadonlyArray<{ value: T; label: string }>, v?: string) => {
+  if (!v) return "—";
+  // 1) preferujemy match po value
+  const a = opts.find((o) => o.value === (v as T));
+  if (a) return a.label;
+  // 2) jeśli w bazie trzymasz label (np. "Pani młodej") to też znajdziemy
+  const b = opts.find((o) => o.label.toLowerCase() === v.toLowerCase());
+  if (b) return b.label;
+
+  // 3) legacy mapping (u Ciebie w kodzie widać mix wartości)
+  const legacy: Record<string, string> = {
+    "Pani młodej": "Pani młodej",
+    "Pana młodego": "Pana młodego",
+    Potwierdzone: "Potwierdzone",
+    Odmowa: "Odmowa",
+    Nieznane: "Nieznane",
+  };
+  return legacy[v] ?? v;
+};
+
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -337,66 +386,119 @@ setGuests((prev) =>
       ) : (
         <ol className="list-decimal pl-5 space-y-4">
   {guests.map((guest) => (
-    <li key={guest.id} className="bg-white p-4 rounded-xl border shadow-sm">
+<li
+  key={guest.id}
+  className={
+    "p-6 md:p-7 mb-6 relative " +
+    "rounded-2xl border border-white/10 " +
+    "bg-emerald-950/35 backdrop-blur-xl " +
+    "shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
+  }
+>
       <div className="flex justify-between items-start">
         <div>
           <p className="font-semibold text-lg">
             {guest.first_name} {guest.last_name}
           </p>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-white/70">
             📞 {guest.phone || "-"} | ✉️ {guest.email || "-"}
           </p>
-          <p className="text-sm">
-            Relacja: {guest.relation || "-"} | Strona: {guest.side || "-"} | RSVP:{" "}
-            {guest.rsvp || "-"}
-          </p>
-          <p className="text-sm">Alergeny: {guest.allergens || "-"}</p>
-          <p className="text-sm italic">Notatki: {guest.notes || "-"}</p>
+          <span className={chip}>Relacja: {byValue(RELATION_OPTIONS, guest.relation)}</span>
+<span className={chip}>Strona: {byValue(SIDE_OPTIONS, guest.side)}</span>
+<span className={chip}>RSVP: {byValue(RSVP_OPTIONS, guest.rsvp)}</span>
+
+<div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+  <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+    <div className="text-[11px] uppercase tracking-wider text-white/55">Alergeny</div>
+    <div className="text-sm text-white/85">{guest.allergens || "—"}</div>
+  </div>
+  <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+    <div className="text-[11px] uppercase tracking-wider text-white/55">Notatki</div>
+    <div className="text-sm text-white/85">{guest.notes || "—"}</div>
+  </div>
+</div>
+
         </div>
 
-        <div className="flex gap-2">
-          <button onClick={() => setEditingGuest(guest)} className="text-blue-600 hover:underline">
-            Edytuj
-          </button>
-          <button onClick={() => handleDeleteGuest(guest.id!)} className="text-red-600">
-            Usuń
-          </button>
-          <button
-            onClick={() => setShowAddSubGuestModal({ open: true, parentId: guest.id! })}
-            className="text-green-600 hover:underline"
-          >
-            ➕ Podgość
-          </button>
-        </div>
+        <div className="flex flex-wrap items-center gap-2">
+  <button
+    onClick={() => setEditingGuest(guest)}
+    className={btnSecondary}
+  >
+    Edytuj
+  </button>
+
+  <button
+    onClick={() => handleDeleteGuest(guest.id!)}
+    className={
+      "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " +
+      "bg-red-500/15 text-red-200 border border-red-400/25 " +
+      "hover:bg-red-500/20 hover:border-red-400/35 " +
+      "focus:outline-none focus:ring-2 focus:ring-red-400/30 transition"
+    }
+  >
+    Usuń
+  </button>
+
+  <button
+    onClick={() => setShowAddSubGuestModal({ open: true, parentId: guest.id! })}
+    className={btnGold}
+  >
+    + Podgość
+  </button>
+</div>
+
       </div>
 
       <ol className="pl-6 mt-3 space-y-2 border-l-2 border-gray-200 list-decimal">
         {(guest.SubGuests || []).map((sg) => (
-          <li key={sg.id} className="bg-gray-50 p-3 rounded-lg">
+<li
+  key={sg.id}
+  className="mt-5 p-5 rounded-2xl border border-white/10 bg-emerald-950/25 backdrop-blur"
+>
             <div className="flex justify-between items-center">
               <div>
                 <p className="font-medium">
                   {sg.first_name} {sg.last_name}
                 </p>
-                <p className="text-sm">
-                  RSVP: {sg.rsvp || "-"} | Alergeny: {sg.allergens || "-"}
-                </p>
+                <p className="mt-2 flex flex-wrap gap-2">
+  <span className={chip}>RSVP: {byValue(RSVP_OPTIONS, sg.rsvp)}</span>
+  <span className={chip}>Alergeny: {sg.allergens || "—"}</span>
+</p>
+{sg.notes ? (
+  <p className="mt-2 text-sm text-white/80 italic">{sg.notes}</p>
+) : null}
+
                 <p className="text-sm italic">Notatki: {sg.notes || "-"}</p>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setEditingSubGuest({ parentId: guest.id!, sub: sg })}
-                  className="text-blue-600 hover:underline"
-                >
-                  Edytuj
-                </button>
-                <button
-                  onClick={() => handleDeleteSubGuest(sg.id!, guest.id!)}
-                  className="text-red-600"
-                >
-                  Usuń
-                </button>
-              </div>
+              <div className="flex flex-wrap items-center gap-2">
+  <button
+    onClick={() => setEditingGuest(guest)}
+    className={btnSecondary}
+  >
+    Edytuj
+  </button>
+
+  <button
+    onClick={() => handleDeleteGuest(guest.id!)}
+    className={
+      "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " +
+      "bg-red-500/15 text-red-200 border border-red-400/25 " +
+      "hover:bg-red-500/20 hover:border-red-400/35 " +
+      "focus:outline-none focus:ring-2 focus:ring-red-400/30 transition"
+    }
+  >
+    Usuń
+  </button>
+
+  <button
+    onClick={() => setShowAddSubGuestModal({ open: true, parentId: guest.id! })}
+    className={btnGold}
+  >
+    + Podgość
+  </button>
+</div>
+
             </div>
           </li>
         ))}
@@ -406,45 +508,45 @@ setGuests((prev) =>
 </ol>
 
       )}
+     
 
       {/* === MODAL: Dodaj gościa === */}
 {showAddGuestModal && (
   <Modal onClose={() => setShowAddGuestModal(false)} title="Dodaj gościa">
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-      <input placeholder="Imię" value={guestForm.first_name} onChange={(e) => setGuestForm({ ...guestForm, first_name: e.target.value })} className="border p-2 rounded" />
-      <input placeholder="Nazwisko" value={guestForm.last_name} onChange={(e) => setGuestForm({ ...guestForm, last_name: e.target.value })} className="border p-2 rounded" />
-      <input placeholder="Telefon" value={guestForm.phone || ""} onChange={(e) => setGuestForm({ ...guestForm, phone: e.target.value })} className="border p-2 rounded" />
-      <input placeholder="Email" value={guestForm.email || ""} onChange={(e) => setGuestForm({ ...guestForm, email: e.target.value })} className="border p-2 rounded" />
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <input placeholder="Imię" value={guestForm.first_name} onChange={(e) => setGuestForm({ ...guestForm, first_name: e.target.value })} className={inputBase} />
+      <input placeholder="Nazwisko" value={guestForm.last_name} onChange={(e) => setGuestForm({ ...guestForm, last_name: e.target.value })} className={inputBase} />
+      <input placeholder="Telefon" value={guestForm.phone || ""} onChange={(e) => setGuestForm({ ...guestForm, phone: e.target.value })} className={inputBase} />
+      <input placeholder="Email" value={guestForm.email || ""} onChange={(e) => setGuestForm({ ...guestForm, email: e.target.value })} className={inputBase} />
 
-      <select value={guestForm.relation || ""} onChange={(e) => setGuestForm({ ...guestForm, relation: e.target.value })} className="border p-2 rounded">
-        <option value="">Relacja</option>
-        <option value="dziadkowie">Dziadkowie</option>
-        <option value="wujostwo">Wujostwo</option>
-        <option value="kuzynostwo">Kuzynostwo</option>
-        <option value="przyjaciele">Przyjaciele</option>
-        <option value="znajomi">Znajomi</option>
-        <option value="praca">Praca</option>
-      </select>
+      <Select
+  label="Relacja"
+  value={(guestForm.relation as RelationKey) || ""}
+  onChange={(v) => setGuestForm({ ...guestForm, relation: v })}
+  options={RELATION_OPTIONS}
+/>
 
-      <select value={guestForm.side || ""} onChange={(e) => setGuestForm({ ...guestForm, side: e.target.value })} className="border p-2 rounded">
-        <option value="">Strona</option>
-        <option value="Pani młodej">Pani młodej</option>
-        <option value="Pana młodego">Pana młodego</option>
-      </select>
+<Select
+  label="Strona"
+  value={(guestForm.side as SideKey) || ""}
+  onChange={(v) => setGuestForm({ ...guestForm, side: v })}
+  options={SIDE_OPTIONS}
+/>
 
-      <select value={guestForm.rsvp || ""} onChange={(e) => setGuestForm({ ...guestForm, rsvp: e.target.value })} className="border p-2 rounded">
-        <option value="">RSVP</option>
-        <option value="Potwierdzone">Potwierdzone</option>
-        <option value="Odmowa">Odmowa</option>
-        <option value="Nieznane">Nieznane</option>
-      </select>
+<Select
+  label="RSVP"
+  value={(guestForm.rsvp as RsvpKey) || ""}
+  onChange={(v) => setGuestForm({ ...guestForm, rsvp: v })}
+  options={RSVP_OPTIONS}
+/>
 
-      <textarea placeholder="Alergeny" value={guestForm.allergens || ""} onChange={(e) => setGuestForm({ ...guestForm, allergens: e.target.value })} className="border p-2 rounded col-span-2" />
-      <textarea placeholder="Notatki" value={guestForm.notes || ""} onChange={(e) => setGuestForm({ ...guestForm, notes: e.target.value })} className="border p-2 rounded col-span-2" />
+
+      <textarea placeholder="Alergeny" value={guestForm.allergens || ""} onChange={(e) => setGuestForm({ ...guestForm, allergens: e.target.value })} className={`${textareaBase} md:col-span-2`} />
+      <textarea placeholder="Notatki" value={guestForm.notes || ""} onChange={(e) => setGuestForm({ ...guestForm, notes: e.target.value })} className={`${textareaBase} md:col-span-2`} />
     </div>
     <div className="mt-4 flex justify-end gap-2">
-      <button onClick={() => setShowAddGuestModal(false)} className="px-3 py-2 border rounded">Anuluj</button>
-      <button onClick={handleAddGuest} className="bg-blue-600 text-white px-3 py-2 rounded">Dodaj</button>
+      <button onClick={() => setShowAddGuestModal(false)} className={btnSecondary}>Anuluj</button>
+      <button onClick={handleAddGuest} className={btnGold}>Dodaj</button>
     </div>
   </Modal>
 )}
@@ -453,39 +555,38 @@ setGuests((prev) =>
       {/* === MODAL: Dodaj podgościa === */}
 {showAddSubGuestModal.open && (
   <Modal onClose={() => setShowAddSubGuestModal({ open: false })} title="Dodaj podgościa">
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-      <input placeholder="Imię" value={subGuestForm.first_name} onChange={(e) => setSubGuestForm({ ...subGuestForm, first_name: e.target.value })} className="border p-2 rounded" />
-      <input placeholder="Nazwisko" value={subGuestForm.last_name} onChange={(e) => setSubGuestForm({ ...subGuestForm, last_name: e.target.value })} className="border p-2 rounded" />
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <input placeholder="Imię" value={subGuestForm.first_name} onChange={(e) => setSubGuestForm({ ...subGuestForm, first_name: e.target.value })} className={inputBase} />
+      <input placeholder="Nazwisko" value={subGuestForm.last_name} onChange={(e) => setSubGuestForm({ ...subGuestForm, last_name: e.target.value })} className={inputBase} />
 
-      <select value={subGuestForm.relation || ""} onChange={(e) => setSubGuestForm({ ...subGuestForm, relation: e.target.value })} className="border p-2 rounded">
-        <option value="">Relacja</option>
-        <option value="dziadkowie">Dziadkowie</option>
-        <option value="wujostwo">Wujostwo</option>
-        <option value="kuzynostwo">Kuzynostwo</option>
-        <option value="przyjaciele">Przyjaciele</option>
-        <option value="znajomi">Znajomi</option>
-        <option value="praca">Praca</option>
-      </select>
+      <Select
+  label="Relacja"
+  value={(subGuestForm.relation as RelationKey) || ""}
+  onChange={(v) => setSubGuestForm({ ...subGuestForm, relation: v })}
+  options={RELATION_OPTIONS}
+/>
 
-      <select value={subGuestForm.side || ""} onChange={(e) => setSubGuestForm({ ...subGuestForm, side: e.target.value })} className="border p-2 rounded">
-        <option value="">Strona</option>
-        <option value="Pani młodej">Pani młodej</option>
-        <option value="Pana młodego">Pana młodego</option>
-      </select>
+<Select
+  label="Strona"
+  value={(subGuestForm.side as SideKey) || ""}
+  onChange={(v) => setSubGuestForm({ ...subGuestForm, side: v })}
+  options={SIDE_OPTIONS}
+/>
 
-      <select value={subGuestForm.rsvp || ""} onChange={(e) => setSubGuestForm({ ...subGuestForm, rsvp: e.target.value })} className="border p-2 rounded">
-        <option value="">RSVP</option>
-        <option value="Potwierdzone">Potwierdzone</option>
-        <option value="Odmowa">Odmowa</option>
-        <option value="Nieznane">Nieznane</option>
-      </select>
+<Select
+  label="RSVP"
+  value={(subGuestForm.rsvp as RsvpKey) || ""}
+  onChange={(v) => setSubGuestForm({ ...subGuestForm, rsvp: v })}
+  options={RSVP_OPTIONS}
+/>
 
-      <textarea placeholder="Alergeny" value={subGuestForm.allergens || ""} onChange={(e) => setSubGuestForm({ ...subGuestForm, allergens: e.target.value })} className="border p-2 rounded col-span-2" />
-      <textarea placeholder="Notatki" value={subGuestForm.notes || ""} onChange={(e) => setSubGuestForm({ ...subGuestForm, notes: e.target.value })} className="border p-2 rounded col-span-2" />
+
+      <textarea placeholder="Alergeny" value={subGuestForm.allergens || ""} onChange={(e) => setSubGuestForm({ ...subGuestForm, allergens: e.target.value })} className={`${textareaBase} md:col-span-2`} />
+      <textarea placeholder="Notatki" value={subGuestForm.notes || ""} onChange={(e) => setSubGuestForm({ ...subGuestForm, notes: e.target.value })} className={`${textareaBase} md:col-span-2`} />
     </div>
     <div className="mt-4 flex justify-end gap-2">
-      <button onClick={() => setShowAddSubGuestModal({ open: false })} className="px-3 py-2 border rounded">Anuluj</button>
-      <button onClick={handleAddSubGuest} className="bg-blue-600 text-white px-3 py-2 rounded">Dodaj</button>
+      <button onClick={() => setShowAddSubGuestModal({ open: false })} className={btnSecondary}>Anuluj</button>
+      <button onClick={handleAddSubGuest} className={btnGold}>Dodaj</button>
     </div>
   </Modal>
 )}
@@ -495,41 +596,40 @@ setGuests((prev) =>
       {/* === MODAL: Edycja gościa === */}
 {editingGuest && (
   <Modal onClose={() => setEditingGuest(null)} title="Edytuj dane gościa">
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-      <input placeholder="Imię" value={editingGuest.first_name} onChange={(e) => setEditingGuest({ ...editingGuest, first_name: e.target.value })} className="border p-2 rounded" />
-      <input placeholder="Nazwisko" value={editingGuest.last_name} onChange={(e) => setEditingGuest({ ...editingGuest, last_name: e.target.value })} className="border p-2 rounded" />
-      <input placeholder="Telefon" value={editingGuest.phone || ""} onChange={(e) => setEditingGuest({ ...editingGuest, phone: e.target.value })} className="border p-2 rounded" />
-      <input placeholder="Email" value={editingGuest.email || ""} onChange={(e) => setEditingGuest({ ...editingGuest, email: e.target.value })} className="border p-2 rounded" />
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <input placeholder="Imię" value={editingGuest.first_name} onChange={(e) => setEditingGuest({ ...editingGuest, first_name: e.target.value })} className={inputBase} />
+      <input placeholder="Nazwisko" value={editingGuest.last_name} onChange={(e) => setEditingGuest({ ...editingGuest, last_name: e.target.value })} className={inputBase} />
+      <input placeholder="Telefon" value={editingGuest.phone || ""} onChange={(e) => setEditingGuest({ ...editingGuest, phone: e.target.value })} className={inputBase} />
+      <input placeholder="Email" value={editingGuest.email || ""} onChange={(e) => setEditingGuest({ ...editingGuest, email: e.target.value })} className={inputBase} />
 
-      <select value={editingGuest.relation || ""} onChange={(e) => setEditingGuest({ ...editingGuest, relation: e.target.value })} className="border p-2 rounded">
-        <option value="">Relacja</option>
-        <option value="dziadkowie">Dziadkowie</option>
-        <option value="wujostwo">Wujostwo</option>
-        <option value="kuzynostwo">Kuzynostwo</option>
-        <option value="przyjaciele">Przyjaciele</option>
-        <option value="znajomi">Znajomi</option>
-        <option value="praca">Praca</option>
-      </select>
+      <Select
+  label="Relacja"
+  value={(editingGuest.relation as RelationKey) || ""}
+  onChange={(v) => setEditingGuest({ ...editingGuest, relation: v })}
+  options={RELATION_OPTIONS}
+/>
 
-      <select value={editingGuest.side || ""} onChange={(e) => setEditingGuest({ ...editingGuest, side: e.target.value })} className="border p-2 rounded">
-        <option value="">Strona</option>
-        <option value="Pani młodej">Pani młodej</option>
-        <option value="Pana młodego">Pana młodego</option>
-      </select>
+<Select
+  label="Strona"
+  value={(editingGuest.side as SideKey) || ""}
+  onChange={(v) => setEditingGuest({ ...editingGuest, side: v })}
+  options={SIDE_OPTIONS}
+/>
 
-      <select value={editingGuest.rsvp || ""} onChange={(e) => setEditingGuest({ ...editingGuest, rsvp: e.target.value })} className="border p-2 rounded">
-        <option value="">RSVP</option>
-        <option value="Potwierdzone">Potwierdzone</option>
-        <option value="Odmowa">Odmowa</option>
-        <option value="Nieznane">Nieznane</option>
-      </select>
+<Select
+  label="RSVP"
+  value={(editingGuest.rsvp as RsvpKey) || ""}
+  onChange={(v) => setEditingGuest({ ...editingGuest, rsvp: v })}
+  options={RSVP_OPTIONS}
+/>
 
-      <textarea placeholder="Alergeny" value={editingGuest.allergens || ""} onChange={(e) => setEditingGuest({ ...editingGuest, allergens: e.target.value })} className="border p-2 rounded col-span-2" />
-      <textarea placeholder="Notatki" value={editingGuest.notes || ""} onChange={(e) => setEditingGuest({ ...editingGuest, notes: e.target.value })} className="border p-2 rounded col-span-2" />
+
+      <textarea placeholder="Alergeny" value={editingGuest.allergens || ""} onChange={(e) => setEditingGuest({ ...editingGuest, allergens: e.target.value })} className={`${textareaBase} md:col-span-2`} />
+      <textarea placeholder="Notatki" value={editingGuest.notes || ""} onChange={(e) => setEditingGuest({ ...editingGuest, notes: e.target.value })} className={`${textareaBase} md:col-span-2`} />
     </div>
     <div className="mt-4 flex justify-end gap-2">
-      <button onClick={() => setEditingGuest(null)} className="px-3 py-2 border rounded">Anuluj</button>
-      <button onClick={handleSaveEdit} className="bg-blue-600 text-white px-3 py-2 rounded">Zapisz</button>
+      <button onClick={() => setEditingGuest(null)} className="px-4 py-2 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/10">Anuluj</button>
+      <button onClick={handleSaveEdit} className="px-4 py-2 rounded-xl bg-[#c8a04b] text-black font-medium hover:brightness-105">Zapisz</button>
     </div>
   </Modal>
 )}
@@ -538,50 +638,55 @@ setGuests((prev) =>
       {/* === MODAL: Edycja podgościa === */}
 {editingSubGuest && (
   <Modal onClose={() => setEditingSubGuest(null)} title="Edytuj dane podgościa">
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-      <input placeholder="Imię" value={editingSubGuest.sub.first_name} onChange={(e) => setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, first_name: e.target.value } })} className="border p-2 rounded" />
-      <input placeholder="Nazwisko" value={editingSubGuest.sub.last_name} onChange={(e) => setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, last_name: e.target.value } })} className="border p-2 rounded" />
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <input placeholder="Imię" value={editingSubGuest.sub.first_name} onChange={(e) => setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, first_name: e.target.value } })} className={inputBase} />
+      <input placeholder="Nazwisko" value={editingSubGuest.sub.last_name} onChange={(e) => setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, last_name: e.target.value } })} className={inputBase} />
       
-      <select value={editingSubGuest.sub.relation || ""} onChange={(e) => setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, relation: e.target.value } })} className="border p-2 rounded">
-        <option value="">Relacja</option>
-        <option value="dziadkowie">Dziadkowie</option>
-        <option value="wujostwo">Wujostwo</option>
-        <option value="kuzynostwo">Kuzynostwo</option>
-        <option value="przyjaciele">Przyjaciele</option>
-        <option value="znajomi">Znajomi</option>
-        <option value="praca">Praca</option>
-      </select>
+      <Select
+  label="Relacja"
+  value={(editingSubGuest.sub.relation as RelationKey) || ""}
+  onChange={(v) =>
+    setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, relation: v } })
+  }
+  options={RELATION_OPTIONS}
+/>
 
-      <select value={editingSubGuest.sub.side || ""} onChange={(e) => setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, side: e.target.value } })} className="border p-2 rounded">
-        <option value="">Strona</option>
-        <option value="Pani młodej">Pani młodej</option>
-        <option value="Pana młodego">Pana młodego</option>
-      </select>
+<Select
+  label="Strona"
+  value={(editingSubGuest.sub.side as SideKey) || ""}
+  onChange={(v) =>
+    setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, side: v } })
+  }
+  options={SIDE_OPTIONS}
+/>
 
-      <select value={editingSubGuest.sub.rsvp || ""} onChange={(e) => setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, rsvp: e.target.value } })} className="border p-2 rounded">
-        <option value="">RSVP</option>
-        <option value="Potwierdzone">Potwierdzone</option>
-        <option value="Odmowa">Odmowa</option>
-        <option value="Nieznane">Nieznane</option>
-      </select>
+<Select
+  label="RSVP"
+  value={(editingSubGuest.sub.rsvp as RsvpKey) || ""}
+  onChange={(v) =>
+    setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, rsvp: v } })
+  }
+  options={RSVP_OPTIONS}
+/>
 
-      <textarea placeholder="Alergeny" value={editingSubGuest.sub.allergens || ""} onChange={(e) => setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, allergens: e.target.value } })} className="border p-2 rounded col-span-2" />
-      <textarea placeholder="Notatki" value={editingSubGuest.sub.notes || ""} onChange={(e) => setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, notes: e.target.value } })} className="border p-2 rounded col-span-2" />
+
+      <textarea placeholder="Alergeny" value={editingSubGuest.sub.allergens || ""} onChange={(e) => setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, allergens: e.target.value } })} className={`${textareaBase} md:col-span-2`} />
+      <textarea placeholder="Notatki" value={editingSubGuest.sub.notes || ""} onChange={(e) => setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, notes: e.target.value } })} className={`${textareaBase} md:col-span-2`} />
     </div>
     <div className="mt-4 flex justify-end gap-2">
-      <button onClick={() => setEditingSubGuest(null)} className="px-3 py-2 border rounded">Anuluj</button>
-      <button onClick={handleSaveSubEdit} className="bg-blue-600 text-white px-3 py-2 rounded">Zapisz</button>
+      <button onClick={() => setEditingSubGuest(null)} className="px-4 py-2 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/10">Anuluj</button>
+      <button onClick={handleSaveSubEdit} className="px-4 py-2 rounded-xl bg-[#c8a04b] text-black font-medium hover:brightness-105">Zapisz</button>
     </div>
   </Modal>
 )}
 
 {confirmModal.open && (
   <Modal onClose={() => setConfirmModal({ open: false, message: "" })} title="Potwierdzenie">
-    <p className="mb-4">{confirmModal.message}</p>
+    <p className="mb-4 text-white/80">{confirmModal.message}</p>
     <div className="flex justify-end gap-2">
       <button
         onClick={() => setConfirmModal({ open: false, message: "" })}
-        className="px-3 py-2 border rounded"
+        className="px-4 py-2 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
       >
         Anuluj
       </button>
@@ -590,7 +695,7 @@ setGuests((prev) =>
           confirmModal.onConfirm?.();
           setConfirmModal({ open: false, message: "" });
         }}
-        className="bg-red-600 text-white px-3 py-2 rounded"
+        className="px-4 py-2 rounded-xl bg-red-600 text-white font-medium hover:brightness-105"
       >
         Usuń
       </button>

@@ -2,18 +2,18 @@ export type DocumentStatus = "pending" | "done";
 
 export type DocumentCategory = "USC" | "KOSCIOŁ" | "URZĄD" | "INNE";
 export type DocumentHolder = "bride" | "groom" | "both";
-export type DocumentType = "civil" | "church";
+export type DocumentType = "civil" | "church" | "custom";
 
 export interface Document {
   id: string;
   event_id: string;
   name: string;
-  description: string;
 
-  // status dokumentu (checklista)
+  // ✅ było: description: string
+  description?: string | null;
+
   status?: DocumentStatus;
 
-  // rozszerzenia na przyszłość — backend może ich jeszcze nie zwracać
   category?: DocumentCategory | null;
   holder?: DocumentHolder | null;
   due_date?: string | null;
@@ -22,12 +22,11 @@ export interface Document {
   created_at?: string;
   updated_at?: string;
 
-  // KLUCZOWE: typ ślubu, do filtrowania listy
+  // w backendzie jest wymagane, ale backend może jeszcze nie zwracać w starych rekordach
   type?: DocumentType;
 
-  // istniejące w Twoim modelu pola (zgodnie z backendem)
   checked?: boolean;
-  notes?: string;
+  notes?: string | null;
   attachments?: unknown;
 }
 
@@ -49,5 +48,4 @@ export interface DocumentFile {
   updated_at?: string;
 }
 
-// Na wszelki wypadek, jeśli gdzieś jeszcze używasz DocumentPayload:
 export type DocumentPayload = Partial<Document>;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Calendar, CheckSquare, Clock, ListChecks } from "lucide-react";
+import { Calendar, CheckSquare, Clock, ListChecks, Loader2, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import type { Task, TaskCategory, TaskStatus, TaskPayload } from "../types/task";
 
@@ -62,48 +62,72 @@ export default function Tasks() {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
 
   const [statusFilter, setStatusFilter] = useState<TaskStatus | "all">("all");
-  const [categoryFilter, setCategoryFilter] = useState<TaskCategory | "all">(
-    "all"
-  );
+  const [categoryFilter, setCategoryFilter] = useState<TaskCategory | "all">("all");
 
-  // do kreatora prostych zadań
+  // szybkie dodanie
   const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newTaskCategory, setNewTaskCategory] =
-    useState<TaskCategory>("FORMALNOSCI");
+  const [newTaskCategory, setNewTaskCategory] = useState<TaskCategory>("FORMALNOSCI");
   const [newTaskDueDate, setNewTaskDueDate] = useState<string>("");
 
-  // dla kalendarza
-    const [calendarMonth, setCalendarMonth] = useState(() => {
+  // kalendarz
+  const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
-
-  // 🔹 aktualnie wybrany dzień w kalendarzu (format YYYY-MM-DD)
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
+  // === UI helpers: CeremoDay CRM vibe ===
+  const inputBase =
+    "w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-white placeholder:text-white/35 " +
+    "outline-none focus:border-[#c8a04b]/50 focus:ring-2 focus:ring-[#c8a04b]/15 transition";
 
-  
+  const selectBase =
+    inputBase +
+    " pr-9 appearance-none " +
+    "[&>option]:bg-[#07160f] [&>option]:text-white";
+
+  const chip =
+    "inline-flex items-center gap-2 px-3 py-1 rounded-full " +
+    "border border-white/10 bg-white/5 text-white/80 text-xs";
+
+  const cardBase =
+    "rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md " +
+    "shadow-[0_24px_80px_rgba(0,0,0,0.45)]";
+
+  const btnSecondary =
+    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium " +
+    "bg-white/5 text-white border border-white/10 " +
+    "hover:bg-white/10 hover:border-white/15 " +
+    "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/40 " +
+    "transition disabled:opacity-60";
+
+  const btnGold =
+    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " +
+    "bg-gradient-to-r from-[#d7b45a] to-[#b98b2f] text-[#0b1b14] " +
+    "shadow-[0_10px_30px_-18px_rgba(215,180,90,0.9)] " +
+    "hover:brightness-105 active:translate-y-[1px] " +
+    "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/45 " +
+    "transition disabled:opacity-60";
 
   useEffect(() => {
-  if (!eventId) return;
+    if (!eventId) return;
 
-  const fetchTasks = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await api.getTasks(eventId);
-      setTasks(data);
-    } catch (err) {
-      console.error("❌ Błąd pobierania zadań:", err);
-      setError("Nie udało się pobrać zadań");
-    } finally {
-      setLoading(false);
-    }
-  };
+    const fetchTasks = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await api.getTasks(eventId);
+        setTasks(data);
+      } catch (err) {
+        console.error("❌ Błąd pobierania zadań:", err);
+        setError("Nie udało się pobrać zadań");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  fetchTasks();
-}, [eventId]);
-
+    fetchTasks();
+  }, [eventId]);
 
   const handleCreateTask = async () => {
     if (!eventId) return;
@@ -125,7 +149,6 @@ export default function Tasks() {
       const created = await api.createTask(eventId, payload);
       setTasks((prev) => {
         const arr = Array.isArray(created) ? created : [created];
-        // gdyby backend zwrócił jedno zadanie:
         return arr.length === 1 ? [...prev, arr[0]] : [...prev, ...arr];
       });
       setNewTaskTitle("");
@@ -148,12 +171,8 @@ export default function Tasks() {
 
     try {
       setSavingId(task.id);
-      const updated = await api.updateTask(task.id, {
-        status: nextStatus,
-      });
-      setTasks((prev) =>
-        prev.map((t) => (t.id === task.id ? (updated as Task) : t))
-      );
+      const updated = await api.updateTask(task.id, { status: nextStatus });
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? (updated as Task) : t)));
     } catch (err) {
       console.error("❌ Błąd zmiany statusu zadania:", err);
       setError("Nie udało się zmienić statusu");
@@ -165,12 +184,8 @@ export default function Tasks() {
   const handleUpdateTaskDate = async (task: Task, newDate: string) => {
     try {
       setSavingId(task.id);
-      const updated = await api.updateTask(task.id, {
-        due_date: newDate || null,
-      });
-      setTasks((prev) =>
-        prev.map((t) => (t.id === task.id ? (updated as Task) : t))
-      );
+      const updated = await api.updateTask(task.id, { due_date: newDate || null });
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? (updated as Task) : t)));
     } catch (err) {
       console.error("❌ Błąd zmiany daty zadania:", err);
       setError("Nie udało się zmienić daty zadania");
@@ -193,17 +208,16 @@ export default function Tasks() {
     }
   };
 
-  // FILTROWANIE
+  // filtrowanie
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
       if (statusFilter !== "all" && t.status !== statusFilter) return false;
-      if (categoryFilter !== "all" && t.category !== categoryFilter)
-        return false;
+      if (categoryFilter !== "all" && t.category !== categoryFilter) return false;
       return true;
     });
   }, [tasks, statusFilter, categoryFilter]);
 
-  // TIMELINE: grupowanie po miesiącu due_date
+  // timeline: grupowanie po miesiącu due_date
   const timelineGroups = useMemo(() => {
     const groups: Record<string, Task[]> = {};
     const noDate: Task[] = [];
@@ -214,60 +228,44 @@ export default function Tasks() {
         noDate.push(t);
         continue;
       }
-      const key = `${d.getFullYear()}-${(d.getMonth() + 1)
-        .toString()
-        .padStart(2, "0")}`;
+      const key = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, "0")}`;
       if (!groups[key]) groups[key] = [];
       groups[key].push(t);
     }
 
     const sortedKeys = Object.keys(groups).sort();
-    return {
-      groups,
-      keys: sortedKeys,
-      noDate,
-    };
+    return { groups, keys: sortedKeys, noDate };
   }, [filteredTasks]);
 
-  // KALENDARZ: zadania wg dni
-   const calendarData = useMemo(() => {
-  const year = calendarMonth.getFullYear();
-  const month = calendarMonth.getMonth(); // 0-11
-  const firstDay = new Date(year, month, 1);
-  const firstWeekday = firstDay.getDay() === 0 ? 7 : firstDay.getDay(); // 1-7, pon=1
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  // kalendarz: siatka
+  const calendarData = useMemo(() => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth(); // 0-11
+    const firstDay = new Date(year, month, 1);
+    const firstWeekday = firstDay.getDay() === 0 ? 7 : firstDay.getDay(); // 1-7, pon=1
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  const cells: { date: Date | null; tasks: Task[] }[] = [];
+    const cells: { date: Date | null; tasks: Task[] }[] = [];
 
-  // puste przed początkiem miesiąca
-  for (let i = 1; i < firstWeekday; i++) {
-    cells.push({ date: null, tasks: [] });
-  }
+    for (let i = 1; i < firstWeekday; i++) cells.push({ date: null, tasks: [] });
 
-  for (let day = 1; day <= daysInMonth; day++) {
-    const date = new Date(year, month, day);
-    const dateKey = date.toISOString().slice(0, 10);
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
+      const dateKey = date.toISOString().slice(0, 10);
 
-    const tasksForDay = filteredTasks.filter((t) => {
-      const d = parseDate(t.due_date);
-      if (!d) return false;
-      return d.toISOString().slice(0, 10) === dateKey;
-    });
+      const tasksForDay = filteredTasks.filter((t) => {
+        const d = parseDate(t.due_date);
+        if (!d) return false;
+        return d.toISOString().slice(0, 10) === dateKey;
+      });
 
-    cells.push({ date, tasks: tasksForDay });
-  }
+      cells.push({ date, tasks: tasksForDay });
+    }
 
-  // DOPEŁNIENIE DO WIELOKROTNOŚCI 7
-  while (cells.length % 7 !== 0) {
-    cells.push({ date: null, tasks: [] });
-  }
+    while (cells.length % 7 !== 0) cells.push({ date: null, tasks: [] });
 
-  return {
-    year,
-    month,
-    cells,
-  };
-}, [calendarMonth, filteredTasks]);
+    return { year, month, cells };
+  }, [calendarMonth, filteredTasks]);
 
   const calendarWeeks = useMemo(() => {
     const weeks: { date: Date | null; tasks: Task[] }[][] = [];
@@ -276,8 +274,6 @@ export default function Tasks() {
     }
     return weeks;
   }, [calendarData]);
-
-
 
   const changeMonth = (delta: number) => {
     setCalendarMonth((prev) => {
@@ -288,7 +284,6 @@ export default function Tasks() {
   };
 
   const statusOptions: (TaskStatus | "all")[] = ["all", "pending", "in_progress", "done"];
-
   const categoryOptions: (TaskCategory | "all")[] = [
     "all",
     "FORMALNOSCI",
@@ -298,105 +293,105 @@ export default function Tasks() {
     "LOGISTYKA",
     "DZIEN_SLUBU",
   ];
-
   const weekDayLabels = ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"];
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-6 flex justify-center">
-      <div className="w-full max-w-6xl bg-white rounded-2xl shadow-md p-6 md:p-8">
-        {/* Nagłówek */}
-        <div className="flex items-center justify-between gap-3 mb-6">
-          <div className="flex items-center gap-3">
-            <ListChecks className="w-6 h-6 text-indigo-600" />
-            <div>
-              <h1 className="text-xl font-bold">Harmonogram zadań</h1>
-              <p className="text-sm text-slate-500">
-                Zaplanuj wszystkie kroki związane ze ślubem – od formalności po dzień ślubu.
-              </p>
-            </div>
+    <div className="p-6 max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 grid place-items-center">
+            <ListChecks className="w-5 h-5 text-[#d7b45a]" />
           </div>
-
-          {/* Tryb widoku */}
-          <div className="inline-flex rounded-full bg-slate-100 p-1 text-xs">
-            <button
-              type="button"
-              onClick={() => setViewMode("list")}
-              className={`px-3 py-1 rounded-full flex items-center gap-1 ${
-                viewMode === "list"
-                  ? "bg-white shadow text-indigo-700"
-                  : "text-slate-500"
-              }`}
-            >
-              <CheckSquare className="w-3 h-3" />
-              Lista
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("timeline")}
-              className={`px-3 py-1 rounded-full flex items-center gap-1 ${
-                viewMode === "timeline"
-                  ? "bg-white shadow text-indigo-700"
-                  : "text-slate-500"
-              }`}
-            >
-              <Clock className="w-3 h-3" />
-              Oś czasu
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("calendar")}
-              className={`px-3 py-1 rounded-full flex items-center gap-1 ${
-                viewMode === "calendar"
-                  ? "bg-white shadow text-indigo-700"
-                  : "text-slate-500"
-              }`}
-            >
-              <Calendar className="w-3 h-3" />
-              Kalendarz
-            </button>
+          <div>
+            <h2 className="text-2xl font-bold text-white">Zadania</h2>
+            <p className="text-sm text-white/60">
+              Zaplanuj wszystkie kroki – od formalności po dzień ślubu.
+            </p>
           </div>
         </div>
 
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-50 text-red-700 px-4 py-2 text-sm">
-            {error}
-          </div>
-        )}
+        {/* View switch */}
+        <div className="inline-flex rounded-full border border-white/10 bg-white/5 p-1 text-xs">
+          <button
+            type="button"
+            onClick={() => setViewMode("list")}
+            className={`px-3 py-1 rounded-full flex items-center gap-2 transition ${
+              viewMode === "list" ? "bg-[#c8a04b]/15 text-white" : "text-white/60 hover:text-white"
+            }`}
+          >
+            <CheckSquare className="w-3 h-3" />
+            Lista
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("timeline")}
+            className={`px-3 py-1 rounded-full flex items-center gap-2 transition ${
+              viewMode === "timeline" ? "bg-[#c8a04b]/15 text-white" : "text-white/60 hover:text-white"
+            }`}
+          >
+            <Clock className="w-3 h-3" />
+            Oś czasu
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("calendar")}
+            className={`px-3 py-1 rounded-full flex items-center gap-2 transition ${
+              viewMode === "calendar" ? "bg-[#c8a04b]/15 text-white" : "text-white/60 hover:text-white"
+            }`}
+          >
+            <Calendar className="w-3 h-3" />
+            Kalendarz
+          </button>
+        </div>
+      </div>
 
-        {/* Filtry */}
-        <section className="mb-5 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+      {error && (
+        <div className={`${cardBase} p-4 mb-4 border-red-500/20 bg-red-500/10`}>
+          <p className="text-sm text-red-200">{error}</p>
+        </div>
+      )}
+
+      {/* Filters + quick add */}
+      <div className={`${cardBase} p-6 md:p-7 mb-6`}>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {/* Status */}
           <div>
-            <h2 className="font-semibold mb-1">Status</h2>
+            <div className="text-white font-semibold mb-2">Status</div>
             <div className="flex flex-wrap gap-2">
               {statusOptions.map((s) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => setStatusFilter(s)}
-                  className={`px-3 py-1 rounded-full border ${
-                    statusFilter === s
-                      ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                      : "border-slate-200 text-slate-600"
-                  }`}
+                  className={
+                    "px-3 py-1 rounded-full border text-xs transition " +
+                    (statusFilter === s
+                      ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
+                      : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
+                  }
                 >
                   {s === "all" ? "Wszystkie" : STATUS_LABELS[s]}
                 </button>
               ))}
             </div>
           </div>
+
+          {/* Category */}
           <div>
-            <h2 className="font-semibold mb-1">Kategoria</h2>
+            <div className="text-white font-semibold mb-2">Kategoria</div>
             <div className="flex flex-wrap gap-2">
               {categoryOptions.map((c) => (
                 <button
                   key={c}
                   type="button"
                   onClick={() => setCategoryFilter(c)}
-                  className={`px-3 py-1 rounded-full border ${
-                    categoryFilter === c
-                      ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                      : "border-slate-200 text-slate-600"
-                  }`}
+                  className={
+                    "px-3 py-1 rounded-full border text-xs transition " +
+                    (categoryFilter === c
+                      ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
+                      : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
+                  }
                 >
                   {c === "all" ? "Wszystkie" : CATEGORY_LABELS[c as TaskCategory]}
                 </button>
@@ -404,445 +399,404 @@ export default function Tasks() {
             </div>
           </div>
 
-          {/* Szybkie dodanie zadania */}
+          {/* Quick add */}
           <div>
-            <h2 className="font-semibold mb-1">Szybkie dodanie zadania</h2>
+            <div className="text-white font-semibold mb-2">Szybkie dodanie</div>
             <div className="space-y-2">
               <input
                 type="text"
-                placeholder="Tytuł zadania..."
+                placeholder="Tytuł zadania…"
                 value={newTaskTitle}
                 onChange={(e) => setNewTaskTitle(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                className={inputBase}
               />
               <div className="flex gap-2">
                 <select
-                  className="flex-1 rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                  className={selectBase + " flex-1"}
                   value={newTaskCategory}
-                  onChange={(e) =>
-                    setNewTaskCategory(e.target.value as TaskCategory)
-                  }
+                  onChange={(e) => setNewTaskCategory(e.target.value as TaskCategory)}
                 >
                   {(
-                    [
-                      "FORMALNOSCI",
-                      "ORGANIZACJA",
-                      "USLUGI",
-                      "DEKORACJE",
-                      "LOGISTYKA",
-                      "DZIEN_SLUBU",
-                    ] as TaskCategory[]
+                    ["FORMALNOSCI", "ORGANIZACJA", "USLUGI", "DEKORACJE", "LOGISTYKA", "DZIEN_SLUBU"] as TaskCategory[]
                   ).map((c) => (
                     <option key={c} value={c}>
                       {CATEGORY_LABELS[c]}
                     </option>
                   ))}
                 </select>
+
                 <input
                   type="date"
                   value={newTaskDueDate}
                   onChange={(e) => setNewTaskDueDate(e.target.value)}
-                  className="w-[130px] rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                  className={inputBase + " w-[150px]"}
                 />
               </div>
+
               <button
                 type="button"
                 onClick={handleCreateTask}
                 disabled={savingId === "new"}
-                className="w-full rounded-lg bg-indigo-600 text-white py-1 text-xs hover:bg-indigo-700 disabled:opacity-60"
+                className={btnGold + " w-full"}
               >
-                {savingId === "new" ? "Dodawanie..." : "Dodaj zadanie"}
+                {savingId === "new" ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Dodawanie…
+                  </>
+                ) : (
+                  "Dodaj zadanie"
+                )}
               </button>
             </div>
           </div>
-        </section>
-
-        {/* Widoki */}
-        {viewMode === "list" && (
-          <section>
-            <h2 className="text-sm font-semibold mb-2">
-              Lista zadań ({filteredTasks.length})
-            </h2>
-            {loading && (
-              <p className="text-xs text-slate-500 mb-2">
-                Wczytywanie zadań...
-              </p>
-            )}
-            {filteredTasks.length === 0 && !loading && (
-              <p className="text-xs text-slate-500">
-                Brak zadań spełniających wybrane filtry. Dodaj zadanie lub
-                zmień filtry.
-              </p>
-            )}
-            <div className="space-y-3">
-              {filteredTasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="border border-slate-200 rounded-xl p-3 flex flex-col gap-2"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleStatus(task)}
-                        className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center ${
-                          task.status === "done"
-                            ? "bg-emerald-500 border-emerald-500"
-                            : task.status === "in_progress"
-                            ? "bg-amber-100 border-amber-400"
-                            : "bg-white border-slate-300"
-                        }`}
-                      >
-                        {task.status === "done" && (
-                          <span className="text-[10px] text-white">✓</span>
-                        )}
-                      </button>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm">
-                            {task.title}
-                          </span>
-                          {task.category && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                              {CATEGORY_LABELS[task.category]}
-                            </span>
-                          )}
-                          <span className="text-[10px] text-slate-400">
-                            {STATUS_LABELS[task.status]}
-                          </span>
-                        </div>
-                        {task.description && (
-                          <p className="text-xs text-slate-500 mt-1">
-                            {task.description}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 text-xs text-slate-500">
-                      <span>{formatDisplayDate(task.due_date)}</span>
-                      <input
-                        type="date"
-                        value={formatDateInputValue(task.due_date)}
-                        onChange={(e) =>
-                          handleUpdateTaskDate(task, e.target.value)
-                        }
-                        className="rounded-md border border-slate-200 px-2 py-0.5 text-[11px]"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTask(task)}
-                        className="text-[11px] text-slate-400 hover:text-red-500"
-                      >
-                        Usuń
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {viewMode === "timeline" && (
-          <section>
-            <h2 className="text-sm font-semibold mb-2">Oś czasu</h2>
-            {timelineGroups.keys.length === 0 &&
-              timelineGroups.noDate.length === 0 && (
-                <p className="text-xs text-slate-500">
-                  Brak zadań z przypisanymi datami. Ustaw daty w widoku listy,
-                  aby zobaczyć oś czasu.
-                </p>
-              )}
-
-            <div className="space-y-4">
-              {timelineGroups.keys.map((key) => {
-                const [year, month] = key.split("-");
-                const date = new Date(
-                  Number(year),
-                  Number(month) - 1,
-                  1
-                );
-                const label = date.toLocaleDateString("pl-PL", {
-                  year: "numeric",
-                  month: "long",
-                });
-                const tasksInGroup = timelineGroups.groups[key];
-
-                return (
-                  <div key={key}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-2 h-2 rounded-full bg-indigo-500" />
-                      <h3 className="text-xs font-semibold text-slate-700">
-                        {label}
-                      </h3>
-                    </div>
-                    <div className="ml-4 space-y-2">
-                      {tasksInGroup
-                        .slice()
-                        .sort((a, b) => {
-                          const da = parseDate(a.due_date)?.getTime() ?? 0;
-                          const db = parseDate(b.due_date)?.getTime() ?? 0;
-                          return da - db;
-                        })
-                        .map((task) => (
-                          <div
-                            key={task.id}
-                            className="border border-slate-200 rounded-lg p-2 flex justify-between gap-2 text-xs"
-                          >
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">
-                                  {task.title}
-                                </span>
-                                {task.category && (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                                    {CATEGORY_LABELS[task.category]}
-                                  </span>
-                                )}
-                              </div>
-                              {task.description && (
-                                <p className="text-[11px] text-slate-500 mt-0.5">
-                                  {task.description}
-                                </p>
-                              )}
-                            </div>
-                            <div className="text-[11px] text-slate-500 text-right">
-                              <div>{formatDisplayDate(task.due_date)}</div>
-                              <div>{STATUS_LABELS[task.status]}</div>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {timelineGroups.noDate.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="w-2 h-2 rounded-full bg-slate-400" />
-                    <h3 className="text-xs font-semibold text-slate-700">
-                      Bez ustalonego terminu
-                    </h3>
-                  </div>
-                  <div className="ml-4 space-y-2">
-                    {timelineGroups.noDate.map((task) => (
-                      <div
-                        key={task.id}
-                        className="border border-slate-200 rounded-lg p-2 flex justify-between gap-2 text-xs"
-                      >
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{task.title}</span>
-                            {task.category && (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                                {CATEGORY_LABELS[task.category]}
-                              </span>
-                            )}
-                          </div>
-                          {task.description && (
-                            <p className="text-[11px] text-slate-500 mt-0.5">
-                              {task.description}
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-500 text-right">
-                          {STATUS_LABELS[task.status]}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {viewMode === "calendar" && (
-  <section>
-    <div className="flex items-center justify-between mb-4">
-      <h2 className="text-sm font-semibold">Kalendarz zadań</h2>
-      <div className="flex items-center gap-2 text-xs">
-        <button
-          type="button"
-          onClick={() => changeMonth(-1)}
-          className="px-2 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
-        >
-          ← Poprzedni
-        </button>
-        <span className="font-medium text-slate-700">
-          {calendarMonth.getMonth() + 1 < 10 ? "0" : ""}
-          {calendarMonth.getMonth() + 1}/{calendarMonth.getFullYear()}
-        </span>
-        <button
-          type="button"
-          onClick={() => changeMonth(1)}
-          className="px-2 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
-        >
-          Następny →
-        </button>
-      </div>
-    </div>
-
-    {/* Ramka wokół kalendarza */}
-    <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-      <div className="overflow-x-auto text-[11px] bg-white">
-        <table className="w-full table-fixed border-collapse">
-          <thead>
-            <tr className="bg-slate-50">
-              {weekDayLabels.map((d) => (
-                <th
-                  key={d}
-                  className="border-b border-slate-200 py-2 text-center font-medium text-slate-600"
-                >
-                  {d}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {calendarWeeks.map((week, weekIndex) => (
-              <tr key={weekIndex} className="h-[90px]">
-                {week.map((cell, idx) => {
-                  if (!cell.date) {
-                    return (
-                      <td
-                        key={`empty-${weekIndex}-${idx}`}
-                        className="align-top border border-slate-100 bg-slate-50/40"
-                      />
-                    );
-                  }
-
-                  const day = cell.date.getDate();
-                  const hasTasks = cell.tasks.length > 0;
-                  const dateKey = cell.date.toISOString().slice(0, 10);
-                  const isSelected = selectedDateKey === dateKey;
-
-                  return (
-                    <td
-                      key={cell.date.toISOString()}
-                      onClick={() => setSelectedDateKey(dateKey)}
-                      className={`align-top border border-slate-100 p-1 cursor-pointer transition-colors ${
-                        isSelected
-                          ? "bg-indigo-50 border-indigo-300"
-                          : hasTasks
-                          ? "bg-slate-50"
-                          : "bg-white"
-                      } hover:bg-indigo-50/60`}
-                    >
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-[11px] font-semibold text-slate-700">
-                          {day}
-                        </span>
-                        {hasTasks && (
-                          <span className="text-[10px] text-indigo-600">
-                            {cell.tasks.length} zad.
-                          </span>
-                        )}
-                      </div>
-                      <div className="space-y-0.5">
-                        {cell.tasks.slice(0, 2).map((task) => (
-                          <div
-                            key={task.id}
-                            className="rounded px-1 py-[1px] bg-white text-[10px] text-slate-700 border border-slate-200 truncate"
-                            title={task.title}
-                          >
-                            {task.title}
-                          </div>
-                        ))}
-                        {cell.tasks.length > 2 && (
-                          <div className="text-[10px] text-slate-500">
-                            +{cell.tasks.length - 2} więcej
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    {/* Szczegóły wybranego dnia */}
-    {selectedDateKey && (
-      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-semibold text-slate-700">
-            Zadania na dzień{" "}
-            {new Date(selectedDateKey).toLocaleDateString("pl-PL", {
-              year: "numeric",
-              month: "long",
-              day: "2-digit",
-            })}
-          </h3>
-          <button
-            type="button"
-            onClick={() => setSelectedDateKey(null)}
-            className="text-[11px] text-slate-500 hover:text-slate-700"
-          >
-            Wyczyść
-          </button>
         </div>
-        <div className="space-y-2 text-xs">
-          {filteredTasks
-            .filter((t) => {
-              const d = parseDate(t.due_date);
-              if (!d) return false;
-              return d.toISOString().slice(0, 10) === selectedDateKey;
-            })
-            .map((task) => (
-              <div
-                key={task.id}
-                className="rounded-lg bg-white border border-slate-200 p-2 flex justify-between gap-2"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{task.title}</span>
-                    {task.category && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                        {CATEGORY_LABELS[task.category]}
-                      </span>
-                    )}
+      </div>
+
+      {/* Views */}
+      {viewMode === "list" && (
+        <div className={cardBase + " p-6 md:p-7"}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-white font-semibold">Lista zadań</h3>
+            <span className={chip}>{filteredTasks.length} szt.</span>
+          </div>
+
+          {loading && (
+            <div className="text-xs text-white/55 mb-3 inline-flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Wczytywanie…
+            </div>
+          )}
+
+          {filteredTasks.length === 0 && !loading && (
+            <p className="text-sm text-white/55">
+              Brak zadań spełniających filtry. Dodaj zadanie lub zmień filtry.
+            </p>
+          )}
+
+          <div className="space-y-3">
+            {filteredTasks.map((task) => (
+              <div key={task.id} className="rounded-2xl border border-white/10 bg-white/4 p-4">
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleStatus(task)}
+                      className={
+                        "mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center transition " +
+                        (task.status === "done"
+                          ? "bg-emerald-500/80 border-emerald-400/60"
+                          : task.status === "in_progress"
+                          ? "bg-amber-400/15 border-amber-300/40"
+                          : "bg-white/5 border-white/10 hover:bg-white/10")
+                      }
+                      title="Zmień status"
+                    >
+                      {task.status === "done" ? (
+                        <span className="text-[11px] text-white">✓</span>
+                      ) : task.status === "in_progress" ? (
+                        <span className="text-[10px] text-amber-200">•</span>
+                      ) : null}
+                    </button>
+
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-white">{task.title}</span>
+                        {task.category && <span className={chip}>{CATEGORY_LABELS[task.category]}</span>}
+                        <span className="text-xs text-white/55">{STATUS_LABELS[task.status]}</span>
+                        {savingId === task.id && (
+                          <span className="text-xs text-white/45 inline-flex items-center gap-2">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            zapis…
+                          </span>
+                        )}
+                      </div>
+                      {task.description && (
+                        <p className="text-sm text-white/60 mt-2">{task.description}</p>
+                      )}
+                    </div>
                   </div>
-                  {task.description && (
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      {task.description}
-                    </p>
-                  )}
-                </div>
-                <div className="text-[11px] text-slate-500 text-right">
-                  <div>{STATUS_LABELS[task.status]}</div>
+
+                  <div className="flex flex-col items-start md:items-end gap-2">
+                    <div className="text-xs text-white/55">{formatDisplayDate(task.due_date)}</div>
+                    <input
+                      type="date"
+                      value={formatDateInputValue(task.due_date)}
+                      onChange={(e) => handleUpdateTaskDate(task, e.target.value)}
+                      className={inputBase + " w-[170px]"}
+                      title="Zmień termin"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTask(task)}
+                      className="inline-flex items-center gap-2 text-xs text-white/55 hover:text-red-200"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Usuń
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
-          {filteredTasks.filter((t) => {
-            const d = parseDate(t.due_date);
-            if (!d) return false;
-            return d.toISOString().slice(0, 10) === selectedDateKey;
-          }).length === 0 && (
-            <p className="text-[11px] text-slate-500">
-              Brak zadań przypisanych do tego dnia.
+          </div>
+        </div>
+      )}
+
+      {viewMode === "timeline" && (
+        <div className={cardBase + " p-6 md:p-7"}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-white font-semibold">Oś czasu</h3>
+            <span className={chip}>
+              {timelineGroups.keys.length + (timelineGroups.noDate.length ? 1 : 0)} grup
+            </span>
+          </div>
+
+          {timelineGroups.keys.length === 0 && timelineGroups.noDate.length === 0 && (
+            <p className="text-sm text-white/55">
+              Brak zadań z datami. Ustaw terminy w widoku listy, aby zobaczyć oś czasu.
+            </p>
+          )}
+
+          <div className="space-y-5">
+            {timelineGroups.keys.map((key) => {
+              const [year, month] = key.split("-");
+              const date = new Date(Number(year), Number(month) - 1, 1);
+              const label = date.toLocaleDateString("pl-PL", { year: "numeric", month: "long" });
+              const tasksInGroup = timelineGroups.groups[key];
+
+              return (
+                <div key={key}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-2 h-2 rounded-full bg-[#d7b45a]" />
+                    <h4 className="text-sm font-semibold text-white">{label}</h4>
+                  </div>
+
+                  <div className="ml-3 space-y-2">
+                    {tasksInGroup
+                      .slice()
+                      .sort((a, b) => (parseDate(a.due_date)?.getTime() ?? 0) - (parseDate(b.due_date)?.getTime() ?? 0))
+                      .map((task) => (
+                        <div
+                          key={task.id}
+                          className="rounded-2xl border border-white/10 bg-white/4 p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-semibold text-white truncate">{task.title}</span>
+                              {task.category && <span className={chip}>{CATEGORY_LABELS[task.category]}</span>}
+                              <span className="text-xs text-white/55">{STATUS_LABELS[task.status]}</span>
+                            </div>
+                            {task.description && (
+                              <p className="text-sm text-white/60 mt-1">{task.description}</p>
+                            )}
+                          </div>
+
+                          <div className="text-xs text-white/55 md:text-right">
+                            {formatDisplayDate(task.due_date)}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {timelineGroups.noDate.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 rounded-full bg-white/30" />
+                  <h4 className="text-sm font-semibold text-white">Bez ustalonego terminu</h4>
+                </div>
+
+                <div className="ml-3 space-y-2">
+                  {timelineGroups.noDate.map((task) => (
+                    <div
+                      key={task.id}
+                      className="rounded-2xl border border-white/10 bg-white/4 p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-white truncate">{task.title}</span>
+                          {task.category && <span className={chip}>{CATEGORY_LABELS[task.category]}</span>}
+                          <span className="text-xs text-white/55">{STATUS_LABELS[task.status]}</span>
+                        </div>
+                        {task.description && (
+                          <p className="text-sm text-white/60 mt-1">{task.description}</p>
+                        )}
+                      </div>
+
+                      <div className="text-xs text-white/55 md:text-right">
+                        Brak terminu
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {viewMode === "calendar" && (
+        <div className={cardBase + " p-6 md:p-7"}>
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h3 className="text-white font-semibold">Kalendarz zadań</h3>
+
+            <div className="flex items-center gap-2 text-xs">
+              <button type="button" onClick={() => changeMonth(-1)} className={btnSecondary}>
+                ← Poprzedni
+              </button>
+              <span className={chip}>
+                {String(calendarMonth.getMonth() + 1).padStart(2, "0")}/{calendarMonth.getFullYear()}
+              </span>
+              <button type="button" onClick={() => changeMonth(1)} className={btnSecondary}>
+                Następny →
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 overflow-hidden bg-black/10">
+            <div className="overflow-x-auto">
+              <table className="w-full table-fixed border-collapse text-xs">
+                <thead>
+                  <tr className="bg-white/5">
+                    {weekDayLabels.map((d) => (
+                      <th key={d} className="border-b border-white/10 py-3 text-center font-semibold text-white/70">
+                        {d}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {calendarWeeks.map((week, weekIndex) => (
+                    <tr key={weekIndex} className="h-[96px]">
+                      {week.map((cell, idx) => {
+                        if (!cell.date) {
+                          return (
+                            <td
+                              key={`empty-${weekIndex}-${idx}`}
+                              className="align-top border border-white/5 bg-white/2"
+                            />
+                          );
+                        }
+
+                        const day = cell.date.getDate();
+                        const hasTasks = cell.tasks.length > 0;
+                        const dateKey = cell.date.toISOString().slice(0, 10);
+                        const isSelected = selectedDateKey === dateKey;
+
+                        return (
+                          <td
+                            key={cell.date.toISOString()}
+                            onClick={() => setSelectedDateKey(dateKey)}
+                            className={
+                              "align-top border border-white/5 p-2 cursor-pointer transition " +
+                              (isSelected
+                                ? "bg-[#c8a04b]/12 border-[#c8a04b]/25"
+                                : hasTasks
+                                ? "bg-white/4"
+                                : "bg-transparent") +
+                              " hover:bg-[#c8a04b]/10"
+                            }
+                          >
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="text-xs font-semibold text-white/80">{day}</span>
+                              {hasTasks && <span className="text-[11px] text-[#d7b45a]">{cell.tasks.length} zad.</span>}
+                            </div>
+
+                            <div className="space-y-1">
+                              {cell.tasks.slice(0, 2).map((task) => (
+                                <div
+                                  key={task.id}
+                                  className="rounded-lg px-2 py-1 bg-black/20 border border-white/10 text-[11px] text-white/80 truncate"
+                                  title={task.title}
+                                >
+                                  {task.title}
+                                </div>
+                              ))}
+                              {cell.tasks.length > 2 && (
+                                <div className="text-[11px] text-white/55">
+                                  +{cell.tasks.length - 2} więcej
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Szczegóły dnia */}
+          {selectedDateKey && (
+            <div className="mt-4 rounded-2xl border border-white/10 bg-white/4 p-5">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-white font-semibold">
+                  Zadania na dzień{" "}
+                  <span className="text-[#d7b45a]">
+                    {new Date(selectedDateKey).toLocaleDateString("pl-PL", {
+                      year: "numeric",
+                      month: "long",
+                      day: "2-digit",
+                    })}
+                  </span>
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDateKey(null)}
+                  className="text-xs text-white/55 hover:text-white"
+                >
+                  Wyczyść
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {filteredTasks
+                  .filter((t) => {
+                    const d = parseDate(t.due_date);
+                    if (!d) return false;
+                    return d.toISOString().slice(0, 10) === selectedDateKey;
+                  })
+                  .map((task) => (
+                    <div
+                      key={task.id}
+                      className="rounded-2xl border border-white/10 bg-black/20 p-4 flex items-start justify-between gap-3"
+                    >
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-white">{task.title}</span>
+                          {task.category && <span className={chip}>{CATEGORY_LABELS[task.category]}</span>}
+                        </div>
+                        {task.description && (
+                          <p className="text-sm text-white/60 mt-2">{task.description}</p>
+                        )}
+                      </div>
+                      <div className="text-xs text-white/55">{STATUS_LABELS[task.status]}</div>
+                    </div>
+                  ))}
+
+                {filteredTasks.filter((t) => {
+                  const d = parseDate(t.due_date);
+                  if (!d) return false;
+                  return d.toISOString().slice(0, 10) === selectedDateKey;
+                }).length === 0 && (
+                  <p className="text-sm text-white/55">Brak zadań przypisanych do tego dnia.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {filteredTasks.length === 0 && !loading && (
+            <p className="mt-4 text-sm text-white/55">
+              Brak zadań spełniających filtry – dodaj zadanie w widoku listy.
             </p>
           )}
         </div>
-      </div>
-    )}
-
-    {filteredTasks.length === 0 && !loading && (
-      <p className="mt-3 text-xs text-slate-500">
-        Brak zadań spełniających filtry – dodaj zadanie w widoku listy.
-      </p>
-    )}
-  </section>
-)}
-
-
-
-
-      </div>
+      )}
     </div>
   );
 }

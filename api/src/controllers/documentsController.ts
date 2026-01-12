@@ -1,4 +1,29 @@
 import { Request, Response } from "express";
+import { Document } from "../models/Document";
+
+export const createDocument = async (req: Request, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { name, description, type, status } = req.body;
+
+    if (!name || !type) {
+      return res.status(400).json({ message: "Brak wymaganych pól" });
+    }
+
+    const doc = await Document.create({
+      event_id: eventId,
+      name,
+      description: description ?? null,
+      type, // civil | church | custom
+      status: status ?? "pending",
+    });
+
+    res.status(201).json(doc);
+  } catch (err) {
+    console.error("❌ createDocument error:", err);
+    res.status(500).json({ message: "Nie udało się utworzyć dokumentu" });
+  }
+};
 
 export const getDefaultCivilDocuments = async (_req: Request, res: Response) => {
   const defaults = [

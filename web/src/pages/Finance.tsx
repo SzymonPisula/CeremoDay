@@ -1,6 +1,23 @@
 // CeremoDay/web/src/pages/Finance.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import {
+  Wallet,
+  Sparkles,
+  TrendingUp,
+  TrendingDown,
+  ArrowRightLeft,
+  PiggyBank,
+  Search,
+  Filter,
+  ArrowUpDown,
+  Download,
+  Save,
+  Pencil,
+  Trash2,
+  X,
+  Loader2,
+} from "lucide-react";
 import { api } from "../lib/api";
 
 type ExpenseCategory =
@@ -12,6 +29,14 @@ type ExpenseCategory =
   | "DECOR"
   | "PHOTO_VIDEO"
   | "OTHER";
+
+  type SortField =
+  | "name"
+  | "planned_amount"
+  | "actual_amount"
+  | "due_date"
+  | "paid_date"
+  | "category";
 
 type Budget = {
   id: string;
@@ -121,9 +146,8 @@ const Finance: React.FC = () => {
   const [filterCategory, setFilterCategory] = useState<ExpenseCategory | "all">("all");
   const [filterPaidStatus, setFilterPaidStatus] = useState<"all" | "paid" | "unpaid">("all");
 
-  const [sortField, setSortField] = useState<
-    "name" | "planned_amount" | "actual_amount" | "due_date" | "paid_date" | "category"
-  >("due_date");
+  const [sortField, setSortField] = useState<SortField>("due_date");
+
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   // -------------------------
@@ -155,6 +179,48 @@ const Finance: React.FC = () => {
   const [editNotes, setEditNotes] = useState("");
 
   // -------------------------
+  // UI helpers (CeremoDay vibe)
+  // -------------------------
+  const cardBase =
+    "rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md " +
+    "shadow-[0_24px_80px_rgba(0,0,0,0.45)]";
+
+  const inputBase =
+    "w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-white placeholder:text-white/35 " +
+    "outline-none focus:border-[#c8a04b]/50 focus:ring-2 focus:ring-[#c8a04b]/15 transition";
+
+  const selectBase =
+    inputBase +
+    " pr-9 appearance-none " +
+    "[&>option]:bg-[#07160f] [&>option]:text-white";
+
+  const chip =
+    "inline-flex items-center gap-2 px-3 py-1 rounded-full " +
+    "border border-white/10 bg-white/5 text-white/80 text-xs";
+
+  const btnGold =
+    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " +
+    "bg-gradient-to-r from-[#d7b45a] to-[#b98b2f] text-[#0b1b14] " +
+    "shadow-[0_10px_30px_-18px_rgba(215,180,90,0.9)] " +
+    "hover:brightness-105 active:translate-y-[1px] " +
+    "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/45 " +
+    "transition disabled:opacity-60";
+
+  const btnSecondary =
+    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium " +
+    "bg-white/5 text-white border border-white/10 " +
+    "hover:bg-white/10 hover:border-white/15 " +
+    "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/40 " +
+    "transition disabled:opacity-60";
+
+  const btnDanger =
+    "inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium " +
+    "bg-red-500/10 text-red-200 border border-red-500/20 " +
+    "hover:bg-red-500/15 hover:border-red-500/30 " +
+    "focus:outline-none focus:ring-2 focus:ring-red-400/40 " +
+    "transition disabled:opacity-60";
+
+  // -------------------------
   // ŁADOWANIE DANYCH
   // -------------------------
   const loadAll = useCallback(async () => {
@@ -174,9 +240,7 @@ const Finance: React.FC = () => {
       setSummary(summaryRes ?? null);
 
       if (budgetRes) {
-        setBudgetInitial(
-          budgetRes.initial_budget != null ? String(budgetRes.initial_budget) : ""
-        );
+        setBudgetInitial(budgetRes.initial_budget != null ? String(budgetRes.initial_budget) : "");
         setBudgetCurrency(budgetRes.currency || "PLN");
         setBudgetNotes(budgetRes.notes ?? "");
       } else {
@@ -186,8 +250,7 @@ const Finance: React.FC = () => {
       }
     } catch (err) {
       console.error(err);
-      const msg =
-        err instanceof Error ? err.message : "Nie udało się załadować danych finansowych.";
+      const msg = err instanceof Error ? err.message : "Nie udało się załadować danych finansowych.";
       setError(msg);
 
       if (err instanceof Error && err.message === "Niepoprawny token") {
@@ -227,36 +290,39 @@ const Finance: React.FC = () => {
       result = result.filter((e) => !e.paid_date);
     }
 
-    result.sort((a, b) => {
-      const dir = sortDirection === "asc" ? 1 : -1;
+    const getSortValue = (x: Expense, field: SortField): string | number => {
+  const getNum = (v: number | string | null) => toNumberOrNull(v) ?? 0;
+  const getDate = (d: string | null) => (d ? Date.parse(d) : 0);
 
-      const getNum = (x: number | string | null) => toNumberOrNull(x) ?? 0;
-      const getDate = (d: string | null) => (d ? Date.parse(d) : 0);
+  switch (field) {
+    case "name":
+      return (x.name ?? "").toLowerCase();
+    case "category":
+      return (x.category ?? "").toLowerCase();
+    case "planned_amount":
+      return getNum(x.planned_amount);
+    case "actual_amount":
+      return getNum(x.actual_amount);
+    case "due_date":
+      return getDate(x.due_date);
+    case "paid_date":
+      return getDate(x.paid_date);
+    default: {
+      const _exhaustive: never = field;
+      return _exhaustive;
+    }
+  }
+};
 
-      let av: string | number = 0;
-      let bv: string | number = 0;
+result.sort((a, b) => {
+  const dir = sortDirection === "asc" ? 1 : -1;
+  const av = getSortValue(a, sortField);
+  const bv = getSortValue(b, sortField);
 
-      switch (sortField) {
-        case "name":
-        case "category":
-          av = String(a[sortField] ?? "").toLowerCase();
-          bv = String(b[sortField] ?? "").toLowerCase();
-          break;
-        case "planned_amount":
-        case "actual_amount":
-          av = getNum(a[sortField]);
-          bv = getNum(b[sortField]);
-          break;
-        case "due_date":
-        case "paid_date":
-          av = getDate(a[sortField]);
-          bv = getDate(b[sortField]);
-          break;
-      }
+  if (av === bv) return 0;
+  return av > bv ? dir : -dir;
+});
 
-      if (av === bv) return 0;
-      return av > bv ? dir : -dir;
-    });
 
     return result;
   }, [expenses, filterSearch, filterCategory, filterPaidStatus, sortField, sortDirection]);
@@ -273,8 +339,7 @@ const Finance: React.FC = () => {
 
     try {
       const payload: BudgetPayload = {
-        initial_budget:
-          budgetInitial.trim() === "" ? null : Number(budgetInitial.replace(",", ".")),
+        initial_budget: budgetInitial.trim() === "" ? null : Number(budgetInitial.replace(",", ".")),
         currency: budgetCurrency,
         notes: budgetNotes.trim() || null,
       };
@@ -436,41 +501,84 @@ const Finance: React.FC = () => {
   // RENDER
   // -------------------------
   if (!eventId) {
-    return <div className="p-4 text-red-600">Brak identyfikatora wydarzenia w adresie URL.</div>;
+    return <div className="p-4 text-red-200">Brak identyfikatora wydarzenia w adresie URL.</div>;
   }
 
+  const currency = summary?.currency || budgetCurrency || "PLN";
+
   return (
-    <div className="p-4 md:p-6 space-y-6">
-      <h1 className="text-2xl font-semibold mb-2">Finanse</h1>
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 grid place-items-center">
+            <Wallet className="w-5 h-5 text-[#d7b45a]" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-white">Finanse</h2>
+            <p className="text-sm text-white/60">
+              Budżet, wydatki, filtrowanie i eksport XLSX.
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleExportXlsx}
+          disabled={isExporting}
+          className={btnSecondary}
+          title="Eksportuj XLSX"
+        >
+          {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          {isExporting ? "Eksport…" : "Eksportuj XLSX"}
+        </button>
+      </div>
 
       {error && (
-        <div className="rounded border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-700">
-          {error}
+        <div className={`${cardBase} p-4 border-red-500/20 bg-red-500/10`}>
+          <div className="text-sm text-red-200">{error}</div>
         </div>
       )}
 
-      {loading && <div className="text-sm text-gray-500">Ładowanie danych...</div>}
+      {loading && (
+        <div className={`${cardBase} p-4`}>
+          <div className="text-sm text-white/65 inline-flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Ładowanie danych…
+          </div>
+        </div>
+      )}
 
-      {/* BUDŻET */}
-      <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold mb-3">Budżet wydarzenia</h2>
+      {/* Budget */}
+      <section className={`${cardBase} p-6 md:p-7`}>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2">
+            <PiggyBank className="w-5 h-5 text-[#d7b45a]" />
+            <h3 className="text-white font-semibold text-lg">Budżet wydarzenia</h3>
+          </div>
+          <span className={chip}>
+            <Sparkles className="w-4 h-4 text-[#d7b45a]" />
+            {currency}
+          </span>
+        </div>
 
         <form onSubmit={handleSaveBudget} className="grid gap-3 md:grid-cols-3 items-end">
           <div>
-            <label className="block text-sm font-medium mb-1">Budżet początkowy</label>
+            <label className="block text-xs text-white/70 mb-1">Budżet początkowy</label>
             <input
               type="number"
               step="0.01"
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className={inputBase}
               value={budgetInitial}
               onChange={(e) => setBudgetInitial(e.target.value)}
+              placeholder="np. 45000"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Waluta</label>
+            <label className="block text-xs text-white/70 mb-1">Waluta</label>
             <select
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className={selectBase}
               value={budgetCurrency}
               onChange={(e) => setBudgetCurrency(e.target.value)}
             >
@@ -481,51 +589,57 @@ const Finance: React.FC = () => {
           </div>
 
           <div className="md:row-span-2">
-            <label className="block text-sm font-medium mb-1">Notatki</label>
+            <label className="block text-xs text-white/70 mb-1">Notatki</label>
             <textarea
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm h-[70px]"
+              className={inputBase + " min-h-[92px] resize-none"}
               value={budgetNotes}
               onChange={(e) => setBudgetNotes(e.target.value)}
+              placeholder="Uwagi do budżetu…"
             />
           </div>
 
-          <div className="md:col-span-2">
-            <button
-              type="submit"
-              disabled={isSavingBudget}
-              className="inline-flex items-center rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
-            >
-              {isSavingBudget ? "Zapisywanie..." : "Zapisz budżet"}
+          <div className="md:col-span-2 flex items-center gap-3">
+            <button type="submit" disabled={isSavingBudget} className={btnGold}>
+              {isSavingBudget ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {isSavingBudget ? "Zapisywanie…" : "Zapisz budżet"}
             </button>
+
+            <div className="text-xs text-white/55">
+              Budżet wpływa na “Pozostały budżet” w podsumowaniu.
+            </div>
           </div>
         </form>
 
         {summary && (
-          <div className="mt-4 grid gap-3 md:grid-cols-4 text-sm">
-            <div className="rounded border border-gray-200 bg-gray-50 p-2">
-              <div className="text-gray-500">Suma planowana</div>
-              <div className="font-semibold">
+          <div className="mt-5 grid gap-3 md:grid-cols-4">
+            <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
+              <div className="text-xs text-white/55 mb-1">Suma planowana</div>
+              <div className="text-white text-lg font-semibold inline-flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-[#d7b45a]" />
                 {summary.total_planned.toFixed(2)} {summary.currency}
               </div>
             </div>
 
-            <div className="rounded border border-gray-200 bg-gray-50 p-2">
-              <div className="text-gray-500">Suma faktyczna</div>
-              <div className="font-semibold">
+            <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
+              <div className="text-xs text-white/55 mb-1">Suma faktyczna</div>
+              <div className="text-white text-lg font-semibold inline-flex items-center gap-2">
+                <TrendingDown className="w-4 h-4 text-[#d7b45a]" />
                 {summary.total_actual.toFixed(2)} {summary.currency}
               </div>
             </div>
 
-            <div className="rounded border border-gray-200 bg-gray-50 p-2">
-              <div className="text-gray-500">Różnica (plan - faktycznie)</div>
-              <div className="font-semibold">
+            <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
+              <div className="text-xs text-white/55 mb-1">Różnica (plan - faktycznie)</div>
+              <div className="text-white text-lg font-semibold inline-flex items-center gap-2">
+                <ArrowRightLeft className="w-4 h-4 text-[#d7b45a]" />
                 {summary.diff_planned_actual.toFixed(2)} {summary.currency}
               </div>
             </div>
 
-            <div className="rounded border border-gray-200 bg-gray-50 p-2">
-              <div className="text-gray-500">Pozostały budżet</div>
-              <div className="font-semibold">
+            <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
+              <div className="text-xs text-white/55 mb-1">Pozostały budżet</div>
+              <div className="text-white text-lg font-semibold inline-flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#d7b45a]" />
                 {summary.remaining_budget != null
                   ? `${summary.remaining_budget.toFixed(2)} ${summary.currency}`
                   : "—"}
@@ -535,23 +649,37 @@ const Finance: React.FC = () => {
         )}
       </section>
 
-      {/* FILTRY + EKSPORT */}
-      <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-end gap-3">
-          <div className="flex-1">
-            <label className="block text-sm font-medium mb-1">Szukaj (nazwa, usługodawca, notatki)</label>
-            <input
-              type="text"
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
-              value={filterSearch}
-              onChange={(e) => setFilterSearch(e.target.value)}
-            />
+      {/* Filters */}
+      <section className={`${cardBase} p-6 md:p-7`}>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2">
+            <Filter className="w-5 h-5 text-[#d7b45a]" />
+            <h3 className="text-white font-semibold text-lg">Filtry i sortowanie</h3>
+          </div>
+          <span className={chip}>{filteredAndSortedExpenses.length} pozycji</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+          <div className="md:col-span-2">
+            <label className="block text-xs text-white/70 mb-1">
+              Szukaj (nazwa / usługodawca / notatki)
+            </label>
+            <div className="relative">
+              <Search className="w-4 h-4 text-white/35 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                className={inputBase + " pl-10"}
+                value={filterSearch}
+                onChange={(e) => setFilterSearch(e.target.value)}
+                placeholder="np. fotograf, umowa, zaliczka…"
+              />
+            </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Kategoria</label>
+            <label className="block text-xs text-white/70 mb-1">Kategoria</label>
             <select
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className={selectBase}
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value as ExpenseCategory | "all")}
             >
@@ -565,9 +693,9 @@ const Finance: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Status płatności</label>
+            <label className="block text-xs text-white/70 mb-1">Status płatności</label>
             <select
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className={selectBase}
               value={filterPaidStatus}
               onChange={(e) => setFilterPaidStatus(e.target.value as "all" | "paid" | "unpaid")}
             >
@@ -578,9 +706,9 @@ const Finance: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Sortuj według</label>
+            <label className="block text-xs text-white/70 mb-1">Sortuj</label>
             <select
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className={selectBase}
               value={sortField}
               onChange={(e) =>
                 setSortField(
@@ -604,9 +732,9 @@ const Finance: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Kierunek</label>
+            <label className="block text-xs text-white/70 mb-1">Kierunek</label>
             <select
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className={selectBase}
               value={sortDirection}
               onChange={(e) => setSortDirection(e.target.value as "asc" | "desc")}
             >
@@ -614,41 +742,71 @@ const Finance: React.FC = () => {
               <option value="desc">Malejąco</option>
             </select>
           </div>
+        </div>
 
-          <div className="md:ml-auto">
+        {(filterSearch || filterCategory !== "all" || filterPaidStatus !== "all") && (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-white/55">Aktywne filtry:</span>
+            {filterSearch && <span className={chip}>Szukaj: {filterSearch}</span>}
+            {filterCategory !== "all" && (
+              <span className={chip}>
+                Kategoria: {CATEGORY_OPTIONS.find((x) => x.value === filterCategory)?.label ?? filterCategory}
+              </span>
+            )}
+            {filterPaidStatus !== "all" && <span className={chip}>Płatność: {filterPaidStatus}</span>}
             <button
               type="button"
-              onClick={handleExportXlsx}
-              disabled={isExporting}
-              className="mt-4 md:mt-0 inline-flex items-center rounded border border-emerald-600 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+              className={btnSecondary}
+              onClick={() => {
+                setFilterSearch("");
+                setFilterCategory("all");
+                setFilterPaidStatus("all");
+              }}
             >
-              {isExporting ? "Eksport..." : "Eksportuj XLSX"}
+              <X className="w-4 h-4" />
+              Wyczyść filtry
             </button>
           </div>
-        </div>
+        )}
       </section>
 
-      {/* FORMULARZ WYDATKÓW */}
-      <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold mb-3">{editingId ? "Edytuj wydatek" : "Dodaj wydatek"}</h2>
+      {/* Add / Edit expense */}
+      <section className={`${cardBase} p-6 md:p-7`}>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2">
+            <ArrowUpDown className="w-5 h-5 text-[#d7b45a]" />
+            <h3 className="text-white font-semibold text-lg">
+              {editingId ? "Edytuj wydatek" : "Dodaj wydatek"}
+            </h3>
+          </div>
+          {editingId ? (
+            <span className={chip}>
+              <Pencil className="w-4 h-4 text-[#d7b45a]" />
+              Tryb edycji
+            </span>
+          ) : (
+            <span className={chip}>Nowy</span>
+          )}
+        </div>
 
         <form onSubmit={handleSaveExpense} className="grid gap-3 md:grid-cols-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Nazwa *</label>
+            <label className="block text-xs text-white/70 mb-1">Nazwa *</label>
             <input
               type="text"
               required
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className={inputBase}
               value={editingId ? editName : newName}
               onChange={(e) => (editingId ? setEditName(e.target.value) : setNewName(e.target.value))}
+              placeholder="np. Zaliczka fotograf"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Kategoria *</label>
+            <label className="block text-xs text-white/70 mb-1">Kategoria *</label>
             <select
               required
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className={selectBase}
               value={editingId ? editCategory : newCategory}
               onChange={(e) => {
                 const val = e.target.value as ExpenseCategory;
@@ -665,81 +823,79 @@ const Finance: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Kwota planowana</label>
+            <label className="block text-xs text-white/70 mb-1">Kwota planowana</label>
             <input
               type="number"
               step="0.01"
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className={inputBase}
               value={editingId ? editPlannedAmount : newPlannedAmount}
               onChange={(e) => (editingId ? setEditPlannedAmount(e.target.value) : setNewPlannedAmount(e.target.value))}
+              placeholder="np. 3500"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Kwota faktyczna</label>
+            <label className="block text-xs text-white/70 mb-1">Kwota faktyczna</label>
             <input
               type="number"
               step="0.01"
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className={inputBase}
               value={editingId ? editActualAmount : newActualAmount}
               onChange={(e) => (editingId ? setEditActualAmount(e.target.value) : setNewActualAmount(e.target.value))}
+              placeholder="np. 3200"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Termin (plan)</label>
+            <label className="block text-xs text-white/70 mb-1">Termin (plan)</label>
             <input
               type="date"
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className={inputBase}
               value={editingId ? editDueDate : newDueDate}
               onChange={(e) => (editingId ? setEditDueDate(e.target.value) : setNewDueDate(e.target.value))}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Data płatności</label>
+            <label className="block text-xs text-white/70 mb-1">Data płatności</label>
             <input
               type="date"
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className={inputBase}
               value={editingId ? editPaidDate : newPaidDate}
               onChange={(e) => (editingId ? setEditPaidDate(e.target.value) : setNewPaidDate(e.target.value))}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Usługodawca</label>
+            <label className="block text-xs text-white/70 mb-1">Usługodawca</label>
             <input
               type="text"
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className={inputBase}
               value={editingId ? editVendorName : newVendorName}
               onChange={(e) => (editingId ? setEditVendorName(e.target.value) : setNewVendorName(e.target.value))}
+              placeholder="np. Studio XYZ"
             />
           </div>
 
           <div className="md:row-span-2">
-            <label className="block text-sm font-medium mb-1">Notatki</label>
+            <label className="block text-xs text-white/70 mb-1">Notatki</label>
             <textarea
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm h-[70px]"
+              className={inputBase + " min-h-[92px] resize-none"}
               value={editingId ? editNotes : newNotes}
               onChange={(e) => (editingId ? setEditNotes(e.target.value) : setNewNotes(e.target.value))}
+              placeholder="Warunki, numer umowy, co obejmuje…"
             />
           </div>
 
-          <div className="md:col-span-3 flex items-center gap-2">
-            <button
-              type="submit"
-              disabled={isSavingExpense}
-              className="inline-flex items-center rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
-            >
-              {isSavingExpense ? "Zapisywanie..." : editingId ? "Zapisz zmiany" : "Dodaj wydatek"}
+          <div className="md:col-span-3 flex flex-wrap items-center gap-2">
+            <button type="submit" disabled={isSavingExpense} className={btnGold}>
+              {isSavingExpense ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {isSavingExpense ? "Zapisywanie…" : editingId ? "Zapisz zmiany" : "Dodaj wydatek"}
             </button>
 
             {editingId && (
-              <button
-                type="button"
-                onClick={clearEditExpense}
-                className="inline-flex items-center rounded border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
+              <button type="button" onClick={clearEditExpense} className={btnSecondary}>
+                <X className="w-4 h-4" />
                 Anuluj edycję
               </button>
             )}
@@ -747,75 +903,124 @@ const Finance: React.FC = () => {
         </form>
       </section>
 
-      {/* LISTA WYDATKÓW */}
-      <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold mb-3">Lista wydatków</h2>
+      {/* List */}
+      <section className={`${cardBase} p-6 md:p-7`}>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-[#d7b45a]" />
+            <h3 className="text-white font-semibold text-lg">Lista wydatków</h3>
+          </div>
+          <span className={chip}>{filteredAndSortedExpenses.length} pozycji</span>
+        </div>
 
         {filteredAndSortedExpenses.length === 0 ? (
-          <div className="text-sm text-gray-500">Brak wydatków spełniających kryteria.</div>
+          <div className="text-sm text-white/55">Brak wydatków spełniających kryteria.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm border-collapse">
               <thead>
-                <tr className="bg-gray-50">
-                  <th className="border-b border-gray-200 px-2 py-1 text-left">Nazwa</th>
-                  <th className="border-b border-gray-200 px-2 py-1 text-left">Kategoria</th>
-                  <th className="border-b border-gray-200 px-2 py-1 text-right">Plan</th>
-                  <th className="border-b border-gray-200 px-2 py-1 text-right">Faktycznie</th>
-                  <th className="border-b border-gray-200 px-2 py-1 text-left">Usługodawca</th>
-                  <th className="border-b border-gray-200 px-2 py-1 text-left">Termin</th>
-                  <th className="border-b border-gray-200 px-2 py-1 text-left">Płatność</th>
-                  <th className="border-b border-gray-200 px-2 py-1 text-left">Notatki</th>
-                  <th className="border-b border-gray-200 px-2 py-1 text-right">Akcje</th>
+                <tr className="bg-white/5">
+                  <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">
+                    Nazwa
+                  </th>
+                  <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">
+                    Kategoria
+                  </th>
+                  <th className="border-b border-white/10 px-3 py-3 text-right font-semibold text-white/70">
+                    Plan
+                  </th>
+                  <th className="border-b border-white/10 px-3 py-3 text-right font-semibold text-white/70">
+                    Faktycznie
+                  </th>
+                  <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">
+                    Usługodawca
+                  </th>
+                  <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">
+                    Termin
+                  </th>
+                  <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">
+                    Płatność
+                  </th>
+                  <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">
+                    Notatki
+                  </th>
+                  <th className="border-b border-white/10 px-3 py-3 text-right font-semibold text-white/70">
+                    Akcje
+                  </th>
                 </tr>
               </thead>
 
               <tbody>
                 {filteredAndSortedExpenses.map((e) => {
-                  const catLabel =
-                    CATEGORY_OPTIONS.find((c) => c.value === e.category)?.label || e.category;
+                  const catLabel = CATEGORY_OPTIONS.find((c) => c.value === e.category)?.label || e.category;
+                  const isPaid = !!e.paid_date;
 
                   return (
-                    <tr key={e.id} className="hover:bg-gray-50">
-                      <td className="border-b border-gray-100 px-2 py-1">{e.name}</td>
-                      <td className="border-b border-gray-100 px-2 py-1">{catLabel}</td>
-                      <td className="border-b border-gray-100 px-2 py-1 text-right">
-                        {money(e.planned_amount)}
+                    <tr key={e.id} className="hover:bg-white/4 transition">
+                      <td className="border-b border-white/5 px-3 py-3 text-white/85">
+                        <div className="font-semibold text-white">{e.name}</div>
+                        {(e.vendor_name || e.due_date) && (
+                          <div className="text-xs text-white/45 mt-1">
+                            {e.vendor_name ? `• ${e.vendor_name}` : ""}
+                            {e.vendor_name && e.due_date ? "  " : ""}
+                            {e.due_date ? `• termin: ${e.due_date}` : ""}
+                          </div>
+                        )}
                       </td>
-                      <td className="border-b border-gray-100 px-2 py-1 text-right">
-                        {money(e.actual_amount)}
+
+                      <td className="border-b border-white/5 px-3 py-3 text-white/75">{catLabel}</td>
+
+                      <td className="border-b border-white/5 px-3 py-3 text-right text-white/85">
+                        {money(e.planned_amount)} {currency}
                       </td>
-                      <td className="border-b border-gray-100 px-2 py-1">{e.vendor_name || "—"}</td>
-                      <td className="border-b border-gray-100 px-2 py-1">{e.due_date || "—"}</td>
-                      <td className="border-b border-gray-100 px-2 py-1">
-                        {e.paid_date ? (
-                          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                            {e.paid_date}
+
+                      <td className="border-b border-white/5 px-3 py-3 text-right text-white/85">
+                        {money(e.actual_amount)} {currency}
+                      </td>
+
+                      <td className="border-b border-white/5 px-3 py-3 text-white/75">{e.vendor_name || "—"}</td>
+
+                      <td className="border-b border-white/5 px-3 py-3 text-white/75">{e.due_date || "—"}</td>
+
+                      <td className="border-b border-white/5 px-3 py-3">
+                        {isPaid ? (
+                          <span className="inline-flex items-center rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200 border border-emerald-400/20">
+                            Opłacone • {e.paid_date}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-                            Nieopłacony
+                          <span className="inline-flex items-center rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200 border border-amber-400/20">
+                            Nieopłacone
                           </span>
                         )}
                       </td>
-                      <td className="border-b border-gray-100 px-2 py-1 max-w-xs truncate">
-                        {e.notes || "—"}
+
+                      <td className="border-b border-white/5 px-3 py-3 text-white/65 max-w-[320px]">
+                        <div className="truncate" title={e.notes || ""}>
+                          {e.notes || "—"}
+                        </div>
                       </td>
-                      <td className="border-b border-gray-100 px-2 py-1 text-right space-x-2">
-                        <button
-                          type="button"
-                          onClick={() => startEditExpense(e)}
-                          className="text-xs text-emerald-700 hover:underline"
-                        >
-                          Edytuj
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteExpense(e.id)}
-                          className="text-xs text-red-600 hover:underline"
-                        >
-                          Usuń
-                        </button>
+
+                      <td className="border-b border-white/5 px-3 py-3 text-right">
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startEditExpense(e)}
+                            className={btnSecondary + " px-3 py-2 text-xs"}
+                            title="Edytuj"
+                          >
+                            <Pencil className="w-4 h-4" />
+                            Edytuj
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteExpense(e.id)}
+                            className={btnDanger + " px-3 py-2 text-xs"}
+                            title="Usuń"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Usuń
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

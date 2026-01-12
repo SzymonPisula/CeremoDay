@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   Document,
@@ -6,8 +6,9 @@ import {
   StorageLocation,
   DocumentType,
 } from "../types/document";
+import type { CeremonyType } from "../types/interview";
 import { api } from "../lib/api";
-import { FileText, FileUp, Download } from "lucide-react";
+import { FileText, FileUp, Download, Trash2, CheckCircle2, Plus } from "lucide-react";
 
 type Params = {
   id: string;
@@ -40,13 +41,9 @@ const CHURCH_EXTRA_NAMES = new Set(
 
 function isExtraDocument(doc: Document): boolean {
   const nameKey = doc.name.trim().toLowerCase();
-  if (doc.type === "civil") {
-    return CIVIL_EXTRA_NAMES.has(nameKey);
-  }
-  if (doc.type === "church") {
-    return CHURCH_EXTRA_NAMES.has(nameKey);
-  }
-  return false;
+  if (doc.type === "civil") return CIVIL_EXTRA_NAMES.has(nameKey);
+  if (doc.type === "church") return CHURCH_EXTRA_NAMES.has(nameKey);
+  return false; // custom -> nigdy nie jest extra
 }
 
 export default function Documents() {
@@ -59,19 +56,162 @@ export default function Documents() {
   const [storageLocation, setStorageLocation] =
     useState<StorageLocation>("server");
 
-  const [visibleType, setVisibleType] = useState<DocumentType>("church");
-  const [showExtras, setShowExtras] = useState(false);
+  // ✅ typ ślubu bierze się z wywiadu (a nie z UI)
+  const [interviewCeremony, setInterviewCeremony] =
+    useState<CeremonyType | null>(null);
+  const [interviewLoading, setInterviewLoading] = useState<boolean>(true);
 
+  const [showExtras, setShowExtras] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ✅ Dodawanie własnych dokumentów
+  const [customName, setCustomName] = useState("");
+  const [customDescription, setCustomDescription] = useState("");
+  const [creatingDoc, setCreatingDoc] = useState(false);
+
+  // ===== UI helpers (spójny „CRM vibe”) =====
+  const pageWrap = "w-full max-w-6xl mx-auto px-6 py-8";
+  const cardBase =
+    "rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md " +
+    "shadow-[0_24px_80px_rgba(0,0,0,0.45)]";
+  const sectionTitle = "text-sm font-semibold text-white/85";
+  const muted = "text-sm text-white/60";
+
+  const btnSecondary =
+    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium " +
+    "bg-white/5 text-white border border-white/10 " +
+    "hover:bg-white/10 hover:border-white/15 " +
+    "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/40 " +
+    "transition";
+
+  const btnGold =
+    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " +
+    "bg-gradient-to-r from-[#d7b45a] to-[#b98b2f] text-[#0b1b14] " +
+    "shadow-[0_10px_30px_-18px_rgba(215,180,90,0.9)] " +
+    "hover:brightness-105 active:translate-y-[1px] " +
+    "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/45 " +
+    "transition";
+
+  const chip =
+    "inline-flex items-center gap-2 px-3 py-1 rounded-full " +
+    "border border-white/10 bg-white/5 text-white/80 text-xs";
+
+  const docCard =
+    "rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md " +
+    "shadow-[0_18px_60px_rgba(0,0,0,0.35)]";
+
+  const fileRow =
+    "flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 " +
+    "hover:bg-white/7 transition";
+
+  // custom radio “kafelek”
+  const radioTile = (active: boolean) =>
+    [
+      "flex-1 rounded-2xl border px-4 py-3 cursor-pointer transition select-none",
+      "bg-white/5 backdrop-blur-md",
+      active
+        ? "border-[#c8a04b]/40 shadow-[0_18px_50px_-30px_rgba(215,180,90,0.85)]"
+        : "border-white/10 hover:border-white/15 hover:bg-white/7",
+    ].join(" ");
+
+  // “checkbox” przy dokumencie
+  const statusBtn = (done: boolean) =>
+    [
+      "w-9 h-9 rounded-xl border flex items-center justify-center transition",
+      done
+        ? "bg-emerald-500/20 border-emerald-400/30 text-emerald-200"
+        : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10",
+      "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/35",
+    ].join(" ");
+
+  const inputBase =
+    "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/85 " +
+    "placeholder:text-white/35 outline-none focus:ring-2 focus:ring-[#c8a04b]/35";
+
+  // A11y: ukryte radio inputy - zostawiamy, ale styl robimy na kafelkach
+  const RadioDot = ({ active }: { active: boolean }) => (
+    <span
+      className={[
+        "inline-flex items-center justify-center w-5 h-5 rounded-full border transition",
+        active
+          ? "border-[#c8a04b]/55 bg-[#c8a04b]/15"
+          : "border-white/15 bg-white/5",
+      ].join(" ")}
+    >
+      <span
+        className={[
+          "w-2.5 h-2.5 rounded-full transition",
+          active ? "bg-[#d7b45a]" : "bg-transparent",
+        ].join(" ")}
+      />
+    </span>
+  );
+
+  // ✅ tryb wg wywiadu
+  type DocMode = "civil" | "church" | "none";
+
+  const docMode: DocMode = useMemo(() => {
+    if (interviewCeremony === "civil") return "civil";
+    if (interviewCeremony === "church") return "church";
+    if (interviewCeremony === "reception_only") return "none";
+    // fallback gdy interview jeszcze się nie załadował:
+    return "church";
+  }, [interviewCeremony]);
+
+ 
+
+  // ====== helpers ======
+  const refreshFiles = async (documentId: string) => {
+    const docFiles = await api.getDocumentFiles(documentId);
+    setFiles((prev) => ({ ...prev, [documentId]: docFiles }));
+  };
+
+  
+
+  // ====== LOAD: interview -> docs (auto generate) ======
   useEffect(() => {
     if (!eventId) return;
 
-    const fetchDocs = async () => {
+    let alive = true;
+
+    const fetchAll = async () => {
       try {
+        setInterviewLoading(true);
         setLoading(true);
         setError(null);
-        const docs = await api.getDocuments(eventId);
+
+        // 1) interview
+        const interview = await api.getInterview(eventId);
+        if (!alive) return;
+        const ceremony = interview?.ceremony_type ?? null;
+        setInterviewCeremony(ceremony);
+
+        // 2) docs
+        let docs = await api.getDocuments(eventId);
+        if (!alive) return;
+
+        // 3) AUTO-GENERATE:
+        // - tylko dla civil/church
+        // - tylko jeśli lista pusta
+        // - tylko raz na dany event + tryb (żeby nie spamować)
+        if (docs.length === 0 && ceremony && ceremony !== "reception_only") {
+          const genKey = `docs:autoGenerated:${eventId}:${ceremony}`;
+          const already = localStorage.getItem(genKey) === "1";
+          if (!already) {
+            try {
+              await api.generateDefaultDocuments(
+                eventId,
+                ceremony === "civil" ? "civil" : "concordat",
+                true
+              );
+              localStorage.setItem(genKey, "1");
+              docs = await api.getDocuments(eventId);
+            } catch (e) {
+              console.warn("Auto-generate documents failed:", e);
+            }
+          }
+        }
+
         setDocuments(docs);
 
         const allFiles: Record<string, DocumentFile[]> = {};
@@ -79,22 +219,29 @@ export default function Documents() {
           const docFiles = await api.getDocumentFiles(d.id);
           allFiles[d.id] = docFiles;
         }
+        if (!alive) return;
         setFiles(allFiles);
+
+        // zmiana typu => chowamy extras
+        setShowExtras(false);
       } catch (err) {
-        console.error("❌ Błąd pobierania dokumentów:", err);
-        setError("Nie udało się pobrać dokumentów");
+        console.error("❌ Błąd pobierania dokumentów/wywiadu:", err);
+        if (!alive) return;
+        setError("Nie udało się pobrać danych dokumentów");
       } finally {
-        setLoading(false);
+        if (alive) {
+          setInterviewLoading(false);
+          setLoading(false);
+        }
       }
     };
 
-    fetchDocs();
-  }, [eventId]);
+    void fetchAll();
 
-  const refreshFiles = async (documentId: string) => {
-    const docFiles = await api.getDocumentFiles(documentId);
-    setFiles((prev) => ({ ...prev, [documentId]: docFiles }));
-  };
+    return () => {
+      alive = false;
+    };
+  }, [eventId]);
 
   const handleToggleStatus = async (document: Document) => {
     try {
@@ -163,299 +310,409 @@ export default function Documents() {
     }
   };
 
-  const handleGenerateDefaults = async (ceremonyType: "civil" | "concordat") => {
-    if (!eventId) return;
-    try {
-      setLoading(true);
-      setError(null);
+  // ✅ Dodaj własny dokument
+  const handleCreateCustomDocument = async () => {
+  if (!eventId) return;
 
-      await api.generateDefaultDocuments(eventId, ceremonyType, true);
+  const name = customName.trim();
+  if (!name) return;
 
-      const docs = await api.getDocuments(eventId);
-      setDocuments(docs);
+  try {
+    setCreatingDoc(true);
+    setError(null);
 
-      const allFiles: Record<string, DocumentFile[]> = {};
-      for (const d of docs) {
-        const docFiles = await api.getDocumentFiles(d.id);
-        allFiles[d.id] = docFiles;
-      }
-      setFiles(allFiles);
-    } catch (err) {
-      console.error("❌ Błąd generowania listy dokumentów:", err);
-      setError("Nie udało się wygenerować listy dokumentów");
-    } finally {
-      setLoading(false);
+    const created = await api.createDocument(eventId, {
+  name,
+  description: customDescription.trim() || null,
+  type: "custom",
+  status: "pending",
+});
+
+
+    // dorzucamy na górę
+    setDocuments((prev) => [created as Document, ...prev]);
+    setFiles((prev) => ({ ...prev, [created.id]: [] }));
+
+    setCustomName("");
+    setCustomDescription("");
+  } catch (e) {
+    console.error(e);
+    setError(e instanceof Error ? e.message : "Nie udało się dodać dokumentu");
+  } finally {
+    setCreatingDoc(false);
+  }
+};
+
+
+  // === Filtry listy wg trybu ===
+  // - docMode civil -> pokazujemy civil + custom
+  // - docMode church -> pokazujemy church + custom
+  // - docMode none -> pokazujemy tylko custom
+  const visibleDocs = useMemo(() => {
+  if (docMode === "none") return documents.filter((d) => d.type === "custom");
+  if (docMode === "civil")
+    return documents.filter((d) => d.type === "civil" || d.type === "custom");
+  return documents.filter((d) => d.type === "church" || d.type === "custom");
+}, [documents, docMode]);
+
+
+  const mandatoryDocs = useMemo(() => {
+    return visibleDocs.filter((d) => !isExtraDocument(d));
+  }, [visibleDocs]);
+
+  const extraDocs = useMemo(() => {
+    // extras tylko dla civil/church
+    if (docMode === "none") return [];
+    return visibleDocs.filter((d) => isExtraDocument(d));
+  }, [visibleDocs, docMode]);
+
+  const hasAnyVisibleDocs = visibleDocs.length > 0;
+
+  const modeLabel =
+    docMode === "none"
+      ? "Samo przyjęcie weselne"
+      : docMode === "civil"
+      ? "Ślub cywilny"
+      : "Ślub kościelny (konkordatowy)";
+
+  const docTypeBadge = (t: DocumentType) => {
+    if (t === "custom") {
+      return (
+        <span className="text-[10px] px-2 py-0.5 rounded-full border border-white/10 bg-white/5 text-white/70">
+          własny
+        </span>
+      );
     }
+    if (t === "civil") {
+      return (
+        <span className="text-[10px] px-2 py-0.5 rounded-full border border-sky-300/20 bg-sky-500/10 text-sky-200">
+          cywilny
+        </span>
+      );
+    }
+    return (
+      <span className="text-[10px] px-2 py-0.5 rounded-full border border-violet-300/20 bg-violet-500/10 text-violet-200">
+        kościelny
+      </span>
+    );
   };
 
-  const allDocs = documents ?? [];
-  const docsForType = allDocs.filter(
-    (d) => (d.type as DocumentType | undefined) === visibleType
-  );
-
-  const mandatoryDocs = docsForType.filter((d) => !isExtraDocument(d));
-  const extraDocs = docsForType.filter((d) => isExtraDocument(d));
-
-  const hasAnyDocs = allDocs.length > 0;
-  const hasDocsForVisibleType = docsForType.length > 0;
-
-  const labelForType = (type: DocumentType) =>
-    type === "church" ? "ślubu kościelnego (konkordatowego)" : "ślubu cywilnego";
-
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-6 flex justify-center">
-      <div className="w-full max-w-5xl bg-white rounded-2xl shadow-md p-6 md:p-8">
+    <div className={pageWrap}>
+      <div className={`${cardBase} p-6 md:p-8`}>
         {/* Nagłówek */}
-        <div className="flex items-center gap-3 mb-6">
-          <FileText className="w-6 h-6 text-indigo-600" />
-          <div>
-            <h1 className="text-xl font-bold">Dokumenty</h1>
-            <p className="text-sm text-slate-500">
-              Lista dokumentów wymaganych do ślubu oraz załączone pliki.
-            </p>
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center">
+              <FileText className="w-5 h-5 text-[#d7b45a]" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold text-white">Dokumenty</h1>
+              <p className={muted}>
+                Lista dokumentów i załączników. Tryb jest ustawiany przez wywiad.
+              </p>
+            </div>
+          </div>
+
+          <div className="hidden md:flex items-center gap-2">
+            {interviewLoading || loading ? (
+              <span className="text-xs text-white/50">Odświeżanie…</span>
+            ) : (
+              <span className="text-xs text-white/50">
+                Zarządzaj checklistą i plikami
+              </span>
+            )}
           </div>
         </div>
 
         {error && (
-          <div className="mb-4 rounded-lg bg-red-50 text-red-700 px-4 py-2 text-sm">
+          <div className="mb-4 rounded-2xl border border-red-400/20 bg-red-500/10 text-red-100 px-4 py-3 text-sm">
             {error}
           </div>
         )}
 
-        {/* Przełącznik typu ślubu */}
-        <section className="mb-4">
-          <h2 className="text-sm font-semibold mb-2">
-            Rodzaj ślubu (widok listy)
-          </h2>
-          <div className="inline-flex rounded-full bg-slate-100 p-1 text-xs">
-            <button
-              type="button"
-              onClick={() => {
-                setVisibleType("church");
-                setShowExtras(false);
-              }}
-              className={`px-3 py-1 rounded-full ${
-                visibleType === "church"
-                  ? "bg-white shadow text-indigo-700"
-                  : "text-slate-500"
-              }`}
-            >
-              Ślub kościelny (konkordatowy)
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setVisibleType("civil");
-                setShowExtras(false);
-              }}
-              className={`px-3 py-1 rounded-full ${
-                visibleType === "civil"
-                  ? "bg-white shadow text-indigo-700"
-                  : "text-slate-500"
-              }`}
-            >
-              Ślub cywilny
-            </button>
+        {/* Info: tryb z wywiadu */}
+        <section className="mb-5">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <h2 className={sectionTitle}>Tryb dokumentów (z wywiadu)</h2>
+            <span className="text-xs text-white/45">Automatycznie</span>
           </div>
+
+          <div className={chip}>{modeLabel}</div>
+
+          {docMode === "none" && (
+            <p className="mt-2 text-sm text-white/55">
+              Dla opcji <span className="text-white font-semibold">„Samo przyjęcie”</span>{" "}
+              nie generujemy listy formalnych dokumentów. Możesz jednak dodawać własne dokumenty i pliki poniżej.
+            </p>
+          )}
         </section>
 
-        {/* Miejsce przechowywania załączników */}
-        <section className="mb-5 border border-slate-200 rounded-xl p-4 text-xs text-slate-600">
-          <h2 className="text-sm font-semibold mb-2">
-            Miejsce przechowywania załączników
-          </h2>
-          <p className="mb-2">
-            Wybierz domyślny sposób przechowywania nowych plików, gdy dodajesz
-            je do dokumentów:
-          </p>
-          <div className="flex flex-col md:flex-row md:items-center gap-3">
-            <label className="flex items-center gap-2 cursor-pointer">
+        {/* Storage */}
+        <section className={`${docCard} p-5 mb-6`}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className={sectionTitle}>Miejsce przechowywania załączników</h2>
+              <p className="text-sm text-white/55 mt-1">
+                Wybierz domyślny sposób przechowywania nowych plików.
+              </p>
+            </div>
+            <span className={chip}>
+              {storageLocation === "server" ? "Serwer" : "Lokalnie"}
+            </span>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className={radioTile(storageLocation === "server")}>
+              <div className="flex items-start gap-3">
+                <RadioDot active={storageLocation === "server"} />
+                <div>
+                  <div className="text-sm font-semibold text-white">
+                    Na serwerze CeremoDay
+                  </div>
+                  <div className="text-xs text-white/55 mt-1">
+                    Dostępne na innych urządzeniach.
+                  </div>
+                </div>
+              </div>
               <input
+                className="sr-only"
                 type="radio"
                 value="server"
                 checked={storageLocation === "server"}
                 onChange={() => setStorageLocation("server")}
               />
-              <span>
-                <span className="font-medium">Na serwerze CeremoDay</span> – pliki
-                są przechowywane centralnie, możesz je pobrać z innych urządzeń.
-              </span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer">
+
+            <label className={radioTile(storageLocation === "local")}>
+              <div className="flex items-start gap-3">
+                <RadioDot active={storageLocation === "local"} />
+                <div>
+                  <div className="text-sm font-semibold text-white">
+                    Tylko lokalnie na moim urządzeniu
+                  </div>
+                  <div className="text-xs text-white/55 mt-1">
+                    CeremoDay zapisze metadane, nie treść pliku.
+                  </div>
+                </div>
+              </div>
               <input
+                className="sr-only"
                 type="radio"
                 value="local"
                 checked={storageLocation === "local"}
                 onChange={() => setStorageLocation("local")}
               />
-              <span>
-                <span className="font-medium">
-                  Tylko lokalnie na moim urządzeniu
-                </span>{" "}
-                – CeremoDay zapisuje tylko informację o pliku, nie jego treść.
-              </span>
             </label>
           </div>
         </section>
 
-        {/* Jeśli brak jakichkolwiek dokumentów */}
-        {!hasAnyDocs && !loading && (
-          <section className="mb-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-            <p className="mb-3">
-              Nie masz jeszcze żadnych dokumentów dla tego wydarzenia. Wybierz
-              rodzaj ślubu, a następnie wygeneruj domyślną listę dokumentów.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={() => handleGenerateDefaults("concordat")}
-                className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs hover:bg-indigo-700"
-              >
-                Wygeneruj listę dla ślubu kościelnego (konkordatowego)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleGenerateDefaults("civil")}
-                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-700"
-              >
-                Wygeneruj listę dla ślubu cywilnego
-              </button>
+        {/* ✅ Dodaj własny dokument (zawsze) */}
+        <section className={`${docCard} p-5 mb-6`}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className={sectionTitle}>Dodaj własny dokument</h2>
+              <p className="text-sm text-white/55 mt-1">
+                Dodaj dowolny dokument do checklisty (np. umowa, potwierdzenie, notatka, skan).
+              </p>
             </div>
-          </section>
-        )}
+            <span className={chip}>Własne</span>
+          </div>
 
-        {/* Jeśli są dokumenty, ale nie dla aktualnie wybranego typu */}
-        {hasAnyDocs && !hasDocsForVisibleType && !loading && (
-          <section className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-            <p className="mb-3">
-              Nie masz jeszcze dokumentów dla{" "}
-              <span className="font-medium">{labelForType(visibleType)}</span>.
-            </p>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            
+
+            <div>
+              <label className="text-xs text-white/55">Nazwa</label>
+              <input
+                className={inputBase}
+                placeholder="np. Umowa z salą / Potwierdzenie rezerwacji"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="text-xs text-white/55">Opis (opcjonalnie)</label>
+              <textarea
+                className={inputBase + " min-h-[90px]"}
+                placeholder="Terminy, kto załatwia, co trzeba przygotować…"
+                value={customDescription}
+                onChange={(e) => setCustomDescription(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={() =>
-                handleGenerateDefaults(
-                  visibleType === "civil" ? "civil" : "concordat"
-                )
-              }
-              className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs hover:bg-indigo-700"
+              disabled={creatingDoc || !customName.trim()}
+              className={btnGold}
+              onClick={() => void handleCreateCustomDocument()}
             >
-              Wygeneruj dokumenty dla {labelForType(visibleType)}
+              <Plus className="w-4 h-4" />
+              {creatingDoc ? "Dodawanie…" : "Dodaj dokument"}
             </button>
+
+            <span className="text-xs text-white/45">
+              Po dodaniu dokumentu możesz od razu dodać załączniki w jego kafelku.
+            </span>
+          </div>
+        </section>
+
+        {/* Lista dokumentów (dla civil/church: system + custom; dla reception_only: tylko custom) */}
+        {!hasAnyVisibleDocs && !loading && (
+          <section className={`${docCard} p-5 mb-6`}>
+            <p className="text-sm text-white/65">
+              Brak dokumentów.{" "}
+              {docMode === "none"
+                ? "Dodaj własny dokument powyżej."
+                : "Lista startowa generuje się automatycznie po wywiadzie (przy pierwszym wejściu). Jeśli nadal jest pusto — dodaj własny dokument powyżej."}
+            </p>
           </section>
         )}
 
-        {/* Lista dokumentów dla wybranego typu */}
-        {hasDocsForVisibleType && (
+        {hasAnyVisibleDocs && (
           <section>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold">
-                Dokumenty dla {labelForType(visibleType)}
-              </h2>
-              {loading && (
-                <span className="text-xs text-slate-500">
-                  Odświeżanie dokumentów…
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-base font-semibold text-white">
+                  Lista dokumentów
+                </h2>
+                <p className="text-sm text-white/50 mt-1">
+                  Odhaczaj, dodawaj pliki i trzymaj porządek.
+                </p>
+              </div>
+
+              {loading ? (
+                <span className="text-xs text-white/45">Odświeżanie…</span>
+              ) : (
+                <span className={chip}>
+                  {mandatoryDocs.filter((d) => d.status === "done").length}/
+                  {mandatoryDocs.length} done
                 </span>
               )}
             </div>
 
-            {/* Obowiązkowe */}
-            <div className="mb-4">
-              <h3 className="text-xs font-semibold text-slate-600 mb-2">
-                Obowiązkowe dokumenty
-              </h3>
+            {/* Obowiązkowe + własne */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className={sectionTitle}>
+                  {docMode === "none" ? "Twoje dokumenty" : "Obowiązkowe + własne"}
+                </h3>
+                <span className="text-xs text-white/45">
+                  {mandatoryDocs.length} pozycji
+                </span>
+              </div>
+
               {mandatoryDocs.length === 0 ? (
-                <p className="text-xs text-slate-500">
-                  Brak obowiązkowych dokumentów w tej kategorii.
+                <p className="text-sm text-white/55">
+                  Brak dokumentów w tej sekcji.
                 </p>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {mandatoryDocs.map((doc) => {
                     const docFiles = files[doc.id] ?? [];
+                    const done = doc.status === "done";
+
                     return (
-                      <div
-                        key={doc.id}
-                        className="border border-slate-200 rounded-xl p-4 flex flex-col gap-2"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleToggleStatus(doc)}
-                                className={`w-4 h-4 rounded border flex items-center justify-center mr-1 ${
-                                  doc.status === "done"
-                                    ? "bg-emerald-500 border-emerald-500"
-                                    : "bg-white border-slate-300"
-                                }`}
-                              >
-                                {doc.status === "done" && (
-                                  <span className="text-[10px] text-white">
-                                    ✓
+                      <div key={doc.id} className={`${docCard} p-5`}>
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3">
+                            <button
+                              type="button"
+                              onClick={() => void handleToggleStatus(doc)}
+                              className={statusBtn(done)}
+                              aria-label={done ? "Oznacz jako niegotowe" : "Oznacz jako gotowe"}
+                            >
+                              {done ? (
+                                <CheckCircle2 className="w-5 h-5" />
+                              ) : (
+                                <span className="text-xs font-semibold">✓</span>
+                              )}
+                            </button>
+
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-base font-semibold text-white">
+                                  {doc.name}
+                                </span>
+
+                                {docTypeBadge(doc.type as DocumentType)}
+
+                                {isExtraDocument(doc) ? (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-amber-300/20 bg-amber-500/10 text-amber-200">
+                                    dodatkowy
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-[#c8a04b]/25 bg-[#c8a04b]/10 text-[#d7b45a]">
+                                    standard
                                   </span>
                                 )}
-                              </button>
-                              <span className="font-medium text-sm">
-                                {doc.name}
-                              </span>
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
-                                obowiązkowy
-                              </span>
+
+                                {done && (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 text-emerald-200">
+                                    gotowe
+                                  </span>
+                                )}
+                              </div>
+
+                              {doc.description && (
+                                <p className="text-sm text-white/55 mt-1">
+                                  {doc.description}
+                                </p>
+                              )}
                             </div>
-                            {doc.description && (
-                              <p className="text-xs text-slate-500 mt-1">
-                                {doc.description}
-                              </p>
-                            )}
+                          </div>
+
+                          <div className="text-right">
+                            <div className="text-xs text-white/45">Załączniki</div>
+                            <div className="text-sm text-white/80 font-semibold">
+                              {docFiles.length}
+                            </div>
                           </div>
                         </div>
 
-                        {/* Załączone pliki */}
-                        <div className="mt-2 border-t border-slate-100 pt-2">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-semibold text-slate-600">
-                              Załączone pliki ({docFiles.length})
-                            </span>
-                          </div>
+                        {/* Pliki + upload */}
+                        <div className="mt-4 border-t border-white/10 pt-4">
                           {docFiles.length === 0 ? (
-                            <p className="text-xs text-slate-400">
+                            <p className="text-sm text-white/45">
                               Brak załączonych plików.
                             </p>
                           ) : (
-                            <ul className="space-y-1 text-xs">
+                            <ul className="space-y-2">
                               {docFiles.map((file) => (
-                                <li
-                                  key={file.id}
-                                  className="flex items-center justify-between"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <FileText className="w-3 h-3 text-slate-400" />
-                                    <span>{file.original_name}</span>
-                                    <span className="text-[10px] text-slate-400">
-                                      ({Math.round(file.size / 1024)} kB)
+                                <li key={file.id} className={fileRow}>
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <FileText className="w-4 h-4 text-white/45 shrink-0" />
+                                    <span className="text-sm text-white/85 truncate">
+                                      {file.original_name}
                                     </span>
-                                    <span className="text-[10px] text-slate-500">
+                                    <span className="text-[11px] text-white/40 shrink-0">
+                                      {Math.round(file.size / 1024)} kB
+                                    </span>
+                                    <span className="text-[11px] text-white/55 shrink-0">
                                       {file.storage_location === "server"
                                         ? "Serwer"
                                         : "Tylko lokalnie"}
                                     </span>
                                   </div>
-                                  <div className="flex items-center gap-2">
+
+                                  <div className="flex items-center gap-2 shrink-0">
                                     <button
                                       type="button"
-                                      onClick={() =>
-                                        handleDownloadFile(file)
-                                      }
-                                      className="text-slate-400 hover:text-indigo-600 flex items-center gap-1"
+                                      onClick={() => void handleDownloadFile(file)}
+                                      className="inline-flex items-center gap-1 text-xs text-white/65 hover:text-[#d7b45a] transition"
                                     >
-                                      <Download className="w-3 h-3" />
-                                      <span>Pobierz</span>
+                                      <Download className="w-4 h-4" />
+                                      Pobierz
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => handleDeleteFile(file)}
-                                      className="text-slate-400 hover:text-red-500 text-[11px]"
+                                      onClick={() => void handleDeleteFile(file)}
+                                      className="inline-flex items-center gap-1 text-xs text-white/55 hover:text-red-300 transition"
                                     >
+                                      <Trash2 className="w-4 h-4" />
                                       Usuń
                                     </button>
                                   </div>
@@ -464,32 +721,29 @@ export default function Documents() {
                             </ul>
                           )}
 
-                          {/* Upload */}
-                          <div className="mt-2 flex items-center gap-2">
-                            <label className="flex items-center gap-2 cursor-pointer text-xs text-indigo-600 hover:text-indigo-700">
-                              <FileUp className="w-3 h-3" />
-                              <span>
-                                {uploadingId === doc.id
-                                  ? "Wysyłanie..."
-                                  : "Dodaj plik"}
+                          <div className="mt-3 flex items-center justify-between gap-3">
+                            <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
+                              <span className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/10 transition">
+                                <FileUp className="w-4 h-4 text-[#d7b45a]" />
+                                {uploadingId === doc.id ? "Wysyłanie..." : "Dodaj plik"}
                               </span>
                               <input
                                 type="file"
                                 accept=".pdf,.png,.jpg,.jpeg"
                                 className="hidden"
                                 onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) {
-                                    handleFileUpload(
-                                      doc.id,
-                                      file,
-                                      storageLocation
-                                    );
+                                  const f = e.target.files?.[0];
+                                  if (f) {
+                                    void handleFileUpload(doc.id, f, storageLocation);
                                     e.target.value = "";
                                   }
                                 }}
                               />
                             </label>
+
+                            <span className="text-xs text-white/45">
+                              Domyślnie: {storageLocation === "server" ? "serwer" : "lokalnie"}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -499,130 +753,128 @@ export default function Documents() {
               )}
             </div>
 
-            {/* Dodatkowe / wyjątkowe */}
-            {extraDocs.length > 0 && (
-              <div className="mt-4">
+            {/* Dodatkowe (tylko civil/church) */}
+            {docMode !== "none" && extraDocs.length > 0 && (
+              <div className="mt-2">
                 {!showExtras ? (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-                    <p className="mb-2">
+                  <div className={`${docCard} p-5`}>
+                    <p className="text-sm text-white/65 mb-3">
                       Masz{" "}
-                      <span className="font-semibold">
-                        {extraDocs.length}
-                      </span>{" "}
-                      dokumentów dla sytuacji wyjątkowych (np. pełnomocnik,
-                      cudzoziemiec, unieważnienie poprzedniego małżeństwa).
+                      <span className="text-white font-semibold">{extraDocs.length}</span>{" "}
+                      dokumentów dla sytuacji wyjątkowych (pełnomocnik, cudzoziemiec, unieważnienie itd.).
                     </p>
                     <button
                       type="button"
                       onClick={() => setShowExtras(true)}
-                      className="px-3 py-1 rounded-lg bg-slate-900 text-white text-[11px] hover:bg-slate-800"
+                      className={btnSecondary}
                     >
                       Pokaż dodatkowe dokumenty
                     </button>
                   </div>
                 ) : (
-                  <div className="mt-2">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-xs font-semibold text-slate-600">
-                        Dodatkowe dokumenty (w sytuacjach wyjątkowych)
-                      </h3>
+                  <div className={`${docCard} p-5`}>
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <h3 className={sectionTitle}>Dodatkowe (wyjątkowe sytuacje)</h3>
                       <button
                         type="button"
                         onClick={() => setShowExtras(false)}
-                        className="text-[11px] text-slate-500 hover:text-slate-700"
+                        className="text-xs text-white/55 hover:text-white/80 transition"
                       >
-                        Ukryj dodatkowe
+                        Ukryj
                       </button>
                     </div>
-                    <div className="space-y-3">
+
+                    <div className="space-y-4">
                       {extraDocs.map((doc) => {
                         const docFiles = files[doc.id] ?? [];
+                        const done = doc.status === "done";
+
                         return (
-                          <div
-                            key={doc.id}
-                            className="border border-slate-200 rounded-xl p-4 flex flex-col gap-2 bg-slate-50"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleStatus(doc)}
-                                    className={`w-4 h-4 rounded border flex items-center justify-center mr-1 ${
-                                      doc.status === "done"
-                                        ? "bg-emerald-500 border-emerald-500"
-                                        : "bg-white border-slate-300"
-                                    }`}
-                                  >
-                                    {doc.status === "done" && (
-                                      <span className="text-[10px] text-white">
-                                        ✓
+                          <div key={doc.id} className={`${docCard} p-5 bg-white/4`}>
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex items-start gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleToggleStatus(doc)}
+                                  className={statusBtn(done)}
+                                  aria-label={done ? "Oznacz jako niegotowe" : "Oznacz jako gotowe"}
+                                >
+                                  {done ? (
+                                    <CheckCircle2 className="w-5 h-5" />
+                                  ) : (
+                                    <span className="text-xs font-semibold">✓</span>
+                                  )}
+                                </button>
+
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-base font-semibold text-white">
+                                      {doc.name}
+                                    </span>
+                                    {docTypeBadge(doc.type as DocumentType)}
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full border border-amber-300/20 bg-amber-500/10 text-amber-200">
+                                      dodatkowy
+                                    </span>
+                                    {done && (
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 text-emerald-200">
+                                        gotowe
                                       </span>
                                     )}
-                                  </button>
-                                  <span className="font-medium text-sm">
-                                    {doc.name}
-                                  </span>
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
-                                    dodatkowy
-                                  </span>
+                                  </div>
+
+                                  {doc.description && (
+                                    <p className="text-sm text-white/55 mt-1">
+                                      {doc.description}
+                                    </p>
+                                  )}
                                 </div>
-                                {doc.description && (
-                                  <p className="text-xs text-slate-500 mt-1">
-                                    {doc.description}
-                                  </p>
-                                )}
+                              </div>
+
+                              <div className="text-right">
+                                <div className="text-xs text-white/45">Załączniki</div>
+                                <div className="text-sm text-white/80 font-semibold">
+                                  {docFiles.length}
+                                </div>
                               </div>
                             </div>
 
-                            {/* Pliki */}
-                            <div className="mt-2 border-t border-slate-100 pt-2">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-xs font-semibold text-slate-600">
-                                  Załączone pliki ({docFiles.length})
-                                </span>
-                              </div>
+                            <div className="mt-4 border-t border-white/10 pt-4">
                               {docFiles.length === 0 ? (
-                                <p className="text-xs text-slate-400">
-                                  Brak załączonych plików.
-                                </p>
+                                <p className="text-sm text-white/45">Brak załączonych plików.</p>
                               ) : (
-                                <ul className="space-y-1 text-xs">
+                                <ul className="space-y-2">
                                   {docFiles.map((file) => (
-                                    <li
-                                      key={file.id}
-                                      className="flex items-center justify-between"
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <FileText className="w-3 h-3 text-slate-400" />
-                                        <span>{file.original_name}</span>
-                                        <span className="text-[10px] text-slate-400">
-                                          ({Math.round(file.size / 1024)} kB)
+                                    <li key={file.id} className={fileRow}>
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <FileText className="w-4 h-4 text-white/45 shrink-0" />
+                                        <span className="text-sm text-white/85 truncate">
+                                          {file.original_name}
                                         </span>
-                                        <span className="text-[10px] text-slate-500">
+                                        <span className="text-[11px] text-white/40 shrink-0">
+                                          {Math.round(file.size / 1024)} kB
+                                        </span>
+                                        <span className="text-[11px] text-white/55 shrink-0">
                                           {file.storage_location === "server"
                                             ? "Serwer"
                                             : "Tylko lokalnie"}
                                         </span>
                                       </div>
-                                      <div className="flex items-center gap-2">
+
+                                      <div className="flex items-center gap-2 shrink-0">
                                         <button
                                           type="button"
-                                          onClick={() =>
-                                            handleDownloadFile(file)
-                                          }
-                                          className="text-slate-400 hover:text-indigo-600 flex items-center gap-1"
+                                          onClick={() => void handleDownloadFile(file)}
+                                          className="inline-flex items-center gap-1 text-xs text-white/65 hover:text-[#d7b45a] transition"
                                         >
-                                          <Download className="w-3 h-3" />
-                                          <span>Pobierz</span>
+                                          <Download className="w-4 h-4" />
+                                          Pobierz
                                         </button>
                                         <button
                                           type="button"
-                                          onClick={() =>
-                                            handleDeleteFile(file)
-                                          }
-                                          className="text-slate-400 hover:text-red-500 text-[11px]"
+                                          onClick={() => void handleDeleteFile(file)}
+                                          className="inline-flex items-center gap-1 text-xs text-white/55 hover:text-red-300 transition"
                                         >
+                                          <Trash2 className="w-4 h-4" />
                                           Usuń
                                         </button>
                                       </div>
@@ -631,27 +883,20 @@ export default function Documents() {
                                 </ul>
                               )}
 
-                              {/* Upload */}
-                              <div className="mt-2 flex items-center gap-2">
-                                <label className="flex items-center gap-2 cursor-pointer text-xs text-indigo-600 hover:text-indigo-700">
-                                  <FileUp className="w-3 h-3" />
-                                  <span>
-                                    {uploadingId === doc.id
-                                      ? "Wysyłanie..."
-                                      : "Dodaj plik"}
+                              <div className="mt-3">
+                                <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
+                                  <span className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/10 transition">
+                                    <FileUp className="w-4 h-4 text-[#d7b45a]" />
+                                    {uploadingId === doc.id ? "Wysyłanie..." : "Dodaj plik"}
                                   </span>
                                   <input
                                     type="file"
                                     accept=".pdf,.png,.jpg,.jpeg"
                                     className="hidden"
                                     onChange={(e) => {
-                                      const file = e.target.files?.[0];
-                                      if (file) {
-                                        handleFileUpload(
-                                          doc.id,
-                                          file,
-                                          storageLocation
-                                        );
+                                      const f = e.target.files?.[0];
+                                      if (f) {
+                                        void handleFileUpload(doc.id, f, storageLocation);
                                         e.target.value = "";
                                       }
                                     }}

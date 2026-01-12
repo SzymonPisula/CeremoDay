@@ -1,17 +1,170 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.9); }
-  to { opacity: 1; transform: scale(1); }
+/* =========================================================
+   CeremoDay — 2025 UI (jeden spójny styl)
+   Premium dark green + gold, lekko i estetycznie
+   ========================================================= */
+
+:root {
+  color-scheme: dark;
+
+  /* Core palette */
+  --cd-bg-0: #061a12;      /* deep green */
+  --cd-bg-1: #052016;      /* slightly brighter */
+  --cd-ink: rgba(245, 246, 248, 0.92);
+  --cd-muted: rgba(245, 246, 248, 0.68);
+
+  /* Gold */
+  --cd-gold-0: #F6E27A;
+  --cd-gold-1: #D4AF37;
+
+  /* Surfaces */
+  --cd-surface: rgba(10, 40, 28, 0.46);
+  --cd-surface-strong: rgba(8, 30, 22, 0.72);
+  --cd-border: rgba(255, 255, 255, 0.10);
+  --cd-border-soft: rgba(255, 255, 255, 0.08);
+
+  /* Shadows */
+  --cd-shadow: 0 18px 50px rgba(0, 0, 0, 0.38);
+  --cd-shadow-soft: 0 12px 34px rgba(0, 0, 0, 0.32);
 }
 
-.animate-fadeIn {
-  animation: fadeIn 0.25s ease-out;
+html,
+body,
+#root {
+  height: 100%;
 }
 
-#root, main {
-  overflow: visible;
+body {
+  min-height: 100%;
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    "Apple Color Emoji", "Segoe UI Emoji";
+  color: var(--cd-ink);
+
+  /* fallback (tło właściwe jest na ::before jako stała tafla) */
+  background: var(--cd-bg-0);
+}
+
+/* Stała tafla pod całą aplikacją – brak "przecięć" na długich stronach */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+
+  background:
+    radial-gradient(900px 600px at 20% 10%, rgba(32, 88, 70, 0.55), transparent 60%),
+    radial-gradient(700px 520px at 82% 16%, rgba(212, 175, 55, 0.18), transparent 60%),
+    radial-gradient(900px 700px at 60% 92%, rgba(18, 60, 48, 0.62), transparent 62%),
+    linear-gradient(180deg, var(--cd-bg-1) 0%, var(--cd-bg-0) 55%, var(--cd-bg-1) 100%);
+
+  filter: saturate(1.05);
+}
+
+#root {
+  background: transparent;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* -----------------------------
+   Base controls (żeby nie było "surowych" formularzy)
+   ----------------------------- */
+@layer base {
+  input,
+  select,
+  textarea {
+    @apply w-full rounded-xl border border-white/12 bg-white/[0.06] px-4 py-3 text-[15px] text-white/90
+      placeholder:text-white/45 outline-none backdrop-blur-xl;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    @apply border-[rgba(212,175,55,0.45)] ring-2 ring-[rgba(212,175,55,0.18)];
+  }
+
+  label {
+    @apply text-sm text-white/75;
+  }
+
+  hr {
+    @apply border-white/10;
+  }
+}
+
+/* -----------------------------
+   Micro-animations
+   ----------------------------- */
+@keyframes cdFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cdShimmer {
+  0% {
+    transform: translateX(-40%);
+  }
+  100% {
+    transform: translateX(140%);
+  }
+}
+
+/* -----------------------------
+   Component primitives (własne)
+   ----------------------------- */
+@layer components {
+  .cd-card {
+    border-radius: 28px;
+    border: 1px solid var(--cd-border);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%),
+      radial-gradient(1200px 320px at 10% 0%, rgba(18, 120, 84, 0.18) 0%, rgba(18, 120, 84, 0.00) 60%),
+      var(--cd-surface);
+    box-shadow: var(--cd-shadow);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .cd-card-solid {
+    border-radius: 28px;
+    border: 1px solid var(--cd-border-soft);
+    background: var(--cd-surface-strong);
+    box-shadow: var(--cd-shadow-soft);
+  }
+
+  .cd-focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.20);
+    border-color: rgba(212, 175, 55, 0.35);
+  }
+
+  /* Force dark dropdown panels for native selects (best-effort across browsers) */
+select option {
+  background-color: #0b1512; /* deep noble green */
+  color: rgba(255, 255, 255, 0.92);
+}
+
+select optgroup {
+  background-color: #0b1512;
+  color: rgba(255, 255, 255, 0.92);
+}
+
 }

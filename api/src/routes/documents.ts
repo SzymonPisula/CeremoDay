@@ -6,6 +6,7 @@ import { Document } from "../models/Document";
 import { DocumentFile, StorageLocation } from "../models/DocumentFile";
 import { storageService } from "../services/storageService";
 import { getTemplatesForCeremony, CeremonyType } from "../config/documentTemplates";
+import { createDocument } from "../controllers/documentsController";
 
 const router = Router();
 const upload = multer(); // trzymamy pliki w pamięci, potem sami zapisujemy
@@ -86,6 +87,7 @@ router.post(
   }
 );
 
+router.post("/documents/event/:eventId", createDocument);
 
 
 

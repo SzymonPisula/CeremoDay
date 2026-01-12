@@ -66,7 +66,27 @@ async function request<T = unknown>(
   }
 
   if (!res.ok) {
+    // Jeśli token wygasł / brak autoryzacji → natychmiast wracamy na logowanie
+    if (res.status === 401) {
+      try {
+  useAuthStore.getState().logout();
+} catch (e) {
+  void e;
+}
+
+try {
+  localStorage.removeItem("token"); // legacy
+} catch (e) {
+  void e;
+}
+
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
+    }
+
     const msg =
+
       typeof data === "object" &&
       data !== null &&
       "message" in data &&
@@ -383,43 +403,75 @@ deleteTask: (id: string) =>
   },
 
   // -----------------------------
-  // CUSTOM VENDORS / USŁUGODAWCY WYDARZENIA
+  //  USŁUGODAWCY WYDARZENIA
   // -----------------------------
+ getEvent: (id: string) => request<{ id: string; location?: string | null }>(`/events/${id}`),
+
   getEventVendors: (eventId: string) =>
     request<Vendor[]>(`/vendors?event_id=${eventId}`),
 
   createVendor: (body: {
-    event_id: string;
-    name: string;
-    type?: string;
-    address?: string;
-    phone?: string;
-    email?: string;
-    website?: string;
-    google_maps_url?: string;
-    notes?: string;
-    lat?: number | null;
-    lng?: number | null;
-  }) => request<Vendor>("/vendors", {
+  event_id: string;
+  name: string;
+
+  source?: import("../types/vendor").VendorSource;
+  type?: import("../types/vendor").VendorType | string;
+
+  address?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  google_maps_url?: string;
+  notes?: string;
+  lat?: number | null;
+  lng?: number | null;
+
+  // ✅ rural snapshot
+  county?: string;
+  max_participants?: number | null;
+  equipment?: string;
+  pricing?: string;
+  rental_info?: string;
+}) =>
+  request<Vendor>("/vendors", {
     method: "POST",
     body: JSON.stringify(body),
   }),
 
-  updateVendor: (id: string, body: Partial<{
+
+
+
+    updateVendor: (
+  id: string,
+  body: Partial<{
     name: string;
-    type: string;
+    source: import("../types/vendor").VendorSource;
+    type: import("../types/vendor").VendorType | string;
     address: string;
     phone: string;
     email: string;
     website: string;
     google_maps_url: string;
     notes: string;
+
+    // ✅ snapshot z sal gminnych (Opcja A)
+    county: string;
+    max_participants: number | null;
+    equipment: string;
+    pricing: string;
+    rental_info: string;
+
+
     lat: number | null;
     lng: number | null;
-  }>) => request<Vendor>(`/vendors/${id}`, {
+  }>
+) =>
+  request<Vendor>(`/vendors/${id}`, {
     method: "PUT",
     body: JSON.stringify(body),
   }),
+
+
 
   deleteVendor: (id: string) =>
     request<void>(`/vendors/${id}`, { method: "DELETE" }),

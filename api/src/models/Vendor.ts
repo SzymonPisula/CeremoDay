@@ -1,10 +1,5 @@
 // CeremoDay/api/src/models/Vendor.ts
-import {
-  DataTypes,
-  Model,
-  Optional,
-  Sequelize,
-} from "sequelize";
+import { DataTypes, Model, Optional, Sequelize } from "sequelize";
 import { sequelize } from "../config/database";
 
 export interface VendorAttributes {
@@ -21,6 +16,13 @@ export interface VendorAttributes {
   google_maps_url: string | null;
 
   notes: string | null;
+
+  // ✅ snapshot z bazy sal gminnych (Opcja A)
+  county: string | null;
+  max_participants: number | null;
+  equipment: string | null;
+  pricing: string | null;
+  rental_info: string | null;
 
   lat: number | null;
   lng: number | null;
@@ -39,6 +41,11 @@ export type VendorCreationAttributes = Optional<
   | "website"
   | "google_maps_url"
   | "notes"
+  | "county"
+  | "max_participants"
+  | "equipment"
+  | "pricing"
+  | "rental_info"
   | "lat"
   | "lng"
   | "created_at"
@@ -62,6 +69,12 @@ export class Vendor
   public google_maps_url!: string | null;
 
   public notes!: string | null;
+
+  public county!: string | null;
+  public max_participants!: number | null;
+  public equipment!: string | null;
+  public pricing!: string | null;
+  public rental_info!: string | null;
 
   public lat!: number | null;
   public lng!: number | null;
@@ -89,6 +102,7 @@ Vendor.init(
       type: DataTypes.STRING(50),
       allowNull: true,
     },
+
     address: {
       type: DataTypes.STRING(500),
       allowNull: true,
@@ -109,10 +123,34 @@ Vendor.init(
       type: DataTypes.TEXT,
       allowNull: true,
     },
+
     notes: {
       type: DataTypes.TEXT,
       allowNull: true,
     },
+
+    // ✅ snapshot z bazy sal gminnych
+    county: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    max_participants: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    equipment: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    pricing: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    rental_info: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+
     lat: {
       type: DataTypes.DECIMAL(10, 7),
       allowNull: true,
@@ -121,6 +159,7 @@ Vendor.init(
       type: DataTypes.DECIMAL(10, 7),
       allowNull: true,
     },
+
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,
