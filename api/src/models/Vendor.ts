@@ -17,12 +17,14 @@ export interface VendorAttributes {
 
   notes: string | null;
 
-  // ✅ snapshot z bazy sal gminnych (Opcja A)
   county: string | null;
   max_participants: number | null;
   equipment: string | null;
   pricing: string | null;
   rental_info: string | null;
+  commune_office: string | null;
+  rural_type: string | null;
+  usable_area: number | null;
 
   lat: number | null;
   lng: number | null;
@@ -46,11 +48,15 @@ export type VendorCreationAttributes = Optional<
   | "equipment"
   | "pricing"
   | "rental_info"
+  | "commune_office"
+  | "rural_type"
+  | "usable_area"
   | "lat"
   | "lng"
   | "created_at"
   | "updated_at"
 >;
+
 
 export class Vendor
   extends Model<VendorAttributes, VendorCreationAttributes>
@@ -75,6 +81,9 @@ export class Vendor
   public equipment!: string | null;
   public pricing!: string | null;
   public rental_info!: string | null;
+  public commune_office!: string | null;
+  public rural_type!: string | null;
+  public usable_area!: number | null;
 
   public lat!: number | null;
   public lng!: number | null;
@@ -148,6 +157,19 @@ Vendor.init(
     },
     rental_info: {
       type: DataTypes.TEXT,
+      allowNull: true,
+    },
+
+        commune_office: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    rural_type: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    usable_area: {
+      type: DataTypes.INTEGER,
       allowNull: true,
     },
 

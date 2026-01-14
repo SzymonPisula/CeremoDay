@@ -1,4 +1,5 @@
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { useEffect } from "react";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import type { LatLngExpression } from "leaflet";
 import L from "leaflet";
 import type { Vendor, VendorLocation } from "../../types/vendor";
@@ -37,6 +38,21 @@ const selectedIcon = L.icon({
   popupAnchor: [1, -34],
   shadowSize: [41, 41],
 });
+
+function AutoPan({ target }: { target: LatLngExpression | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!target) return;
+
+    const currentZoom = map.getZoom();
+    const nextZoom = Math.max(currentZoom, 13);
+
+    map.flyTo(target, nextZoom, { duration: 0.6 });
+  }, [map, target]);
+
+  return null;
+}
 
 export default function RuralVenuesMap({ venues, selectedId, onSelect }: Props) {
   // Normalizacja współrzędnych:
@@ -77,6 +93,9 @@ export default function RuralVenuesMap({ venues, selectedId, onSelect }: Props) 
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         />
+        <AutoPan
+          target={selected ? ([selected._coords.lat, selected._coords.lng] as LatLngExpression) : null}
+        />
 
         {venuesWithCoords.map((v) => {
           const position: LatLngExpression = [v._coords.lat, v._coords.lng];
@@ -102,15 +121,7 @@ export default function RuralVenuesMap({ venues, selectedId, onSelect }: Props) 
 
                   {v.county && <div className="mt-1 text-slate-500">Powiat: {v.county}</div>}
 
-                  <div className="mt-2">
-                    <button
-                      type="button"
-                      className="text-[11px] underline text-blue-600"
-                      onClick={() => onSelect?.(v)}
-                    >
-                      Pokaż szczegóły
-                    </button>
-                  </div>
+                  
                 </div>
               </Popup>
             </Marker>

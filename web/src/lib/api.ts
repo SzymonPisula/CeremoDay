@@ -432,6 +432,9 @@ deleteTask: (id: string) =>
   equipment?: string;
   pricing?: string;
   rental_info?: string;
+  commune_office?: string;
+  rural_type?: string;
+  usable_area?: number;
 }) =>
   request<Vendor>("/vendors", {
     method: "POST",
@@ -454,12 +457,14 @@ deleteTask: (id: string) =>
     google_maps_url: string;
     notes: string;
 
-    // ✅ snapshot z sal gminnych (Opcja A)
     county: string;
     max_participants: number | null;
     equipment: string;
     pricing: string;
     rental_info: string;
+    commune_office: string;
+    rural_type: string;
+    usable_area: number | null;
 
 
     lat: number | null;

@@ -15,6 +15,22 @@ const router = Router();
  *  - maxCapacity?: number   -> maksymalna liczba uczestników
  *  - q?: string             -> fraza w nazwie/adresie
  */
+
+// "120 m2" / "120,5" / "ok. 120" -> 120 / 120.5
+function parseUsableArea(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+
+  const txt = value.trim();
+  if (!txt) return undefined;
+
+  const m = txt.match(/\d+(?:[\.,]\d+)?/);
+  if (!m) return undefined;
+
+  const n = Number(m[0].replace(",", "."));
+  return Number.isFinite(n) ? n : undefined;
+}
+
 router.get(
   "/search",
   authMiddleware,
@@ -103,7 +119,9 @@ router.get(
           address: v.address,
           // UJEDNOLICONY format dla frontu
           location: hasValidCoords ? { lat, lng } : null,
-
+          commune_office: v.commune_office ?? undefined,
+          rural_type: v.type ?? undefined,
+          usable_area: parseUsableArea(v.usable_area) ?? undefined,
           // Dodatkowo surowe lat/lng – na wszelki wypadek i do debugowania
           lat: hasValidCoords ? lat : null,
           lng: hasValidCoords ? lng : null,

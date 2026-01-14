@@ -6,7 +6,7 @@ import type { InterviewResponse, VendorKey } from "../types/interview";
 import type { Vendor, VendorType } from "../types/vendor";
 import { api } from "../lib/api";
 
-import { MapPin, Plus, Trash2, Search, ExternalLink, Loader2,  Globe, Info, Mail, Phone, ReceiptText, Users, StickyNote } from "lucide-react";
+import { MapPin, Plus, Trash2, Search, ExternalLink, Loader2,  Globe, Info, Mail, Phone, ReceiptText, Users, StickyNote, ClipboardList } from "lucide-react";
 
 import VendorList from "../components/vendors/VendorList";
 import RuralVenuesMap from "../components/vendors/RuralVenuesMap";
@@ -17,13 +17,16 @@ type Params = { id: string };
 
 // ---------- Dodatkowe typy lokalne ----------
 type VendorWithSource = Vendor & {
-  // source już jest w Vendor: VendorSource
   county?: string;
   max_participants?: number;
   equipment?: string;
   pricing?: string;
   rental_info?: string;
+  commune_office?: string;
+  rural_type?: string;     // (żeby nie mylić z v.type = VendorType)
+  usable_area?: number;
 };
+
 
 
 // obiekty z bazy sal gminnych mogą mieć dodatkowe pola — ale NIE zapisujemy ich do event vendors (opcja A)
@@ -34,7 +37,11 @@ type RuralVenue = Vendor & {
   pricing?: string | null;
   rental_info?: string | null;
 
-  // czasem lat/lng są wprost na obiekcie, czasem w location
+  // ✅ nowe
+  commune_office?: string | null;
+  rural_type?: string | null;
+  usable_area?: number | null;
+
   lat?: number | null;
   lng?: number | null;
   location?: { lat?: number | null; lng?: number | null } | null;
@@ -44,6 +51,8 @@ type RuralVenue = Vendor & {
   website?: string | null;
   google_maps_url?: string | null;
 };
+
+
 
 // ---------- UI helpers ----------
 const pageWrap = "w-full max-w-6xl mx-auto px-6 py-8";
@@ -142,48 +151,39 @@ function str(v: unknown): string | undefined {
 function num(v: unknown): number | undefined {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   if (typeof v === "string") {
-    const n = Number(v.trim());
+    const txt = v.trim();
+    if (!txt) return undefined;
+
+    // "120 m2" / "120,5" / "ok. 120" -> 120 / 120.5
+    const m = txt.match(/\d+(?:[.,]\d+)?/);
+    if (!m) return undefined;
+
+    const n = Number(m[0].replace(",", "."));
     return Number.isFinite(n) ? n : undefined;
   }
   return undefined;
 }
 
+
 function normalizeRuralVenue(raw: unknown) {
-  // bazujemy na tym co już masz w typie RuralVenue, ale łapiemy różne nazwy pól
   const r = raw as Record<string, unknown>;
 
   return {
     ...r,
-    county:
-      str(r.county) ??
-      str(r.powiat) ??
-      str(r.county_name) ??
-      undefined,
+    county: str(r.county) ?? str(r.powiat) ?? str(r.county_name) ?? undefined,
+    max_participants: num(r.max_participants) ?? num(r.max_osob) ?? num(r.max_people) ?? undefined,
+    equipment: str(r.equipment) ?? str(r.wyposazenie) ?? undefined,
+    pricing: str(r.pricing) ?? str(r.cennik) ?? str(r.price) ?? undefined,
+    rental_info: str(r.rental_info) ?? str(r.wynajem) ?? str(r.rental) ?? undefined,
 
-    max_participants:
-      num(r.max_participants) ??
-      num(r.max_osob) ??
-      num(r.max_people) ??
-      undefined,
-
-    equipment:
-      str(r.equipment) ??
-      str(r.wyposazenie) ??
-      undefined,
-
-    pricing:
-      str(r.pricing) ??
-      str(r.cennik) ??
-      str(r.price) ??
-      undefined,
-
-    rental_info:
-      str(r.rental_info) ??
-      str(r.wynajem) ??
-      str(r.rental) ??
-      undefined,
+    // ✅ nowe
+    commune_office: str(r.commune_office) ?? str(r.urzad) ?? str(r.urzad_gminy) ?? str(r.communeOffice) ?? undefined,
+    rural_type: str(r.rural_type) ?? str(r.type) ?? str(r.typ) ?? undefined,
+    usable_area: num(r.usable_area) ?? num(r.powierzchnia_uzytkowa) ?? num(r.usableArea) ?? undefined,
+  
   };
 }
+
 
 function truthyText(v: unknown) {
   if (typeof v !== "string") return Boolean(v);
@@ -203,6 +203,9 @@ function normalizeMyVendor(raw: unknown): VendorWithSource {
   const equipment = str(r.equipment) ?? str(r.wyposazenie);
   const pricing = str(r.pricing) ?? str(r.cennik);
   const rental_info = str(r.rental_info) ?? str(r.rentalInfo) ?? str(r.wynajem);
+  const commune_office = str(r.commune_office) ?? str(r.communeOffice) ?? str(r.urzad_gminy) ?? str(r.urzad);
+  const rural_type = str(r.rural_type) ?? str(r.ruralType) ?? str(r.type_name) ?? str(r.typ);
+  const usable_area = num(r.usable_area) ?? num(r.usableArea) ?? num(r.powierzchnia_uzytkowa);
 
   const hasRuralSnapshot =
     truthyText(county) ||
@@ -267,6 +270,11 @@ function normalizeMyVendor(raw: unknown): VendorWithSource {
     equipment,
     pricing,
     rental_info,
+
+    commune_office,
+    rural_type,
+    usable_area,
+
   };
 }
 
@@ -506,29 +514,32 @@ setMyVendors(list);
       const lat = v.location?.lat ?? v.lat ?? undefined;
       const lng = v.location?.lng ?? v.lng ?? undefined;
 
-      await api.createVendor({
+await api.createVendor({
   event_id: eventId,
   name: v.name,
   source: "RURAL",
   type: "HALL",
-
   address: v.address ?? undefined,
   phone: v.phone ?? undefined,
   email: v.email ?? undefined,
   website: v.website ?? undefined,
   google_maps_url: v.google_maps_url ?? undefined,
   notes: undefined,
-
   lat,
   lng,
 
-  // ✅ snapshot z bazy sal
   county: v.county ?? undefined,
   max_participants: v.max_participants ?? undefined,
   equipment: v.equipment ?? undefined,
   pricing: v.pricing ?? undefined,
   rental_info: v.rental_info ?? undefined,
+
+  // ✅ nowe snapshoty
+  commune_office: v.commune_office ?? undefined,
+  rural_type: v.rural_type ?? undefined,      // ✅ tutaj
+  usable_area: v.usable_area ?? undefined,
 });
+
 
 
       await reloadMyVendors();
@@ -722,7 +733,11 @@ setSelectedRural(list[0] ?? null);
   v.max_participants != null ||
   truthyText(v.equipment) ||
   truthyText(v.pricing) ||
-  truthyText(v.rental_info);
+  truthyText(v.rental_info) ||
+  truthyText(v.commune_office) ||
+  truthyText(v.rural_type) ||
+  v.usable_area != null;
+
 
 
     const websiteUrl = withHttp(v.website ?? null);
@@ -875,6 +890,27 @@ setSelectedRural(list[0] ?? null);
                     <div className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3">
                       <div className="text-[11px] tracking-wider uppercase text-white/50">Max osób</div>
                       <div className="mt-1 text-[15px] text-white/90 font-medium">{v.max_participants}</div>
+                    </div>
+                  ) : null}
+
+                  {v.commune_office ? (
+                    <div className="md:col-span-2 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3">
+                      <div className="text-[11px] tracking-wider uppercase text-white/50">Podlegający urząd</div>
+                      <div className="mt-1 text-[14px] md:text-[15px] text-white/90 font-medium">{v.commune_office}</div>
+                    </div>
+                  ) : null}
+
+                  {v.rural_type ? (
+                    <div className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3">
+                      <div className="text-[11px] tracking-wider uppercase text-white/50">Typ obiektu</div>
+                      <div className="mt-1 text-[15px] text-white/90 font-medium">{v.rural_type}</div>
+                    </div>
+                  ) : null}
+
+                  {v.usable_area != null ? (
+                    <div className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3">
+                      <div className="text-[11px] tracking-wider uppercase text-white/50">Powierzchnia</div>
+                      <div className="mt-1 text-[15px] text-white/90 font-medium">{v.usable_area} m²</div>
                     </div>
                   ) : null}
 
@@ -1138,7 +1174,7 @@ setSelectedRural(list[0] ?? null);
                     </div>
 
                     {/* ✅ ograniczamy wysokość listy – spójnie z mapą */}
-                    <div className="max-h-[520px] overflow-auto">
+                    <div className="h-[520px] overflow-y-auto overflow-x-hidden">
                       <VendorList
                         vendors={ruralResults}
                         selectedId={selectedRural?.id ?? null}
@@ -1160,12 +1196,7 @@ setSelectedRural(list[0] ?? null);
                         )}
                       </div>
 
-                      {selectedRural && (
-                        <button type="button" className={btnSecondary} onClick={() => void addRuralToMy(selectedRural)}>
-                          <Plus className="w-4 h-4 text-[#d7b45a]" />
-                          Dodaj do moich
-                        </button>
-                      )}
+                      
                     </div>
 
                     {/* ✅ rama wysokości mapy */}
@@ -1188,8 +1219,12 @@ setSelectedRural(list[0] ?? null);
                             Kliknij na liście lub na pinezce — tutaj pokażemy dane z bazy sal gminnych.
                           </div>
                         </div>
-                        {selectedRural && <span className={chip}>Wybrano</span>}
-                      </div>
+                        {selectedRural && (
+                        <button type="button" className={btnSecondary} onClick={() => void addRuralToMy(selectedRural)}>
+                          <Plus className="w-4 h-4 text-[#d7b45a]" />
+                          Dodaj do moich
+                        </button>
+                      )}                      </div>
 
                       {!selectedRural ? (
   <div className="mt-4 text-sm text-white/60">Brak wybranego obiektu.</div>
@@ -1212,6 +1247,13 @@ setSelectedRural(list[0] ?? null);
             Powiat: <span className="text-white/90 font-medium">{selectedRural.county}</span>
           </div>
         ) : null}
+        
+        {selectedRural.commune_office ? (
+          <div className="text-sm text-white/70">
+            Podlegający urząd:{" "}
+            <span className="text-white/90 font-medium">{selectedRural.commune_office}</span>
+          </div>
+        ) : null}
 
         {typeof selectedRural.max_participants === "number" ? (
           <div className="flex items-center gap-2 text-sm text-white/70">
@@ -1222,12 +1264,21 @@ setSelectedRural(list[0] ?? null);
             </span>
           </div>
         ) : null}
-
-        {selectedRural.equipment ? (
-          <div className="mt-1 text-sm text-white/70">
-            Wyposażenie: <span className="text-white/90 font-medium">{selectedRural.equipment}</span>
+        
+        {selectedRural.rural_type ? (
+          <div className="text-sm text-white/70">
+            Typ obiektu:{" "}
+            <span className="text-white/90 font-medium">{selectedRural.rural_type}</span>
           </div>
         ) : null}
+
+        {typeof selectedRural.usable_area === "number" ? (
+          <div className="text-sm text-white/70">
+            Powierzchnia:{" "}
+            <span className="text-white/90 font-medium">{selectedRural.usable_area} m²</span>
+          </div>
+        ) : null}
+
       </div>
 
       {/* szybkie akcje / kontakt */}
@@ -1265,6 +1316,19 @@ setSelectedRural(list[0] ?? null);
           </div>
           <div className="mt-2 text-sm text-white/75 whitespace-pre-wrap leading-relaxed">
             {selectedRural.pricing}
+          </div>
+        </div>
+      ) : null}
+
+
+      {selectedRural.equipment ? (
+        <div className="mb-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-white/85">
+            <ClipboardList  className="w-4 h-4 text-[#d7b45a]" />
+            Wyposażenie
+          </div>
+          <div className="mt-2 text-sm text-white/75 whitespace-pre-wrap leading-relaxed">
+            {selectedRural.equipment}
           </div>
         </div>
       ) : null}

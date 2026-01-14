@@ -52,6 +52,9 @@ router.post("/", authMiddleware, async (req: AuthRequest, res: Response) => {
       equipment,
       pricing,
       rental_info,
+      commune_office,
+      rural_type,
+      usable_area,
 
       lat,
       lng,
@@ -71,6 +74,10 @@ router.post("/", authMiddleware, async (req: AuthRequest, res: Response) => {
       equipment?: string | null;
       pricing?: string | null;
       rental_info?: string | null;
+      commune_office?: string | null;
+      rural_type?: string | null;
+      usable_area?: number | null;
+
 
       lat?: number | null;
       lng?: number | null;
@@ -98,6 +105,9 @@ router.post("/", authMiddleware, async (req: AuthRequest, res: Response) => {
       equipment: equipment ?? null,
       pricing: pricing ?? null,
       rental_info: rental_info ?? null,
+      commune_office: commune_office ?? null,
+      rural_type: rural_type ?? null,
+      usable_area: usable_area ?? null,
 
       lat: lat ?? null,
       lng: lng ?? null,
@@ -138,6 +148,9 @@ router.put("/:id", authMiddleware, async (req: AuthRequest, res: Response) => {
       equipment,
       pricing,
       rental_info,
+      commune_office,
+      rural_type,
+      usable_area,
 
       lat,
       lng,
@@ -156,6 +169,10 @@ router.put("/:id", authMiddleware, async (req: AuthRequest, res: Response) => {
       equipment?: string | null;
       pricing?: string | null;
       rental_info?: string | null;
+      commune_office?: string | null;
+      rural_type?: string | null;
+      usable_area?: number | null;
+
 
       lat?: number | null;
       lng?: number | null;
@@ -176,6 +193,9 @@ router.put("/:id", authMiddleware, async (req: AuthRequest, res: Response) => {
       equipment: equipment ?? vendor.equipment,
       pricing: pricing ?? vendor.pricing,
       rental_info: rental_info ?? vendor.rental_info,
+      commune_office: commune_office ?? vendor.commune_office,
+      rural_type: rural_type ?? vendor.rural_type,
+      usable_area: usable_area ?? vendor.usable_area,
 
       lat: lat ?? vendor.lat,
       lng: lng ?? vendor.lng,

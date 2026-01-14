@@ -197,7 +197,7 @@ const RSVP_OPTIONS = [
       });
       (g.SubGuests || []).forEach((sg) =>
         data.push({
-          Typ: "Podgość",
+          Typ: "Współgość",
           Imię: sg.first_name,
           Nazwisko: sg.last_name,
           Telefon: sg.phone,
@@ -444,7 +444,7 @@ const byValue = <T extends string>(opts: ReadonlyArray<{ value: T; label: string
     onClick={() => setShowAddSubGuestModal({ open: true, parentId: guest.id! })}
     className={btnGold}
   >
-    + Podgość
+    + Współgość
   </button>
 </div>
 
@@ -495,7 +495,7 @@ const byValue = <T extends string>(opts: ReadonlyArray<{ value: T; label: string
     onClick={() => setShowAddSubGuestModal({ open: true, parentId: guest.id! })}
     className={btnGold}
   >
-    + Podgość
+    + Współgość
   </button>
 </div>
 
@@ -552,9 +552,9 @@ const byValue = <T extends string>(opts: ReadonlyArray<{ value: T; label: string
 )}
 
 
-      {/* === MODAL: Dodaj podgościa === */}
+      {/* === MODAL: Dodaj współgościa === */}
 {showAddSubGuestModal.open && (
-  <Modal onClose={() => setShowAddSubGuestModal({ open: false })} title="Dodaj podgościa">
+  <Modal onClose={() => setShowAddSubGuestModal({ open: false })} title="Dodaj współgościa">
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       <input placeholder="Imię" value={subGuestForm.first_name} onChange={(e) => setSubGuestForm({ ...subGuestForm, first_name: e.target.value })} className={inputBase} />
       <input placeholder="Nazwisko" value={subGuestForm.last_name} onChange={(e) => setSubGuestForm({ ...subGuestForm, last_name: e.target.value })} className={inputBase} />
@@ -635,9 +635,9 @@ const byValue = <T extends string>(opts: ReadonlyArray<{ value: T; label: string
 )}
 
 
-      {/* === MODAL: Edycja podgościa === */}
+      {/* === MODAL: Edycja współgościa === */}
 {editingSubGuest && (
-  <Modal onClose={() => setEditingSubGuest(null)} title="Edytuj dane podgościa">
+  <Modal onClose={() => setEditingSubGuest(null)} title="Edytuj dane współgościa">
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       <input placeholder="Imię" value={editingSubGuest.sub.first_name} onChange={(e) => setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, first_name: e.target.value } })} className={inputBase} />
       <input placeholder="Nazwisko" value={editingSubGuest.sub.last_name} onChange={(e) => setEditingSubGuest({ ...editingSubGuest, sub: { ...editingSubGuest.sub, last_name: e.target.value } })} className={inputBase} />

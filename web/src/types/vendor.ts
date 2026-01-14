@@ -58,6 +58,9 @@ export interface Vendor {
   rental_info?: string;
   pricing?: string;
   county?: string;
+  commune_office?: string;
+  rural_type?: string;
+  usable_area?: number;
 
   // event (dla CUSTOM)
   event_id?: string;
