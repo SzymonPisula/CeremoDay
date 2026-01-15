@@ -1,8 +1,19 @@
 // /CeremoDay/web/src/pages/Inspiration.tsx
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
-import { Image as ImageIcon, Plus, Sparkles, Loader2, Trash2, Search } from "lucide-react";
+import {
+  Image as ImageIcon,
+  Plus,
+  Sparkles,
+  Loader2,
+  Trash2,
+  Search,
+  Pencil,
+  X,
+} from "lucide-react";
 import { api, BASE_URL } from "../lib/api";
+import Select from "../ui/Select";
 import type {
   InspirationBoard,
   InspirationItem,
@@ -10,10 +21,9 @@ import type {
   InspirationBoardPayload,
   InspirationItemPayload,
 } from "../types/inspiration";
+import PreviewModal from "../components/preview/PreviewModal";
 
-type Params = {
-  id: string; // eventId
-};
+type Params = { id: string };
 
 const CATEGORY_LABELS: Record<InspirationCategory, string> = {
   DEKORACJE: "Dekoracje",
@@ -21,6 +31,88 @@ const CATEGORY_LABELS: Record<InspirationCategory, string> = {
   STROJE: "Stroje",
   PAPETERIA: "Papeteria",
   INNE: "Inne",
+};
+
+const CATEGORY_OPTIONS = ([
+  { value: "DEKORACJE", label: "Dekoracje" },
+  { value: "KWIATY", label: "Kwiaty" },
+  { value: "STROJE", label: "Stroje" },
+  { value: "PAPETERIA", label: "Papeteria" },
+  { value: "INNE", label: "Inne" },
+] as const) satisfies ReadonlyArray<{ value: InspirationCategory; label: string }>;
+
+const FILTER_CATEGORY_OPTIONS = ([
+  { value: "all", label: "Wszystkie kategorie" },
+  { value: "DEKORACJE", label: "Dekoracje" },
+  { value: "KWIATY", label: "Kwiaty" },
+  { value: "STROJE", label: "Stroje" },
+  { value: "PAPETERIA", label: "Papeteria" },
+  { value: "INNE", label: "Inne" },
+] as const) satisfies ReadonlyArray<{
+  value: "all" | InspirationCategory;
+  label: string;
+}>;
+
+// ===== Modal (spójny, jak w Gościach) =====
+const Modal: React.FC<{
+  onClose: () => void;
+  title?: string;
+  children: React.ReactNode;
+}> = ({ onClose, title, children }) => {
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKey);
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  if (typeof document === "undefined") return null;
+
+  const modalRoot =
+    document.getElementById("modal-root") ||
+    (() => {
+      const div = document.createElement("div");
+      div.id = "modal-root";
+      document.body.appendChild(div);
+      return div;
+    })();
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9999999] flex items-center justify-center"
+      style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
+    >
+      {/* overlay */}
+      <div onClick={onClose} className="absolute inset-0 cursor-pointer" />
+
+      {/* content */}
+      <div className="relative w-full max-w-2xl p-6 overflow-y-auto max-h-[90vh] rounded-2xl shadow-2xl border border-white/10 bg-emerald-950/70 text-white backdrop-blur-xl">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            {title ? <h3 className="text-xl font-semibold text-white">{title}</h3> : null}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-white/10 bg-white/5 p-2 hover:bg-white/10 transition"
+            title="Zamknij"
+          >
+            <X className="w-4 h-4 text-white/80" />
+          </button>
+        </div>
+
+        {children}
+      </div>
+    </div>,
+    modalRoot
+  );
 };
 
 export default function Inspiration() {
@@ -44,24 +136,30 @@ export default function Inspiration() {
   const [newItemCategory, setNewItemCategory] = useState<InspirationCategory>("DEKORACJE");
   const [newItemTags, setNewItemTags] = useState("");
   const [newItemDescription, setNewItemDescription] = useState("");
+  const [newFile, setNewFile] = useState<File | null>(null);
 
   // filtrowanie
   const [categoryFilter, setCategoryFilter] = useState<InspirationCategory | "all">("all");
   const [searchFilter, setSearchFilter] = useState("");
+
+  // ===== Edycja tablicy =====
+  const [editingBoard, setEditingBoard] = useState<InspirationBoard | null>(null);
+  const [editBoardName, setEditBoardName] = useState("");
+  const [editBoardDescription, setEditBoardDescription] = useState("");
+
+  // ===== Edycja inspiracji =====
+  const [editingItem, setEditingItem] = useState<InspirationItem | null>(null);
+  const [editItemTitle, setEditItemTitle] = useState("");
+  const [editItemCategory, setEditItemCategory] = useState<InspirationCategory>("DEKORACJE");
+  const [editItemTags, setEditItemTags] = useState("");
+  const [editItemDescription, setEditItemDescription] = useState("");
 
   // UI helpers — spójne z resztą “CRM vibe”
   const inputBase =
     "w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-white placeholder:text-white/35 " +
     "outline-none focus:border-[#c8a04b]/50 focus:ring-2 focus:ring-[#c8a04b]/15 transition";
 
-  const selectBase =
-    inputBase +
-    " pr-9 appearance-none " +
-    "[&>option]:bg-[#07160f] [&>option]:text-white"; // ważne: dropdown bez bieli
-
   const textareaBase = inputBase + " min-h-[96px] resize-y";
-
-
 
   const btnGold =
     "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " +
@@ -70,6 +168,14 @@ export default function Inspiration() {
     "hover:brightness-105 active:translate-y-[1px] " +
     "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/45 " +
     "transition disabled:opacity-60";
+
+  const btnSecondary =
+    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium " +
+    "bg-white/5 text-white border border-white/10 " +
+    "hover:bg-white/10 hover:border-white/15 " +
+    "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/40 " +
+    "transition";
+
 
   const cardBase =
     "rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md " +
@@ -91,7 +197,6 @@ export default function Inspiration() {
         const data = await api.getInspirationBoards(eventId);
         setBoards(data);
 
-        // ustaw domyślną tablicę tylko jeśli jeszcze nie wybrano
         setSelectedBoardId((prev) => {
           if (prev) return prev;
           return data.length > 0 ? data[0].id : null;
@@ -174,6 +279,38 @@ export default function Inspiration() {
     }
   };
 
+  const openEditBoard = (b: InspirationBoard) => {
+    setEditingBoard(b);
+    setEditBoardName(b.name ?? "");
+    setEditBoardDescription(b.description ?? "");
+  };
+
+  const handleSaveBoardEdit = async () => {
+    if (!editingBoard) return;
+    const name = editBoardName.trim();
+    if (!name) {
+      alert("Nazwa tablicy nie może być pusta");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError(null);
+      const updated = await api.updateInspirationBoard(editingBoard.id, {
+        name,
+        description: editBoardDescription.trim() || null,
+      });
+
+      setBoards((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+      setEditingBoard(null);
+    } catch (err) {
+      console.error("❌ Błąd edycji tablicy:", err);
+      setError("Nie udało się zapisać zmian tablicy");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleDeleteBoard = async (board: InspirationBoard) => {
     if (!window.confirm(`Na pewno chcesz usunąć tablicę "${board.name}"?`)) return;
 
@@ -183,7 +320,6 @@ export default function Inspiration() {
       setBoards((prev) => prev.filter((b) => b.id !== board.id));
 
       if (selectedBoardId === board.id) {
-        // ustaw kolejną dostępna tablicę jako aktywną
         setSelectedBoardId((prevSelected) => {
           if (prevSelected !== board.id) return prevSelected;
           const remaining = boards.filter((b) => b.id !== board.id);
@@ -219,14 +355,64 @@ export default function Inspiration() {
     try {
       setSaving(true);
       setError(null);
+
+      // 1) tworzymy rekord
       const created = await api.createInspirationItem(selectedBoardId, payload);
-      setItems((prev) => [...prev, created]);
+
+      // 2) jeśli user wybrał plik -> upload od razu
+      let finalItem = created;
+      if (newFile) {
+        finalItem = await api.uploadInspirationImage(created.id, newFile);
+      }
+
+      setItems((prev) => [...prev, finalItem]);
+
+      // reset form
       setNewItemTitle("");
       setNewItemDescription("");
       setNewItemTags("");
+      setNewItemCategory("DEKORACJE");
+      setNewFile(null);
     } catch (err) {
       console.error("❌ Błąd tworzenia inspiracji:", err);
       setError("Nie udało się dodać inspiracji");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openEditItem = (it: InspirationItem) => {
+    setEditingItem(it);
+    setEditItemTitle(it.title ?? "");
+    setEditItemCategory(it.category ?? "DEKORACJE");
+    setEditItemTags(it.tags ?? "");
+    setEditItemDescription(it.description ?? "");
+  };
+
+  const handleSaveItemEdit = async () => {
+    if (!editingItem) return;
+    const title = editItemTitle.trim();
+    if (!title) {
+      alert("Tytuł nie może być pusty");
+      return;
+    }
+
+    const payload: Partial<InspirationItemPayload> = {
+      title,
+      category: editItemCategory,
+      tags: editItemTags.trim() || null,
+      description: editItemDescription.trim() || null,
+    };
+
+    try {
+      setSaving(true);
+      setError(null);
+      const updated = await api.updateInspirationItem(editingItem.id, payload);
+      setItems((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+      setEditingItem(null);
+    } catch (err) {
+      console.error("❌ Błąd edycji inspiracji:", err);
+      setError("Nie udało się zapisać zmian inspiracji");
     } finally {
       setSaving(false);
     }
@@ -255,22 +441,20 @@ export default function Inspiration() {
       const updated = await api.uploadInspirationImage(item.id, file);
       setItems((prev) => prev.map((i) => (i.id === item.id ? updated : i)));
     } catch (err) {
-      console.error("❌ Błąd uploadu obrazka inspiracji:", err);
-      setError("Nie udało się wgrać obrazka");
+      console.error("❌ Błąd uploadu pliku inspiracji:", err);
+      setError("Nie udało się wgrać pliku");
     } finally {
       setSaving(false);
     }
   };
+const [preview, setPreview] = useState<{ open: boolean; url: string; title?: string } | null>(null);
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
-          <div
-            className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 grid place-items-center"
-            aria-hidden
-          >
+          <div className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 grid place-items-center" aria-hidden>
             <Sparkles className="w-5 h-5 text-[#d7b45a]" />
           </div>
           <div>
@@ -342,17 +526,31 @@ export default function Inspiration() {
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteBoard(board);
-                    }}
-                    className="inline-flex items-center gap-2 text-xs text-white/55 hover:text-red-200"
-                    title="Usuń tablicę"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openEditBoard(board);
+                      }}
+                      className="inline-flex items-center gap-2 text-xs text-white/55 hover:text-white/85"
+                      title="Edytuj tablicę"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteBoard(board);
+                      }}
+                      className="inline-flex items-center gap-2 text-xs text-white/55 hover:text-red-200"
+                      title="Usuń tablicę"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {isActive && (
@@ -381,12 +579,7 @@ export default function Inspiration() {
                 onChange={(e) => setNewBoardDescription(e.target.value)}
                 className={textareaBase}
               />
-              <button
-                type="button"
-                onClick={handleCreateBoard}
-                disabled={saving}
-                className={btnGold + " w-full"}
-              >
+              <button type="button" onClick={handleCreateBoard} disabled={saving} className={btnGold + " w-full"}>
                 <Plus className="w-4 h-4" />
                 Dodaj tablicę
               </button>
@@ -409,27 +602,13 @@ export default function Inspiration() {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-              <div className="relative">
-                <select
+              <div className="min-w-[240px]">
+                <Select
+                  label="Kategoria"
                   value={categoryFilter}
-                  onChange={(e) =>
-                    setCategoryFilter(
-                      e.target.value === "all"
-                        ? "all"
-                        : (e.target.value as InspirationCategory)
-                    )
-                  }
-                  className={selectBase + " min-w-[220px]"}
-                >
-                  <option value="all">Wszystkie kategorie</option>
-                  {(
-                    ["DEKORACJE", "KWIATY", "STROJE", "PAPETERIA", "INNE"] as InspirationCategory[]
-                  ).map((c) => (
-                    <option key={c} value={c}>
-                      {CATEGORY_LABELS[c]}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setCategoryFilter(v as InspirationCategory | "all")}
+                  options={FILTER_CATEGORY_OPTIONS}
+                />
               </div>
 
               <div className="relative">
@@ -461,7 +640,7 @@ export default function Inspiration() {
               <div>
                 <div className="text-white font-semibold">Dodaj inspirację</div>
                 <div className="text-xs text-white/55">
-                  Tytuł, kategoria, tagi + opis. Obrazek możesz dodać później lub od razu.
+                  Tytuł, kategoria, tagi + opis. Plik możesz dodać od razu.
                 </div>
               </div>
             </div>
@@ -484,19 +663,12 @@ export default function Inspiration() {
               </div>
 
               <div className="space-y-3">
-                <select
+                <Select
+                  label="Kategoria"
                   value={newItemCategory}
-                  onChange={(e) => setNewItemCategory(e.target.value as InspirationCategory)}
-                  className={selectBase}
-                >
-                  {(
-                    ["DEKORACJE", "KWIATY", "STROJE", "PAPETERIA", "INNE"] as InspirationCategory[]
-                  ).map((c) => (
-                    <option key={c} value={c}>
-                      {CATEGORY_LABELS[c]}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setNewItemCategory(v as InspirationCategory)}
+                  options={CATEGORY_OPTIONS}
+                />
 
                 <input
                   type="text"
@@ -507,13 +679,48 @@ export default function Inspiration() {
                 />
               </div>
 
-              <div className="flex items-end">
-                <button
-                  type="button"
-                  onClick={handleCreateItem}
-                  disabled={saving}
-                  className={btnGold + " w-full"}
-                >
+              <div className="space-y-3">
+                <div>
+                  <div className="text-[11px] uppercase tracking-wider text-white/55 mb-1">
+                    Plik (zdjęcie lub PDF)
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label
+                      className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold
+                                bg-white/5 text-white border border-white/10
+                                hover:bg-white/8 hover:border-white/15 cursor-pointer transition"
+                    >
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        className="hidden"
+                        onChange={(e) => setNewFile(e.target.files?.[0] ?? null)}
+                      />
+                      + Dodaj plik
+                    </label>
+
+                    <div className="text-sm text-white/70 truncate">
+                      {newFile ? (
+                        <span className="text-white/85">{newFile.name}</span>
+                      ) : (
+                        <span className="text-white/45">Nie wybrano pliku</span>
+                      )}
+                    </div>
+
+                    {newFile ? (
+                      <button
+                        type="button"
+                        onClick={() => setNewFile(null)}
+                        className="text-xs text-white/55 hover:text-white/80 transition"
+                      >
+                        Wyczyść
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+
+                <button type="button" onClick={handleCreateItem} disabled={saving} className={btnGold + " w-full"}>
                   <Plus className="w-4 h-4" />
                   Dodaj inspirację
                 </button>
@@ -532,18 +739,28 @@ export default function Inspiration() {
                       alt={item.title}
                       className="w-full h-44 object-cover"
                     />
+                    
                   ) : (
                     <div className="w-full h-44 flex items-center justify-center bg-black/20 text-white/45 text-xs">
                       Brak obrazka
                     </div>
                   )}
+<button
+  type="button"
+  onClick={() => setPreview({ open: true, url: item.image_url!, title: item.title })}
+  className="absolute top-2 left-2 rounded-full border border-white/15 bg-black/35 backdrop-blur px-3 py-1.5 text-xs text-white hover:bg-black/45 transition"
+>
+  Podgląd
+</button>
+
+
 
                   <label className="absolute bottom-2 right-2 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 backdrop-blur px-3 py-1.5 cursor-pointer text-xs text-white hover:bg-black/45 transition">
                     <ImageIcon className="w-4 h-4 text-[#d7b45a]" />
                     <span>Dodaj / zmień</span>
                     <input
                       type="file"
-                      accept="image/*"
+                      accept="image/*,application/pdf"
                       className="hidden"
                       onChange={(e) => handleUploadImage(item, e.target.files?.[0])}
                     />
@@ -555,31 +772,45 @@ export default function Inspiration() {
                     <div className="min-w-0">
                       <div className="font-semibold text-white truncate">{item.title}</div>
                       <div className="mt-1 flex flex-wrap gap-2">
-                        {item.category && <span className={chip}>{CATEGORY_LABELS[item.category]}</span>}
-                        {item.tags && <span className={chip}>{item.tags}</span>}
+                        {item.category ? <span className={chip}>{CATEGORY_LABELS[item.category]}</span> : null}
+                        {item.tags ? <span className={chip}>{item.tags}</span> : null}
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteItem(item)}
-                      className="text-xs text-white/55 hover:text-red-200"
-                      title="Usuń inspirację"
-                    >
-                      Usuń
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => openEditItem(item)}
+                        className="text-xs text-white/55 hover:text-white/85 inline-flex items-center gap-1"
+                        title="Edytuj"
+                      >
+                        <Pencil className="w-4 h-4" />
+                        Edytuj
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteItem(item)}
+                        className="text-xs text-white/55 hover:text-red-200"
+                        title="Usuń"
+                      >
+                        Usuń
+                      </button>
+                    </div>
                   </div>
 
-                  {item.description && (
+                  {item.description ? (
                     <p className="text-sm text-white/60 leading-relaxed line-clamp-3">{item.description}</p>
-                  )}
+                  ) : null}
                 </div>
               </div>
             ))}
           </div>
 
           {filteredItems.length === 0 && !loadingItems && (
-            <p className="mt-4 text-sm text-white/55">Brak inspiracji na tej tablicy. Dodaj pierwszą powyżej.</p>
+            <p className="mt-4 text-sm text-white/55">
+              Brak inspiracji na tej tablicy. Dodaj pierwszą powyżej.
+            </p>
           )}
         </div>
       ) : (
@@ -589,6 +820,106 @@ export default function Inspiration() {
           </p>
         </div>
       )}
+
+      {/* ===== MODAL: Edycja tablicy ===== */}
+      {editingBoard ? (
+        <Modal onClose={() => setEditingBoard(null)} title="Edytuj tablicę">
+          <div className="space-y-3">
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-white/55 mb-1">Nazwa</div>
+              <input
+                value={editBoardName}
+                onChange={(e) => setEditBoardName(e.target.value)}
+                className={inputBase}
+                placeholder="Nazwa tablicy…"
+              />
+            </div>
+
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-white/55 mb-1">Opis (opcjonalnie)</div>
+              <textarea
+                value={editBoardDescription}
+                onChange={(e) => setEditBoardDescription(e.target.value)}
+                className={textareaBase}
+                placeholder="Opis…"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setEditingBoard(null)} className={btnSecondary}>
+                Anuluj
+              </button>
+              <button type="button" onClick={handleSaveBoardEdit} className={btnGold} disabled={saving}>
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Zapisz
+              </button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+
+      {/* ===== MODAL: Edycja inspiracji ===== */}
+      {editingItem ? (
+        <Modal onClose={() => setEditingItem(null)} title="Edytuj inspirację">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="md:col-span-2">
+              <div className="text-[11px] uppercase tracking-wider text-white/55 mb-1">Tytuł</div>
+              <input
+                value={editItemTitle}
+                onChange={(e) => setEditItemTitle(e.target.value)}
+                className={inputBase}
+                placeholder="Tytuł…"
+              />
+            </div>
+
+            <Select
+              label="Kategoria"
+              value={editItemCategory}
+              onChange={(v) => setEditItemCategory(v as InspirationCategory)}
+              options={CATEGORY_OPTIONS}
+            />
+
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-white/55 mb-1">Tagi</div>
+              <input
+                value={editItemTags}
+                onChange={(e) => setEditItemTags(e.target.value)}
+                className={inputBase}
+                placeholder="np. boho, rustykalny…"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="text-[11px] uppercase tracking-wider text-white/55 mb-1">Opis</div>
+              <textarea
+                value={editItemDescription}
+                onChange={(e) => setEditItemDescription(e.target.value)}
+                className={textareaBase}
+                placeholder="Opis / notatki…"
+              />
+            </div>
+
+            <div className="md:col-span-2 flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setEditingItem(null)} className={btnSecondary}>
+                Anuluj
+              </button>
+              <button type="button" onClick={handleSaveItemEdit} className={btnGold} disabled={saving}>
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Zapisz
+              </button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+      <PreviewModal
+  open={!!preview?.open}
+  onClose={() => setPreview(null)}
+  title={preview?.title}
+  url={preview?.url ?? ""}
+  baseUrl={BASE_URL}
+/>
     </div>
+    
   );
+  
 }

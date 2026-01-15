@@ -153,6 +153,9 @@ export default function Dashboard() {
       setNewEventDate("");
       setNewEventLocation("");
       setSuccessMessage("Wydarzenie zostało utworzone.");
+
+      // ✅ KLUCZ: od razu wchodzimy do wydarzenia (a tam odpali się wywiad / panel)
+      navigate(`/event/${created.id}`, { replace: true });
     } catch (err: unknown) {
       console.error(err);
       const apiError = err as ApiErrorShape;
@@ -184,6 +187,9 @@ export default function Dashboard() {
 
       setJoinCode("");
       setSuccessMessage("Dołączono do wydarzenia.");
+
+      // ✅ UX: po dołączeniu też od razu wchodzimy do panelu
+      navigate(`/event/${joined.id}`, { replace: true });
     } catch (err: unknown) {
       console.error(err);
       const apiError = err as ApiErrorShape;
@@ -191,15 +197,12 @@ export default function Dashboard() {
     }
   };
 
-  
-
   if (!token) return null;
 
   return (
     <PageLayout
       title="Moje wydarzenia"
       subtitle="Twoje wydarzenia i szybki start. Wybierz event, utwórz nowy lub dołącz kodem."
-      
     >
       {/* Quick stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -295,13 +298,13 @@ export default function Dashboard() {
               onChange={(e) => setNewEventName(e.target.value)}
               required
             />
+
             <Input
-                label="Lokalizacja (Miejscowość)"
-                placeholder="np. Kraków"
-                value={newEventLocation}
-                onChange={(e) => setNewEventLocation(e.target.value)}
-              />
-          
+              label="Lokalizacja (Miejscowość)"
+              placeholder="np. Kraków"
+              value={newEventLocation}
+              onChange={(e) => setNewEventLocation(e.target.value)}
+            />
 
             <div className="pt-2">
               <Button variant="primary" type="submit">

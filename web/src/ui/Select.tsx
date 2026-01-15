@@ -70,6 +70,9 @@ export default function Select<T extends string>({
       window.removeEventListener("resize", onResize);
     };
   }, [open]);
+  
+  
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
 
   // zamykanie po kliknięciu poza (dla portalu też)
   useEffect(() => {
@@ -79,11 +82,16 @@ export default function Select<T extends string>({
       const target = e.target as Node;
 
       // klik w komponent / przycisk → nie zamykamy
-      if (root && root.contains(target)) return;
-      if (btn && btn.contains(target)) return;
+      const dd = dropdownRef.current;
 
-      // klik poza → zamykamy
-      setOpen(false);
+// klik w komponent / przycisk / dropdown → nie zamykamy
+if (root && root.contains(target)) return;
+if (btn && btn.contains(target)) return;
+if (dd && dd.contains(target)) return;
+
+// klik poza → zamykamy
+setOpen(false);
+
     }
 
     document.addEventListener("mousedown", onDocMouseDown);
@@ -155,22 +163,23 @@ export default function Select<T extends string>({
   const dropdown = open && rect
     ? createPortal(
         <div
-          role="listbox"
-          style={{
-            position: "fixed",
-            left: rect.left,
-            top: rect.bottom + 8, // mt-2
-            width: rect.width,
-            zIndex: 99999, // ✅ absolutnie nad UI
-          }}
-          className={cx(
-            "rounded-xl overflow-hidden",
-            "bg-[#0b1713]/95 backdrop-blur-xl",
-            "border border-white/10",
-            "absolute left-0 right-0 mt-2 z-[200]",
-            "shadow-[0_18px_55px_rgba(0,0,0,0.55)]"
-          )}
-        >
+  ref={dropdownRef}
+  role="listbox"
+  style={{
+    position: "fixed",
+    left: rect.left,
+    top: rect.bottom + 8,
+    width: rect.width,
+    zIndex: 10000050, // ✅ ponad modal
+  }}
+  className={cx(
+    "rounded-xl overflow-hidden",
+    "bg-[#0b1713]/95 backdrop-blur-xl",
+    "border border-white/10",
+    "shadow-[0_18px_55px_rgba(0,0,0,0.55)]"
+  )}
+>
+
           {/* ✅ bez scrolla: pokazujemy całą listę */}
           <div>
             {options.map((opt) => {

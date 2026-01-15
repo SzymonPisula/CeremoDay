@@ -7,8 +7,9 @@ import {
   DocumentType,
 } from "../types/document";
 import type { CeremonyType } from "../types/interview";
-import { api } from "../lib/api";
+import { api, BASE_URL } from "../lib/api";
 import { FileText, FileUp, Download, Trash2, CheckCircle2, Plus } from "lucide-react";
+import PreviewModal from "../components/preview/PreviewModal";
 
 type Params = {
   id: string;
@@ -158,6 +159,29 @@ export default function Documents() {
     return "church";
   }, [interviewCeremony]);
 
+
+  const handlePreviewFile = async (file: DocumentFile) => {
+  if (file.storage_location === "local") {
+    alert("Podgląd niedostępny — plik tylko lokalnie.");
+    return;
+  }
+
+  try {
+    // pobieramy blob tak jak do pobierania
+    const blob = await api.downloadDocumentFile(file.id);
+    const objectUrl = URL.createObjectURL(blob);
+
+    setPreview({
+      open: true,
+      url: objectUrl, // to już jest pełny URL (blob:)
+      title: file.original_name,
+    });
+  } catch (err) {
+    console.error("❌ Błąd podglądu pliku:", err);
+    setError("Nie udało się otworzyć podglądu pliku");
+  }
+};
+
  
 
   // ====== helpers ======
@@ -257,6 +281,14 @@ export default function Documents() {
       setError("Nie udało się zmienić statusu dokumentu");
     }
   };
+
+
+  const [preview, setPreview] = useState<{
+  open: boolean;
+  url: string;
+  title?: string;
+} | null>(null);
+
 
   const handleFileUpload = async (
     documentId: string,
@@ -699,23 +731,42 @@ export default function Documents() {
                                   </div>
 
                                   <div className="flex items-center gap-2 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleDownloadFile(file)}
-                                      className="inline-flex items-center gap-1 text-xs text-white/65 hover:text-[#d7b45a] transition"
-                                    >
-                                      <Download className="w-4 h-4" />
-                                      Pobierz
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleDeleteFile(file)}
-                                      className="inline-flex items-center gap-1 text-xs text-white/55 hover:text-red-300 transition"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                      Usuń
-                                    </button>
-                                  </div>
+  {/* Podgląd tylko dla plików z serwera */}
+  {file.storage_location === "server" ? (
+  <button
+    type="button"
+    onClick={() => void handlePreviewFile(file)}
+    className="inline-flex items-center gap-1 text-xs text-white/65 hover:text-[#d7b45a] transition"
+    title="Podgląd"
+  >
+    Podgląd
+  </button>
+) : (
+  <span className="text-xs text-white/35" title="Plik tylko lokalnie">
+    Podgląd niedostępny
+  </span>
+)}
+
+
+  <button
+    type="button"
+    onClick={() => void handleDownloadFile(file)}
+    className="inline-flex items-center gap-1 text-xs text-white/65 hover:text-[#d7b45a] transition"
+  >
+    <Download className="w-4 h-4" />
+    Pobierz
+  </button>
+
+  <button
+    type="button"
+    onClick={() => void handleDeleteFile(file)}
+    className="inline-flex items-center gap-1 text-xs text-white/55 hover:text-red-300 transition"
+  >
+    <Trash2 className="w-4 h-4" />
+    Usuń
+  </button>
+</div>
+
                                 </li>
                               ))}
                             </ul>
@@ -915,6 +966,15 @@ export default function Documents() {
           </section>
         )}
       </div>
+      <PreviewModal
+  open={!!preview?.open}
+  onClose={() => setPreview(null)}
+  title={preview?.title}
+  url={preview?.url ?? ""}
+  baseUrl={BASE_URL}
+/>
+
+
     </div>
   );
 }
