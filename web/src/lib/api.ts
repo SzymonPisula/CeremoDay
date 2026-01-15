@@ -1,5 +1,6 @@
 import { useAuthStore } from "../store/auth";
 import type { Guest, GuestPayload } from "../types/guest";
+import type { GuestsImportItem, GuestsImportResponse } from "../types/guest";
 import type {
   Document,
   DocumentFile,
@@ -171,6 +172,13 @@ export const api = {
     request<{ success?: boolean }>(`/guests/${id}`, {
       method: "DELETE",
     }),
+
+  importGuests: (eventId: string, items: GuestsImportItem[]) =>
+  request<GuestsImportResponse>(`/guests/${eventId}/import`, {
+    method: "POST",
+    body: JSON.stringify({ items }),
+  }),
+
 
   // -----------------------------
   // DOCUMENTS 2.0

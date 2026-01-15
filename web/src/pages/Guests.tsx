@@ -7,7 +7,10 @@ import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import type { Guest, GuestPayload } from "../types/guest";
 import Select from "../ui/Select";
-import { Users, UserPlus, Download, Phone, Mail, ChevronRight } from "lucide-react";
+import { Users, UserPlus, Download, Phone, Mail, ChevronRight, FileUp } from "lucide-react";
+import GuestsImportModal from "../components/guests/GuestsImportModal";
+
+
 
 const Modal: React.FC<{ onClose: () => void; title?: string; children: React.ReactNode }> = ({
   onClose,
@@ -74,6 +77,7 @@ const Modal: React.FC<{ onClose: () => void; title?: string; children: React.Rea
   );
 };
 
+
 const Guests: React.FC = () => {
   const { id: eventId } = useParams<{ id: string }>();
   const [guests, setGuests] = useState<Guest[]>([]);
@@ -81,6 +85,7 @@ const Guests: React.FC = () => {
   const [editingSubGuest, setEditingSubGuest] = useState<{ parentId: string; sub: Guest } | null>(
     null
   );
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const [showAddGuestModal, setShowAddGuestModal] = useState(false);
   const [showAddSubGuestModal, setShowAddSubGuestModal] = useState<{ open: boolean; parentId?: string }>({
@@ -164,6 +169,54 @@ const Guests: React.FC = () => {
     { value: "unknown", label: "Nieznane" },
   ] as const;
 
+
+type GuestListStatus = "READY" | "PARTIAL" | "NOT_STARTED";
+
+const [guestListStatus, setGuestListStatus] = useState<GuestListStatus | null>(null);
+const [interviewLoading, setInterviewLoading] = useState(false);
+
+
+
+useEffect(() => {
+  if (!eventId) return;
+
+  let ignore = false;
+
+  const fetchInterviewStatus = async () => {
+    try {
+      setInterviewLoading(true);
+
+      // api.getInterview już masz w projekcie (używasz w Documents)
+      const data = (await api.getInterview(eventId)) as { guest_list_status?: string } | null;
+
+      if (ignore) return;
+
+      const raw = (data?.guest_list_status ?? "").toUpperCase();
+      const normalized =
+        raw === "READY" || raw === "PARTIAL" || raw === "NOT_STARTED"
+          ? (raw as GuestListStatus)
+          : "NOT_STARTED";
+
+      setGuestListStatus(normalized);
+    } catch {
+      // jak coś pójdzie nie tak — zachowujemy bezpiecznie: nie pokazujemy importu
+      if (!ignore) setGuestListStatus("NOT_STARTED");
+    } finally {
+      if (!ignore) setInterviewLoading(false);
+    }
+  };
+
+  void fetchInterviewStatus();
+
+  return () => {
+    ignore = true;
+  };
+}, [eventId]);
+
+const canImport = guestListStatus === "READY" || guestListStatus === "PARTIAL";
+
+
+
   useEffect(() => {
     if (!eventId) return;
     let ignore = false;
@@ -222,6 +275,8 @@ const newGuest = await api.createGuest(payload);
 
 // ✅ merge: zachowujemy relation/side/rsvp jeśli API nie zwraca
 const fullGuest: Guest = { ...newGuest, ...payload };
+
+
 
 setGuests((prev) => [...prev, fullGuest]);
 
@@ -382,9 +437,19 @@ if (updated?.id) {
             <UserPlus className="h-4 w-4" />
             Dodaj gościa
           </button>
+          
+          
+          {!interviewLoading && canImport ? (
+            <button onClick={() => setShowImportModal(true)} className={btnSecondary}>
+              <Download  className="h-4 w-4 text-[#d7b45a]" />
+              Importuj
+            </button>
+          ) : null}
+
+
 
           <button onClick={handleExportExcel} className={btnSecondary}>
-            <Download className="h-4 w-4 text-[#d7b45a]" />
+            <FileUp  className="h-4 w-4 text-[#d7b45a]" />
             Eksportuj
           </button>
         </div>
@@ -847,8 +912,22 @@ if (updated?.id) {
           </div>
         </Modal>
       )}
+      <GuestsImportModal
+  open={showImportModal}
+  onClose={() => setShowImportModal(false)}
+  onImport={async (items) => {
+    if (!eventId) return;
+    await api.importGuests(eventId, items);
+
+    // po imporcie odśwież listę
+    const data = await api.getGuests(eventId);
+    setGuests(data);
+  }}
+/>
     </div>
   );
 };
+
+
 
 export default Guests;
