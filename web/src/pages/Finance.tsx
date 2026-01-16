@@ -7,16 +7,17 @@ import {
   TrendingUp,
   TrendingDown,
   ArrowRightLeft,
-  PiggyBank,
   Search,
   Filter,
-  ArrowUpDown,
   Download,
-  Save,
   Pencil,
   Trash2,
   X,
   Loader2,
+  Plus,
+  CheckCircle2,
+  Clock3,
+  CalendarDays,
 } from "lucide-react";
 import { api } from "../lib/api";
 
@@ -30,23 +31,13 @@ type ExpenseCategory =
   | "PHOTO_VIDEO"
   | "OTHER";
 
-  type SortField =
-  | "name"
-  | "planned_amount"
-  | "actual_amount"
-  | "due_date"
-  | "paid_date"
-  | "category";
+type ExpenseStatus = "PLANNED" | "IN_PROGRESS" | "PAID";
+
+type SortField = "name" | "planned_amount" | "actual_amount" | "due_date" | "paid_date" | "category" | "status";
 
 type Budget = {
   id: string;
   event_id: string;
-  initial_budget: number | null;
-  currency: string;
-  notes: string | null;
-};
-
-type BudgetPayload = {
   initial_budget: number | null;
   currency: string;
   notes: string | null;
@@ -57,6 +48,9 @@ type Expense = {
   event_id: string;
   name: string;
   category: ExpenseCategory;
+
+  status?: ExpenseStatus; // backend może jeszcze nie mieć — fallback niżej
+
   planned_amount: number | string | null;
   actual_amount: number | string | null;
   due_date: string | null;
@@ -68,6 +62,7 @@ type Expense = {
 type ExpenseCreatePayload = {
   name: string;
   category: ExpenseCategory;
+  status: ExpenseStatus;
   planned_amount: number | null;
   actual_amount: number | null;
   due_date: string | null;
@@ -98,6 +93,12 @@ const CATEGORY_OPTIONS: { value: ExpenseCategory; label: string }[] = [
   { value: "OTHER", label: "Inne" },
 ];
 
+const STATUS_OPTIONS: { value: ExpenseStatus; label: string; hint: string }[] = [
+  { value: "PLANNED", label: "Planowane", hint: "Pomysł / plan — bez terminów" },
+  { value: "IN_PROGRESS", label: "W trakcie", hint: "Ma termin płatności i kwotę faktyczną" },
+  { value: "PAID", label: "Opłacone", hint: "Ma datę płatności i kwotę końcową" },
+];
+
 function toNumberOrNull(v: unknown): number | null {
   if (v === null || v === undefined) return null;
   const n = typeof v === "number" ? v : Number(v);
@@ -110,11 +111,24 @@ function money(v: number | string | null | undefined): string {
   return n.toFixed(2);
 }
 
-function normalizeExpense(e: Expense): Expense {
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+const isDateFuture = (d: string) => d > todayISO();
+const isDatePast = (d: string) => d < todayISO();
+
+function resolveStatus(e: Expense): ExpenseStatus {
+  if (e.status === "PAID" || e.status === "IN_PROGRESS" || e.status === "PLANNED") return e.status;
+  if (e.paid_date) return "PAID";
+  if (e.due_date) return "IN_PROGRESS";
+  return "PLANNED";
+}
+
+function normalizeExpense(e: Expense): Expense & { status: ExpenseStatus } {
   return {
     ...e,
     planned_amount: toNumberOrNull(e.planned_amount),
     actual_amount: toNumberOrNull(e.actual_amount),
+    status: resolveStatus(e),
   };
 }
 
@@ -122,65 +136,40 @@ const Finance: React.FC = () => {
   const { id: eventId } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  // -------------------------
-  // STANY BUDŻETU
-  // -------------------------
-  const [, setBudget] = useState<Budget | null>(null);
-  const [budgetInitial, setBudgetInitial] = useState<string>("");
-  const [budgetCurrency, setBudgetCurrency] = useState<string>("PLN");
-  const [budgetNotes, setBudgetNotes] = useState<string>("");
-
-  // -------------------------
-  // STANY WYDATKÓW I PODSUMOWANIA
-  // -------------------------
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expenses, setExpenses] = useState<Array<Expense & { status: ExpenseStatus }>>([]);
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
 
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // -------------------------
-  // FILTRY I SORTOWANIE
-  // -------------------------
+  // FILTRY / SORT
   const [filterSearch, setFilterSearch] = useState<string>("");
   const [filterCategory, setFilterCategory] = useState<ExpenseCategory | "all">("all");
-  const [filterPaidStatus, setFilterPaidStatus] = useState<"all" | "paid" | "unpaid">("all");
-
+  const [filterStatus, setFilterStatus] = useState<ExpenseStatus | "all">("all");
   const [sortField, setSortField] = useState<SortField>("due_date");
-
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
-  // -------------------------
-  // STANY FORMULARZY
-  // -------------------------
-  const [isSavingBudget, setIsSavingBudget] = useState(false);
-  const [isSavingExpense, setIsSavingExpense] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
-  // formularz NOWEGO wydatku
-  const [newName, setNewName] = useState("");
-  const [newCategory, setNewCategory] = useState<ExpenseCategory>("OTHER");
-  const [newPlannedAmount, setNewPlannedAmount] = useState("");
-  const [newActualAmount, setNewActualAmount] = useState("");
-  const [newDueDate, setNewDueDate] = useState("");
-  const [newPaidDate, setNewPaidDate] = useState("");
-  const [newVendorName, setNewVendorName] = useState("");
-  const [newNotes, setNewNotes] = useState("");
+  // MODAL: add/edit
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<(Expense & { status: ExpenseStatus }) | null>(null);
+  const [isSavingExpense, setIsSavingExpense] = useState(false);
 
-  // formularz EDYCJI wydatku
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editCategory, setEditCategory] = useState<ExpenseCategory>("OTHER");
-  const [editPlannedAmount, setEditPlannedAmount] = useState("");
-  const [editActualAmount, setEditActualAmount] = useState("");
-  const [editDueDate, setEditDueDate] = useState("");
-  const [editPaidDate, setEditPaidDate] = useState("");
-  const [editVendorName, setEditVendorName] = useState("");
-  const [editNotes, setEditNotes] = useState("");
+  // formularz w modalu
+  const [fName, setFName] = useState("");
+  const [fCategory, setFCategory] = useState<ExpenseCategory>("OTHER");
+  const [fStatus, setFStatus] = useState<ExpenseStatus>("PLANNED");
+  const [fPlanned, setFPlanned] = useState("");
+  const [fActual, setFActual] = useState("");
+  const [fDue, setFDue] = useState("");
+  const [fPaid, setFPaid] = useState("");
+  const [fVendor, setFVendor] = useState("");
+  const [fNotes, setFNotes] = useState("");
 
-  // -------------------------
+  const [formError, setFormError] = useState<string | null>(null);
+
   // UI helpers (CeremoDay vibe)
-  // -------------------------
   const cardBase =
     "rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md " +
     "shadow-[0_24px_80px_rgba(0,0,0,0.45)]";
@@ -220,8 +209,33 @@ const Finance: React.FC = () => {
     "focus:outline-none focus:ring-2 focus:ring-red-400/40 " +
     "transition disabled:opacity-60";
 
+  const statusPill = (s: ExpenseStatus, dateText?: string | null) => {
+    if (s === "PAID") {
+      return (
+        <span className="inline-flex items-center rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200 border border-emerald-400/20">
+          <CheckCircle2 className="w-3.5 h-3.5 mr-2" />
+          Opłacone{dateText ? ` • ${dateText}` : ""}
+        </span>
+      );
+    }
+    if (s === "IN_PROGRESS") {
+      return (
+        <span className="inline-flex items-center rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200 border border-amber-400/20">
+          <Clock3 className="w-3.5 h-3.5 mr-2" />
+          W trakcie{dateText ? ` • termin: ${dateText}` : ""}
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center rounded-full bg-white/5 px-3 py-1 text-xs font-semibold text-white/75 border border-white/10">
+        <Sparkles className="w-3.5 h-3.5 mr-2 text-[#d7b45a]" />
+        Planowane
+      </span>
+    );
+  };
+
   // -------------------------
-  // ŁADOWANIE DANYCH
+  // ŁADOWANIE
   // -------------------------
   const loadAll = useCallback(async () => {
     if (!eventId) return;
@@ -229,25 +243,13 @@ const Finance: React.FC = () => {
     setError(null);
 
     try {
-      const [budgetRes, expensesRes, summaryRes] = await Promise.all([
-        api.getFinanceBudget(eventId) as Promise<Budget | null>,
+      const [expensesRes, summaryRes] = await Promise.all([
         api.getFinanceExpenses(eventId) as Promise<Expense[]>,
         api.getFinanceSummary(eventId) as Promise<FinanceSummary>,
       ]);
 
-      setBudget(budgetRes);
       setExpenses((expensesRes ?? []).map(normalizeExpense));
       setSummary(summaryRes ?? null);
-
-      if (budgetRes) {
-        setBudgetInitial(budgetRes.initial_budget != null ? String(budgetRes.initial_budget) : "");
-        setBudgetCurrency(budgetRes.currency || "PLN");
-        setBudgetNotes(budgetRes.notes ?? "");
-      } else {
-        setBudgetInitial("");
-        setBudgetCurrency("PLN");
-        setBudgetNotes("");
-      }
     } catch (err) {
       console.error(err);
       const msg = err instanceof Error ? err.message : "Nie udało się załadować danych finansowych.";
@@ -266,7 +268,7 @@ const Finance: React.FC = () => {
   }, [loadAll]);
 
   // -------------------------
-  // FILTROWANIE I SORTOWANIE
+  // FILTROWANIE + SORT
   // -------------------------
   const filteredAndSortedExpenses = useMemo(() => {
     let result = [...expenses];
@@ -280,167 +282,160 @@ const Finance: React.FC = () => {
       );
     }
 
-    if (filterCategory !== "all") {
-      result = result.filter((e) => e.category === filterCategory);
-    }
+    if (filterCategory !== "all") result = result.filter((e) => e.category === filterCategory);
+    if (filterStatus !== "all") result = result.filter((e) => e.status === filterStatus);
 
-    if (filterPaidStatus === "paid") {
-      result = result.filter((e) => !!e.paid_date);
-    } else if (filterPaidStatus === "unpaid") {
-      result = result.filter((e) => !e.paid_date);
-    }
+    const getSortValue = (x: (Expense & { status: ExpenseStatus }), field: SortField): string | number => {
+      const getNum = (v: number | string | null) => toNumberOrNull(v) ?? 0;
+      const getDate = (d: string | null) => (d ? Date.parse(d) : 0);
 
-    const getSortValue = (x: Expense, field: SortField): string | number => {
-  const getNum = (v: number | string | null) => toNumberOrNull(v) ?? 0;
-  const getDate = (d: string | null) => (d ? Date.parse(d) : 0);
+      switch (field) {
+        case "name":
+          return (x.name ?? "").toLowerCase();
+        case "category":
+          return (x.category ?? "").toLowerCase();
+        case "status":
+          return x.status;
+        case "planned_amount":
+          return getNum(x.planned_amount);
+        case "actual_amount":
+          return getNum(x.actual_amount);
+        case "due_date":
+          return getDate(x.due_date);
+        case "paid_date":
+          return getDate(x.paid_date);
+      }
+    };
 
-  switch (field) {
-    case "name":
-      return (x.name ?? "").toLowerCase();
-    case "category":
-      return (x.category ?? "").toLowerCase();
-    case "planned_amount":
-      return getNum(x.planned_amount);
-    case "actual_amount":
-      return getNum(x.actual_amount);
-    case "due_date":
-      return getDate(x.due_date);
-    case "paid_date":
-      return getDate(x.paid_date);
-    default: {
-      const _exhaustive: never = field;
-      return _exhaustive;
-    }
-  }
-};
-
-result.sort((a, b) => {
-  const dir = sortDirection === "asc" ? 1 : -1;
-  const av = getSortValue(a, sortField);
-  const bv = getSortValue(b, sortField);
-
-  if (av === bv) return 0;
-  return av > bv ? dir : -dir;
-});
-
+    result.sort((a, b) => {
+      const dir = sortDirection === "asc" ? 1 : -1;
+      const av = getSortValue(a, sortField);
+      const bv = getSortValue(b, sortField);
+      if (av === bv) return 0;
+      return av > bv ? dir : -dir;
+    });
 
     return result;
-  }, [expenses, filterSearch, filterCategory, filterPaidStatus, sortField, sortDirection]);
+  }, [expenses, filterSearch, filterCategory, filterStatus, sortField, sortDirection]);
 
   // -------------------------
-  // BUDŻET – ZAPIS
+  // MODAL helpers
   // -------------------------
-  const handleSaveBudget = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!eventId) return;
+  const openAdd = () => {
+    setEditing(null);
+    setFormError(null);
+    setFName("");
+    setFCategory("OTHER");
+    setFStatus("PLANNED");
+    setFPlanned("");
+    setFActual("");
+    setFDue("");
+    setFPaid("");
+    setFVendor("");
+    setFNotes("");
+    setModalOpen(true);
+  };
 
-    setIsSavingBudget(true);
-    setError(null);
+  const openEdit = (e: Expense & { status: ExpenseStatus }) => {
+    setEditing(e);
+    setFormError(null);
+    setFName(e.name ?? "");
+    setFCategory(e.category);
+    setFStatus(e.status);
 
-    try {
-      const payload: BudgetPayload = {
-        initial_budget: budgetInitial.trim() === "" ? null : Number(budgetInitial.replace(",", ".")),
-        currency: budgetCurrency,
-        notes: budgetNotes.trim() || null,
-      };
+    setFPlanned(toNumberOrNull(e.planned_amount)?.toString() ?? "");
+    setFActual(toNumberOrNull(e.actual_amount)?.toString() ?? "");
 
-      const saved = (await api.saveFinanceBudget(eventId, payload)) as Budget;
-      setBudget(saved);
+    setFDue(e.due_date ?? "");
+    setFPaid(e.paid_date ?? "");
+    setFVendor(e.vendor_name ?? "");
+    setFNotes(e.notes ?? "");
+    setModalOpen(true);
+  };
 
-      const newSummary = (await api.getFinanceSummary(eventId)) as FinanceSummary;
-      setSummary(newSummary);
-    } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : "Nie udało się zapisać budżetu.");
-    } finally {
-      setIsSavingBudget(false);
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditing(null);
+    setFormError(null);
+  };
+
+  const validateForm = (): string | null => {
+    if (!fName.trim()) return "Nazwa jest wymagana.";
+
+    // status-driven wymagania
+    if (fStatus === "PLANNED") {
+      // daty niepotrzebne, wyczyśćmy je w payloadzie
+      return null;
     }
+
+    if (fStatus === "IN_PROGRESS") {
+      if (!fDue) return "Dla statusu „W trakcie” wymagany jest Termin płatności.";
+      if (isDatePast(fDue)) return "Termin płatności nie może być w przeszłości (tylko dziś lub przyszłość).";
+
+      // kwota faktyczna — wg Twojego opisu: w trakcie warto ją mieć
+      const a = fActual.trim() === "" ? null : Number(fActual.replace(",", "."));
+      if (a === null || !Number.isFinite(a) || a < 0) return "Dla „W trakcie” podaj poprawną kwotę faktyczną (>= 0).";
+
+      return null;
+    }
+
+    if (fStatus === "PAID") {
+      if (!fPaid) return "Dla statusu „Opłacone” wymagana jest Data płatności.";
+      if (isDateFuture(fPaid)) return "Data płatności nie może być w przyszłości (tylko dziś lub przeszłość).";
+
+      const a = fActual.trim() === "" ? null : Number(fActual.replace(",", "."));
+      if (a === null || !Number.isFinite(a) || a < 0) return "Dla „Opłacone” podaj poprawną kwotę faktyczną (>= 0).";
+
+      return null;
+    }
+
+    return null;
   };
 
-  // -------------------------
-  // WYDATKI – EDYCJA
-  // -------------------------
-  const startEditExpense = (expense: Expense) => {
-    setEditingId(expense.id);
-    setEditName(expense.name);
-    setEditCategory(expense.category);
-
-    setEditPlannedAmount(toNumberOrNull(expense.planned_amount)?.toString() ?? "");
-    setEditActualAmount(toNumberOrNull(expense.actual_amount)?.toString() ?? "");
-
-    setEditDueDate(expense.due_date ?? "");
-    setEditPaidDate(expense.paid_date ?? "");
-    setEditVendorName(expense.vendor_name ?? "");
-    setEditNotes(expense.notes ?? "");
-  };
-
-  const clearEditExpense = () => {
-    setEditingId(null);
-    setEditName("");
-    setEditCategory("OTHER");
-    setEditPlannedAmount("");
-    setEditActualAmount("");
-    setEditDueDate("");
-    setEditPaidDate("");
-    setEditVendorName("");
-    setEditNotes("");
-  };
-
-  // -------------------------
-  // WYDATKI – ZAPIS (NOWY / EDYCJA)
-  // -------------------------
-  const handleSaveExpense = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveExpense = async () => {
     if (!eventId) return;
+
+    const v = validateForm();
+    if (v) {
+      setFormError(v);
+      return;
+    }
+    setFormError(null);
 
     setIsSavingExpense(true);
     setError(null);
 
     try {
-      if (editingId) {
-        const payload: ExpenseUpdatePayload = {
-          name: editName.trim(),
-          category: editCategory,
-          planned_amount: editPlannedAmount.trim() === "" ? null : Number(editPlannedAmount.replace(",", ".")),
-          actual_amount: editActualAmount.trim() === "" ? null : Number(editActualAmount.replace(",", ".")),
-          due_date: editDueDate || null,
-          paid_date: editPaidDate || null,
-          vendor_name: editVendorName.trim() || null,
-          notes: editNotes.trim() || null,
-        };
+      const planned = fPlanned.trim() === "" ? null : Number(fPlanned.replace(",", "."));
+      const actual = fActual.trim() === "" ? null : Number(fActual.replace(",", "."));
 
-        const updated = (await api.updateFinanceExpense(eventId, editingId, payload)) as Expense;
-        const normalized = normalizeExpense(updated);
+      const payload: ExpenseCreatePayload = {
+        name: fName.trim(),
+        category: fCategory,
+        status: fStatus,
 
-        setExpenses((prev) => prev.map((x) => (x.id === normalized.id ? normalized : x)));
-        clearEditExpense();
+        planned_amount: Number.isFinite(planned as number) ? planned : null,
+        actual_amount: Number.isFinite(actual as number) ? actual : null,
+
+        due_date: fStatus === "IN_PROGRESS" ? (fDue || null) : null,
+        paid_date: fStatus === "PAID" ? (fPaid || null) : null,
+
+        vendor_name: fVendor.trim() || null,
+        notes: fNotes.trim() || null,
+      };
+
+      if (editing) {
+        const updated = (await api.updateFinanceExpense(eventId, editing.id, payload as ExpenseUpdatePayload)) as Expense;
+        setExpenses((prev) => prev.map((x) => (x.id === updated.id ? normalizeExpense(updated) : x)));
       } else {
-        const payload: ExpenseCreatePayload = {
-          name: newName.trim(),
-          category: newCategory,
-          planned_amount: newPlannedAmount.trim() === "" ? null : Number(newPlannedAmount.replace(",", ".")),
-          actual_amount: newActualAmount.trim() === "" ? null : Number(newActualAmount.replace(",", ".")),
-          due_date: newDueDate || null,
-          paid_date: newPaidDate || null,
-          vendor_name: newVendorName.trim() || null,
-          notes: newNotes.trim() || null,
-        };
-
         const created = (await api.createFinanceExpense(eventId, payload)) as Expense;
         setExpenses((prev) => [...prev, normalizeExpense(created)]);
-
-        setNewName("");
-        setNewCategory("OTHER");
-        setNewPlannedAmount("");
-        setNewActualAmount("");
-        setNewDueDate("");
-        setNewPaidDate("");
-        setNewVendorName("");
-        setNewNotes("");
       }
 
       const newSummary = (await api.getFinanceSummary(eventId)) as FinanceSummary;
       setSummary(newSummary);
+
+      closeModal();
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Nie udało się zapisać wydatku.");
@@ -449,9 +444,6 @@ result.sort((a, b) => {
     }
   };
 
-  // -------------------------
-  // WYDATKI – USUWANIE
-  // -------------------------
   const handleDeleteExpense = async (expenseId: string) => {
     if (!eventId) return;
     if (!window.confirm("Na pewno usunąć ten wydatek?")) return;
@@ -459,9 +451,7 @@ result.sort((a, b) => {
     setError(null);
     try {
       await api.deleteFinanceExpense(eventId, expenseId);
-
       setExpenses((prev) => prev.filter((x) => x.id !== expenseId));
-      if (editingId === expenseId) clearEditExpense();
 
       const newSummary = (await api.getFinanceSummary(eventId)) as FinanceSummary;
       setSummary(newSummary);
@@ -471,9 +461,6 @@ result.sort((a, b) => {
     }
   };
 
-  // -------------------------
-  // EKSPORT XLSX
-  // -------------------------
   const handleExportXlsx = async () => {
     if (!eventId) return;
     setIsExporting(true);
@@ -497,14 +484,12 @@ result.sort((a, b) => {
     }
   };
 
-  // -------------------------
-  // RENDER
-  // -------------------------
-  if (!eventId) {
-    return <div className="p-4 text-red-200">Brak identyfikatora wydarzenia w adresie URL.</div>;
-  }
+  if (!eventId) return <div className="p-4 text-red-200">Brak identyfikatora wydarzenia w adresie URL.</div>;
 
-  const currency = summary?.currency || budgetCurrency || "PLN";
+  const currency = summary?.currency || "PLN";
+
+  const activeFilters =
+    (filterSearch ? 1 : 0) + (filterCategory !== "all" ? 1 : 0) + (filterStatus !== "all" ? 1 : 0);
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -516,22 +501,21 @@ result.sort((a, b) => {
           </div>
           <div>
             <h2 className="text-2xl font-bold text-white">Finanse</h2>
-            <p className="text-sm text-white/60">
-              Budżet, wydatki, filtrowanie i eksport XLSX.
-            </p>
+            <p className="text-sm text-white/60">Wydatki z widokiem plan/real + statusy (Planowane / W trakcie / Opłacone).</p>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleExportXlsx}
-          disabled={isExporting}
-          className={btnSecondary}
-          title="Eksportuj XLSX"
-        >
-          {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-          {isExporting ? "Eksport…" : "Eksportuj XLSX"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={handleExportXlsx} disabled={isExporting} className={btnSecondary}>
+            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            {isExporting ? "Eksport…" : "Eksportuj XLSX"}
+          </button>
+
+          <button type="button" onClick={openAdd} className={btnGold}>
+            <Plus className="w-4 h-4" />
+            Dodaj wydatek
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -549,69 +533,22 @@ result.sort((a, b) => {
         </div>
       )}
 
-      {/* Budget */}
-      <section className={`${cardBase} p-6 md:p-7`}>
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-2">
-            <PiggyBank className="w-5 h-5 text-[#d7b45a]" />
-            <h3 className="text-white font-semibold text-lg">Budżet wydarzenia</h3>
-          </div>
-          <span className={chip}>
-            <Sparkles className="w-4 h-4 text-[#d7b45a]" />
-            {currency}
-          </span>
-        </div>
-
-        <form onSubmit={handleSaveBudget} className="grid gap-3 md:grid-cols-3 items-end">
-          <div>
-            <label className="block text-xs text-white/70 mb-1">Budżet początkowy</label>
-            <input
-              type="number"
-              step="0.01"
-              className={inputBase}
-              value={budgetInitial}
-              onChange={(e) => setBudgetInitial(e.target.value)}
-              placeholder="np. 45000"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs text-white/70 mb-1">Waluta</label>
-            <select
-              className={selectBase}
-              value={budgetCurrency}
-              onChange={(e) => setBudgetCurrency(e.target.value)}
-            >
-              <option value="PLN">PLN</option>
-              <option value="EUR">EUR</option>
-              <option value="USD">USD</option>
-            </select>
-          </div>
-
-          <div className="md:row-span-2">
-            <label className="block text-xs text-white/70 mb-1">Notatki</label>
-            <textarea
-              className={inputBase + " min-h-[92px] resize-none"}
-              value={budgetNotes}
-              onChange={(e) => setBudgetNotes(e.target.value)}
-              placeholder="Uwagi do budżetu…"
-            />
-          </div>
-
-          <div className="md:col-span-2 flex items-center gap-3">
-            <button type="submit" disabled={isSavingBudget} className={btnGold}>
-              {isSavingBudget ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              {isSavingBudget ? "Zapisywanie…" : "Zapisz budżet"}
-            </button>
-
-            <div className="text-xs text-white/55">
-              Budżet wpływa na “Pozostały budżet” w podsumowaniu.
+      {/* Summary (budżet z wywiadu) */}
+      {summary && (
+        <section className={`${cardBase} p-6 md:p-7`}>
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-[#d7b45a]" />
+              <h3 className="text-white font-semibold text-lg">Podsumowanie</h3>
             </div>
+            <span className={chip}>{currency}</span>
           </div>
-        </form>
 
-        {summary && (
-          <div className="mt-5 grid gap-3 md:grid-cols-4">
+          <div className="text-xs text-white/55 mb-4">
+            Budżet ustawiasz w <b>Wywiadzie</b>. Tutaj wyświetlamy tylko podsumowania i listę wydatków.
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-4">
             <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
               <div className="text-xs text-white/55 mb-1">Suma planowana</div>
               <div className="text-white text-lg font-semibold inline-flex items-center gap-2">
@@ -640,396 +577,346 @@ result.sort((a, b) => {
               <div className="text-xs text-white/55 mb-1">Pozostały budżet</div>
               <div className="text-white text-lg font-semibold inline-flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-[#d7b45a]" />
-                {summary.remaining_budget != null
-                  ? `${summary.remaining_budget.toFixed(2)} ${summary.currency}`
-                  : "—"}
+                {summary.remaining_budget != null ? `${summary.remaining_budget.toFixed(2)} ${summary.currency}` : "—"}
               </div>
             </div>
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
-      {/* Filters */}
-      <section className={`${cardBase} p-6 md:p-7`}>
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-2">
-            <Filter className="w-5 h-5 text-[#d7b45a]" />
-            <h3 className="text-white font-semibold text-lg">Filtry i sortowanie</h3>
+      {/* Filters + List (zintegrowane) */}
+      <section className={`${cardBase} p-0 overflow-hidden`}>
+        {/* sticky filters */}
+        <div className="sticky top-0 z-10 border-b border-white/10 bg-emerald-950/55 backdrop-blur-xl p-5">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <Filter className="w-5 h-5 text-[#d7b45a]" />
+              <h3 className="text-white font-semibold text-lg">Wydatki</h3>
+            </div>
+            <span className={chip}>
+              {filteredAndSortedExpenses.length} pozycji{activeFilters ? ` • filtry: ${activeFilters}` : ""}
+            </span>
           </div>
-          <span className={chip}>{filteredAndSortedExpenses.length} pozycji</span>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <div className="md:col-span-2">
-            <label className="block text-xs text-white/70 mb-1">
-              Szukaj (nazwa / usługodawca / notatki)
-            </label>
-            <div className="relative">
-              <Search className="w-4 h-4 text-white/35 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                className={inputBase + " pl-10"}
-                value={filterSearch}
-                onChange={(e) => setFilterSearch(e.target.value)}
-                placeholder="np. fotograf, umowa, zaliczka…"
-              />
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+            <div className="md:col-span-4">
+              <label className="block text-xs text-white/70 mb-1">Szukaj</label>
+              <div className="relative">
+                <Search className="w-4 h-4 text-white/35 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  className={inputBase + " pl-10"}
+                  value={filterSearch}
+                  onChange={(e) => setFilterSearch(e.target.value)}
+                  placeholder="np. fotograf, zaliczka, umowa…"
+                />
+              </div>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-xs text-white/70 mb-1">Kategoria</label>
+              <select
+                className={selectBase}
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value as ExpenseCategory | "all")}
+              >
+                <option value="all">Wszystkie</option>
+                {CATEGORY_OPTIONS.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-xs text-white/70 mb-1">Status</label>
+              <select
+                className={selectBase}
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value as ExpenseStatus | "all")}
+              >
+                <option value="all">Wszystkie</option>
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-xs text-white/70 mb-1">Sortuj</label>
+              <select className={selectBase} value={sortField} onChange={(e) => setSortField(e.target.value as SortField)}>
+                <option value="due_date">Termin</option>
+                <option value="paid_date">Data płatności</option>
+                <option value="status">Status</option>
+                <option value="name">Nazwa</option>
+                <option value="category">Kategoria</option>
+                <option value="planned_amount">Kwota planowana</option>
+                <option value="actual_amount">Kwota faktyczna</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-xs text-white/70 mb-1">Kierunek</label>
+              <select className={selectBase} value={sortDirection} onChange={(e) => setSortDirection(e.target.value as "asc" | "desc")}>
+                <option value="asc">Rosnąco</option>
+                <option value="desc">Malejąco</option>
+              </select>
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs text-white/70 mb-1">Kategoria</label>
-            <select
-              className={selectBase}
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value as ExpenseCategory | "all")}
-            >
-              <option value="all">Wszystkie</option>
-              {CATEGORY_OPTIONS.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          {activeFilters ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-white/55">Aktywne:</span>
+              {filterSearch && <span className={chip}>Szukaj: {filterSearch}</span>}
+              {filterCategory !== "all" && (
+                <span className={chip}>
+                  Kategoria: {CATEGORY_OPTIONS.find((x) => x.value === filterCategory)?.label ?? filterCategory}
+                </span>
+              )}
+              {filterStatus !== "all" && <span className={chip}>Status: {STATUS_OPTIONS.find((s) => s.value === filterStatus)?.label ?? filterStatus}</span>}
 
-          <div>
-            <label className="block text-xs text-white/70 mb-1">Status płatności</label>
-            <select
-              className={selectBase}
-              value={filterPaidStatus}
-              onChange={(e) => setFilterPaidStatus(e.target.value as "all" | "paid" | "unpaid")}
-            >
-              <option value="all">Wszystkie</option>
-              <option value="paid">Opłacone</option>
-              <option value="unpaid">Nieopłacone</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs text-white/70 mb-1">Sortuj</label>
-            <select
-              className={selectBase}
-              value={sortField}
-              onChange={(e) =>
-                setSortField(
-                  e.target.value as
-                    | "name"
-                    | "planned_amount"
-                    | "actual_amount"
-                    | "due_date"
-                    | "paid_date"
-                    | "category"
-                )
-              }
-            >
-              <option value="due_date">Termin</option>
-              <option value="paid_date">Data płatności</option>
-              <option value="name">Nazwa</option>
-              <option value="category">Kategoria</option>
-              <option value="planned_amount">Kwota planowana</option>
-              <option value="actual_amount">Kwota faktyczna</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs text-white/70 mb-1">Kierunek</label>
-            <select
-              className={selectBase}
-              value={sortDirection}
-              onChange={(e) => setSortDirection(e.target.value as "asc" | "desc")}
-            >
-              <option value="asc">Rosnąco</option>
-              <option value="desc">Malejąco</option>
-            </select>
-          </div>
+              <button
+                type="button"
+                className={btnSecondary}
+                onClick={() => {
+                  setFilterSearch("");
+                  setFilterCategory("all");
+                  setFilterStatus("all");
+                }}
+              >
+                <X className="w-4 h-4" />
+                Wyczyść
+              </button>
+            </div>
+          ) : null}
         </div>
 
-        {(filterSearch || filterCategory !== "all" || filterPaidStatus !== "all") && (
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-white/55">Aktywne filtry:</span>
-            {filterSearch && <span className={chip}>Szukaj: {filterSearch}</span>}
-            {filterCategory !== "all" && (
-              <span className={chip}>
-                Kategoria: {CATEGORY_OPTIONS.find((x) => x.value === filterCategory)?.label ?? filterCategory}
-              </span>
-            )}
-            {filterPaidStatus !== "all" && <span className={chip}>Płatność: {filterPaidStatus}</span>}
-            <button
-              type="button"
-              className={btnSecondary}
-              onClick={() => {
-                setFilterSearch("");
-                setFilterCategory("all");
-                setFilterPaidStatus("all");
-              }}
-            >
-              <X className="w-4 h-4" />
-              Wyczyść filtry
-            </button>
-          </div>
-        )}
-      </section>
-
-      {/* Add / Edit expense */}
-      <section className={`${cardBase} p-6 md:p-7`}>
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-2">
-            <ArrowUpDown className="w-5 h-5 text-[#d7b45a]" />
-            <h3 className="text-white font-semibold text-lg">
-              {editingId ? "Edytuj wydatek" : "Dodaj wydatek"}
-            </h3>
-          </div>
-          {editingId ? (
-            <span className={chip}>
-              <Pencil className="w-4 h-4 text-[#d7b45a]" />
-              Tryb edycji
-            </span>
+        {/* list */}
+        <div className="p-5">
+          {filteredAndSortedExpenses.length === 0 ? (
+            <div className="text-sm text-white/55">Brak wydatków spełniających kryteria.</div>
           ) : (
-            <span className={chip}>Nowy</span>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-white/5">
+                    <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">Nazwa</th>
+                    <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">Status</th>
+                    <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">Kategoria</th>
+                    <th className="border-b border-white/10 px-3 py-3 text-right font-semibold text-white/70">Plan</th>
+                    <th className="border-b border-white/10 px-3 py-3 text-right font-semibold text-white/70">Faktycznie</th>
+                    <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">Usługodawca</th>
+                    <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">Termin / płatność</th>
+                    <th className="border-b border-white/10 px-3 py-3 text-right font-semibold text-white/70">Akcje</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredAndSortedExpenses.map((e) => {
+                    const catLabel = CATEGORY_OPTIONS.find((c) => c.value === e.category)?.label || e.category;
+                    const s = e.status;
+
+                    const dateLabel =
+                      s === "PAID" ? e.paid_date : s === "IN_PROGRESS" ? e.due_date : null;
+
+                    return (
+                      <tr key={e.id} className="hover:bg-white/4 transition">
+                        <td className="border-b border-white/5 px-3 py-3 text-white/85">
+                          <div className="font-semibold text-white">{e.name}</div>
+                          {e.notes ? (
+                            <div className="text-xs text-white/45 mt-1 max-w-[520px] truncate" title={e.notes}>
+                              {e.notes}
+                            </div>
+                          ) : null}
+                        </td>
+
+                        <td className="border-b border-white/5 px-3 py-3">{statusPill(s, dateLabel)}</td>
+
+                        <td className="border-b border-white/5 px-3 py-3 text-white/75">{catLabel}</td>
+
+                        <td className="border-b border-white/5 px-3 py-3 text-right text-white/85">
+                          {money(e.planned_amount)} {currency}
+                        </td>
+
+                        <td className="border-b border-white/5 px-3 py-3 text-right text-white/85">
+                          {money(e.actual_amount)} {currency}
+                        </td>
+
+                        <td className="border-b border-white/5 px-3 py-3 text-white/75">{e.vendor_name || "—"}</td>
+
+                        <td className="border-b border-white/5 px-3 py-3 text-white/75">
+                          {s === "PLANNED" ? (
+                            <span className="text-white/55">—</span>
+                          ) : s === "IN_PROGRESS" ? (
+                            <span className="inline-flex items-center gap-2">
+                              <CalendarDays className="w-4 h-4 text-white/40" />
+                              {e.due_date || "—"}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-2">
+                              <CalendarDays className="w-4 h-4 text-white/40" />
+                              {e.paid_date || "—"}
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="border-b border-white/5 px-3 py-3 text-right">
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openEdit(e)}
+                              className={btnSecondary + " px-3 py-2 text-xs"}
+                              title="Edytuj"
+                            >
+                              <Pencil className="w-4 h-4" />
+                              Edytuj
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteExpense(e.id)}
+                              className={btnDanger + " px-3 py-2 text-xs"}
+                              title="Usuń"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Usuń
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
+      </section>
 
-        <form onSubmit={handleSaveExpense} className="grid gap-3 md:grid-cols-4">
-          <div>
-            <label className="block text-xs text-white/70 mb-1">Nazwa *</label>
-            <input
-              type="text"
-              required
-              className={inputBase}
-              value={editingId ? editName : newName}
-              onChange={(e) => (editingId ? setEditName(e.target.value) : setNewName(e.target.value))}
-              placeholder="np. Zaliczka fotograf"
-            />
-          </div>
+      {/* MODAL add/edit */}
+      {modalOpen && (
+        <div
+          className="fixed inset-0 z-[9999999] flex items-center justify-center"
+          style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
+        >
+          <div className="absolute inset-0" onClick={closeModal} />
 
-          <div>
-            <label className="block text-xs text-white/70 mb-1">Kategoria *</label>
-            <select
-              required
-              className={selectBase}
-              value={editingId ? editCategory : newCategory}
-              onChange={(e) => {
-                const val = e.target.value as ExpenseCategory;
-                if (editingId) setEditCategory(val);
-                else setNewCategory(val);
-              }}
-            >
-              {CATEGORY_OPTIONS.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <div className="relative w-full max-w-3xl p-6 overflow-y-auto max-h-[90vh] rounded-2xl shadow-2xl border border-white/10 bg-emerald-950/70 text-white backdrop-blur-xl">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-xl font-semibold text-white">{editing ? "Edytuj wydatek" : "Dodaj wydatek"}</h3>
+                <p className="text-sm text-white/60 mt-1">
+                  Wybierz status — pola dopasują się do procesu (plan → w trakcie → opłacone).
+                </p>
+              </div>
 
-          <div>
-            <label className="block text-xs text-white/70 mb-1">Kwota planowana</label>
-            <input
-              type="number"
-              step="0.01"
-              className={inputBase}
-              value={editingId ? editPlannedAmount : newPlannedAmount}
-              onChange={(e) => (editingId ? setEditPlannedAmount(e.target.value) : setNewPlannedAmount(e.target.value))}
-              placeholder="np. 3500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs text-white/70 mb-1">Kwota faktyczna</label>
-            <input
-              type="number"
-              step="0.01"
-              className={inputBase}
-              value={editingId ? editActualAmount : newActualAmount}
-              onChange={(e) => (editingId ? setEditActualAmount(e.target.value) : setNewActualAmount(e.target.value))}
-              placeholder="np. 3200"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs text-white/70 mb-1">Termin (plan)</label>
-            <input
-              type="date"
-              className={inputBase}
-              value={editingId ? editDueDate : newDueDate}
-              onChange={(e) => (editingId ? setEditDueDate(e.target.value) : setNewDueDate(e.target.value))}
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs text-white/70 mb-1">Data płatności</label>
-            <input
-              type="date"
-              className={inputBase}
-              value={editingId ? editPaidDate : newPaidDate}
-              onChange={(e) => (editingId ? setEditPaidDate(e.target.value) : setNewPaidDate(e.target.value))}
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs text-white/70 mb-1">Usługodawca</label>
-            <input
-              type="text"
-              className={inputBase}
-              value={editingId ? editVendorName : newVendorName}
-              onChange={(e) => (editingId ? setEditVendorName(e.target.value) : setNewVendorName(e.target.value))}
-              placeholder="np. Studio XYZ"
-            />
-          </div>
-
-          <div className="md:row-span-2">
-            <label className="block text-xs text-white/70 mb-1">Notatki</label>
-            <textarea
-              className={inputBase + " min-h-[92px] resize-none"}
-              value={editingId ? editNotes : newNotes}
-              onChange={(e) => (editingId ? setEditNotes(e.target.value) : setNewNotes(e.target.value))}
-              placeholder="Warunki, numer umowy, co obejmuje…"
-            />
-          </div>
-
-          <div className="md:col-span-3 flex flex-wrap items-center gap-2">
-            <button type="submit" disabled={isSavingExpense} className={btnGold}>
-              {isSavingExpense ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              {isSavingExpense ? "Zapisywanie…" : editingId ? "Zapisz zmiany" : "Dodaj wydatek"}
-            </button>
-
-            {editingId && (
-              <button type="button" onClick={clearEditExpense} className={btnSecondary}>
-                <X className="w-4 h-4" />
-                Anuluj edycję
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-xl border border-white/10 bg-white/5 p-2 hover:bg-white/10 transition"
+                title="Zamknij"
+              >
+                <X className="w-4 h-4 text-white/80" />
               </button>
-            )}
-          </div>
-        </form>
-      </section>
+            </div>
 
-      {/* List */}
-      <section className={`${cardBase} p-6 md:p-7`}>
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-[#d7b45a]" />
-            <h3 className="text-white font-semibold text-lg">Lista wydatków</h3>
+            {formError ? (
+              <div className="mb-4 rounded-xl border border-red-400/25 bg-red-500/10 p-3 text-sm text-red-100">
+                {formError}
+              </div>
+            ) : null}
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="md:col-span-2">
+                <label className="block text-xs text-white/70 mb-1">Nazwa *</label>
+                <input className={inputBase} value={fName} onChange={(e) => setFName(e.target.value)} placeholder="np. Fotograf — zaliczka" />
+              </div>
+
+              <div>
+                <label className="block text-xs text-white/70 mb-1">Kategoria *</label>
+                <select className={selectBase} value={fCategory} onChange={(e) => setFCategory(e.target.value as ExpenseCategory)}>
+                  {CATEGORY_OPTIONS.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-3">
+                <label className="block text-xs text-white/70 mb-1">Status *</label>
+                <select className={selectBase} value={fStatus} onChange={(e) => setFStatus(e.target.value as ExpenseStatus)}>
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label} — {s.hint}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs text-white/70 mb-1">Kwota planowana</label>
+                <input type="number" step="0.01" className={inputBase} value={fPlanned} onChange={(e) => setFPlanned(e.target.value)} placeholder="np. 3500" />
+              </div>
+
+              <div>
+                <label className="block text-xs text-white/70 mb-1">Kwota faktyczna {fStatus === "PLANNED" ? "(opcjonalnie)" : "*"}</label>
+                <input type="number" step="0.01" className={inputBase} value={fActual} onChange={(e) => setFActual(e.target.value)} placeholder="np. 3200" />
+              </div>
+
+              <div>
+                <label className="block text-xs text-white/70 mb-1">Usługodawca (opcjonalnie)</label>
+                <input className={inputBase} value={fVendor} onChange={(e) => setFVendor(e.target.value)} placeholder="np. Studio XYZ" />
+              </div>
+
+              {/* status-driven daty */}
+              {fStatus === "IN_PROGRESS" ? (
+                <div className="md:col-span-1">
+                  <label className="block text-xs text-white/70 mb-1">Termin płatności *</label>
+                  <input
+                    type="date"
+                    className={inputBase}
+                    value={fDue}
+                    min={todayISO()}
+                    onChange={(e) => setFDue(e.target.value)}
+                  />
+                </div>
+              ) : null}
+
+              {fStatus === "PAID" ? (
+                <div className="md:col-span-1">
+                  <label className="block text-xs text-white/70 mb-1">Data płatności *</label>
+                  <input
+                    type="date"
+                    className={inputBase}
+                    value={fPaid}
+                    max={todayISO()}
+                    onChange={(e) => setFPaid(e.target.value)}
+                  />
+                </div>
+              ) : null}
+
+              <div className={fStatus === "PLANNED" ? "md:col-span-3" : "md:col-span-2"}>
+                <label className="block text-xs text-white/70 mb-1">Notatki</label>
+                <textarea className={inputBase + " min-h-[96px] resize-none"} value={fNotes} onChange={(e) => setFNotes(e.target.value)} placeholder="Warunki, umowa, co obejmuje…" />
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={closeModal} className={btnSecondary}>
+                Anuluj
+              </button>
+
+              <button type="button" onClick={handleSaveExpense} disabled={isSavingExpense} className={btnGold}>
+                {isSavingExpense ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {editing ? "Zapisz zmiany" : "Dodaj wydatek"}
+              </button>
+            </div>
           </div>
-          <span className={chip}>{filteredAndSortedExpenses.length} pozycji</span>
         </div>
-
-        {filteredAndSortedExpenses.length === 0 ? (
-          <div className="text-sm text-white/55">Brak wydatków spełniających kryteria.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm border-collapse">
-              <thead>
-                <tr className="bg-white/5">
-                  <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">
-                    Nazwa
-                  </th>
-                  <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">
-                    Kategoria
-                  </th>
-                  <th className="border-b border-white/10 px-3 py-3 text-right font-semibold text-white/70">
-                    Plan
-                  </th>
-                  <th className="border-b border-white/10 px-3 py-3 text-right font-semibold text-white/70">
-                    Faktycznie
-                  </th>
-                  <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">
-                    Usługodawca
-                  </th>
-                  <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">
-                    Termin
-                  </th>
-                  <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">
-                    Płatność
-                  </th>
-                  <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">
-                    Notatki
-                  </th>
-                  <th className="border-b border-white/10 px-3 py-3 text-right font-semibold text-white/70">
-                    Akcje
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {filteredAndSortedExpenses.map((e) => {
-                  const catLabel = CATEGORY_OPTIONS.find((c) => c.value === e.category)?.label || e.category;
-                  const isPaid = !!e.paid_date;
-
-                  return (
-                    <tr key={e.id} className="hover:bg-white/4 transition">
-                      <td className="border-b border-white/5 px-3 py-3 text-white/85">
-                        <div className="font-semibold text-white">{e.name}</div>
-                        {(e.vendor_name || e.due_date) && (
-                          <div className="text-xs text-white/45 mt-1">
-                            {e.vendor_name ? `• ${e.vendor_name}` : ""}
-                            {e.vendor_name && e.due_date ? "  " : ""}
-                            {e.due_date ? `• termin: ${e.due_date}` : ""}
-                          </div>
-                        )}
-                      </td>
-
-                      <td className="border-b border-white/5 px-3 py-3 text-white/75">{catLabel}</td>
-
-                      <td className="border-b border-white/5 px-3 py-3 text-right text-white/85">
-                        {money(e.planned_amount)} {currency}
-                      </td>
-
-                      <td className="border-b border-white/5 px-3 py-3 text-right text-white/85">
-                        {money(e.actual_amount)} {currency}
-                      </td>
-
-                      <td className="border-b border-white/5 px-3 py-3 text-white/75">{e.vendor_name || "—"}</td>
-
-                      <td className="border-b border-white/5 px-3 py-3 text-white/75">{e.due_date || "—"}</td>
-
-                      <td className="border-b border-white/5 px-3 py-3">
-                        {isPaid ? (
-                          <span className="inline-flex items-center rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200 border border-emerald-400/20">
-                            Opłacone • {e.paid_date}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200 border border-amber-400/20">
-                            Nieopłacone
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="border-b border-white/5 px-3 py-3 text-white/65 max-w-[320px]">
-                        <div className="truncate" title={e.notes || ""}>
-                          {e.notes || "—"}
-                        </div>
-                      </td>
-
-                      <td className="border-b border-white/5 px-3 py-3 text-right">
-                        <div className="inline-flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEditExpense(e)}
-                            className={btnSecondary + " px-3 py-2 text-xs"}
-                            title="Edytuj"
-                          >
-                            <Pencil className="w-4 h-4" />
-                            Edytuj
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteExpense(e.id)}
-                            className={btnDanger + " px-3 py-2 text-xs"}
-                            title="Usuń"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            Usuń
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      )}
     </div>
   );
 };

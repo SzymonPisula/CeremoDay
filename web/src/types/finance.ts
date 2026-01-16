@@ -1,4 +1,4 @@
-// web/src/types/finance.ts
+// CeremoDay/web/src/types/finance.ts
 
 export type ExpenseCategory =
   | "HALL"
@@ -9,6 +9,8 @@ export type ExpenseCategory =
   | "DECOR"
   | "PHOTO_VIDEO"
   | "OTHER";
+
+export type ExpenseStatus = "PLANNED" | "IN_PROGRESS" | "PAID";
 
 export interface Budget {
   id: string;
@@ -33,13 +35,13 @@ export interface Expense {
   name: string;
   category: ExpenseCategory;
 
-  // WAŻNE: traktujemy jako number | null po naszej stronie,
-  // backend i tak zwraca string z DECIMAL, ale my to zamienimy.
+  status?: ExpenseStatus;
+
   planned_amount: number | null;
   actual_amount: number | null;
 
-  due_date: string | null;
-  paid_date: string | null;
+  due_date: string | null; // termin płatności (dla IN_PROGRESS)
+  paid_date: string | null; // data płatności (dla PAID)
 
   vendor_name: string | null;
   notes: string | null;
@@ -51,10 +53,15 @@ export interface Expense {
 export interface ExpenseCreatePayload {
   name: string;
   category: ExpenseCategory;
+
+  status: ExpenseStatus;
+
   planned_amount: number | null;
   actual_amount: number | null;
+
   due_date: string | null;
   paid_date: string | null;
+
   vendor_name: string | null;
   notes: string | null;
 }
@@ -67,9 +74,5 @@ export interface FinanceSummary {
   diff_planned_actual: number;
   remaining_budget: number | null;
   currency: string;
-  // Jeśli będziesz chciał używać breakdownu per kategoria:
-  byCategory?: Record<
-    ExpenseCategory,
-    { planned: number; actual: number }
-  >;
+  byCategory?: Record<ExpenseCategory, { planned: number; actual: number }>;
 }

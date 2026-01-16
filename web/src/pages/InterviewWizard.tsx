@@ -22,6 +22,11 @@ type WizardState = {
   hasEventDate: boolean;
   eventDate: string; // YYYY-MM-DD or ""
 
+    // 10 finanse
+  hasBudget: boolean;
+  financeInitial: string;
+
+
   // 3
   guestRange: GuestCountRange;
 
@@ -51,6 +56,8 @@ const DEFAULT_STATE: WizardState = {
   ceremonyType: "civil",
   hasEventDate: false,
   eventDate: "",
+  hasBudget: false,
+  financeInitial: "",
   guestRange: "31_60",
   guestListStatus: "not_started",
   musicChoice: "DJ",
@@ -243,7 +250,7 @@ export default function InterviewWizard() {
     sessionStorage.setItem(sessionKey(eventId), JSON.stringify(state));
   }, [eventId, state]);
 
-  const totalQuestions = 9;
+  const totalQuestions = 10;
   const currentStep = state.step; // 0..9
   const isIntro = currentStep === 0;
   const isLast = currentStep === totalQuestions;
@@ -273,6 +280,11 @@ export default function InterviewWizard() {
     const payload: InterviewPayload = {
       ceremony_type: state.ceremonyType,
       event_date: state.hasEventDate && state.eventDate.trim() ? state.eventDate.trim() : null,
+      finance_initial_budget:
+        state.hasBudget && state.financeInitial.trim()
+          ? Number(state.financeInitial.trim().replace(",", "."))
+          : null,
+
       guest_count_range: state.guestRange,
       guest_list_status: state.guestListStatus,
       music_provider_choice: state.musicChoice,
@@ -364,7 +376,7 @@ export default function InterviewWizard() {
                       </div>
                     ) : (
                       <div className="space-y-5">
-                        {/* Pytania 1..9 */}
+                        {/* Pytania 1..10 */}
                         {currentStep === 1 && (
                           <>
                             <div className="text-white text-lg font-semibold">1) Typ uroczystości</div>
@@ -423,7 +435,53 @@ export default function InterviewWizard() {
 
                         {currentStep === 3 && (
                           <>
-                            <div className="text-white text-lg font-semibold">3) Ilu gości planujecie?</div>
+                            <div className="text-white text-lg font-semibold">
+                              3) Finanse — czy macie budżet?
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <OptionCard
+                                title="Nie mam budżetu"
+                                description="Pominiemy budżet startowy."
+                                selected={!state.hasBudget}
+                                onClick={() =>
+                                  setState((p) => ({ ...p, hasBudget: false, financeInitial: "" }))
+                                }
+                              />
+                              <OptionCard
+                                title="Mam budżet"
+                                description="Ustawimy budżet startowy i walutę."
+                                selected={state.hasBudget}
+                                onClick={() => setState((p) => ({ ...p, hasBudget: true }))}
+                              />
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                              <div className="md:col-span-2">
+                                <label className="block text-xs text-white/70 mb-1">Budżet początkowy</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  className={`${inputBase} ${state.hasBudget ? "" : "opacity-60"}`}
+                                  value={state.financeInitial}
+                                  onChange={(e) => setState((p) => ({ ...p, financeInitial: e.target.value }))}
+                                  disabled={!state.hasBudget}
+                                  placeholder="np. 45000"
+                                />
+                              </div>
+
+                              
+                            </div>
+
+                            <div className="mt-3 text-sm text-white/60">
+                              Na końcu zapiszemy ustawienia i przejdziemy do wydarzenia.
+                            </div>
+                          </>
+                        )}
+
+                        {currentStep === 4 && (
+                          <>
+                            <div className="text-white text-lg font-semibold">4) Ilu gości planujecie?</div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                               {GUEST_RANGE_OPTIONS.map((opt) => (
                                 <OptionCard
@@ -438,9 +496,9 @@ export default function InterviewWizard() {
                           </>
                         )}
 
-                        {currentStep === 4 && (
+                        {currentStep === 5 && (
                           <>
-                            <div className="text-white text-lg font-semibold">4) Status listy gości</div>
+                            <div className="text-white text-lg font-semibold">5) Status listy gości</div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                               {GUEST_LIST_STATUS_OPTIONS.map((opt) => (
                                 <OptionCard
@@ -455,9 +513,9 @@ export default function InterviewWizard() {
                           </>
                         )}
 
-                        {currentStep === 5 && (
+                        {currentStep === 6 && (
                           <>
-                            <div className="text-white text-lg font-semibold">5) Muzyka</div>
+                            <div className="text-white text-lg font-semibold">6) Muzyka</div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               {MUSIC_OPTIONS.map((opt) => (
                                 <OptionCard
@@ -472,9 +530,9 @@ export default function InterviewWizard() {
                           </>
                         )}
 
-                        {currentStep === 6 && (
+                        {currentStep === 7 && (
                           <>
-                            <div className="text-white text-lg font-semibold">6) Sala</div>
+                            <div className="text-white text-lg font-semibold">7) Sala</div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               {VENUE_OPTIONS.map((opt) => (
                                 <OptionCard
@@ -489,9 +547,9 @@ export default function InterviewWizard() {
                           </>
                         )}
 
-                        {currentStep === 7 && (
+                        {currentStep === 8 && (
                           <>
-                            <div className="text-white text-lg font-semibold">7) Usługi dodatkowe</div>
+                            <div className="text-white text-lg font-semibold">8) Usługi dodatkowe</div>
                             <div className="text-sm text-white/55">
                               Możesz wybrać wiele opcji.
                             </div>
@@ -515,10 +573,10 @@ export default function InterviewWizard() {
                           </>
                         )}
 
-                        {currentStep === 8 && (
+                        {currentStep === 9 && (
                           <>
                             <div className="text-white text-lg font-semibold">
-                              8) Czy chcesz korzystać z modułu „Dzień ślubu”?
+                              9) Czy chcesz korzystać z modułu „Dzień ślubu”?
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -538,10 +596,10 @@ export default function InterviewWizard() {
                           </>
                         )}
 
-                        {currentStep === 9 && (
+                        {currentStep === 10 && (
                           <>
                             <div className="text-white text-lg font-semibold">
-                              9) Powiadomienia — częstotliwość
+                              10) Powiadomienia — częstotliwość
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

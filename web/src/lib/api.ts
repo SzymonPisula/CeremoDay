@@ -99,6 +99,43 @@ try {
 
   return data as T;
 }
+// -------------------------------------------------
+// FINANCE helpers (typed, no any)
+// -------------------------------------------------
+type ExpenseStatus = "PLANNED" | "IN_PROGRESS" | "PAID";
+
+type ExpenseApiLike = {
+  planned_amount: number | string | null;
+  actual_amount: number | string | null;
+  due_date: string | null;
+  paid_date: string | null;
+  status?: ExpenseStatus | null;
+};
+
+const toNumOrNull = (v: number | string | null | undefined): number | null => {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+const resolveExpenseStatus = (e: ExpenseApiLike): ExpenseStatus => {
+  // jeśli backend już zwraca status — użyj
+  if (e.status === "PAID" || e.status === "IN_PROGRESS" || e.status === "PLANNED") return e.status;
+
+  // fallback (legacy)
+  if (e.paid_date) return "PAID";
+  if (e.due_date) return "IN_PROGRESS";
+  return "PLANNED";
+};
+
+const normalizeExpenseFromApi = <T extends ExpenseApiLike>(e: T) => {
+  return {
+    ...e,
+    planned_amount: toNumOrNull(e.planned_amount),
+    actual_amount: toNumOrNull(e.actual_amount),
+    status: resolveExpenseStatus(e),
+  };
+};
 
 export const api = {
   // -----------------------------
@@ -553,80 +590,53 @@ deleteTask: (id: string) =>
     return (await res.json()) as InspirationItem;
   },
 
-  // -----------------------------
-  // FINANCE / BUDŻET I WYDATKI
-  // -----------------------------
-  getFinanceBudget: (eventId: string): Promise<Budget | null> =>
-    request<Budget | null>(`/finance/${eventId}/budget`),
+  
 
-  saveFinanceBudget: (
-    eventId: string,
-    payload: BudgetPayload
-  ): Promise<Budget> =>
-    request<Budget>(`/finance/${eventId}/budget`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
+// -----------------------------
+// FINANCE / BUDŻET I WYDATKI
+// -----------------------------
+getFinanceBudget: (eventId: string): Promise<Budget | null> =>
+  request<Budget | null>(`/finance/${eventId}/budget`),
 
-  getFinanceExpenses: (eventId: string): Promise<Expense[]> =>
-    request<Expense[]>(`/finance/${eventId}/expenses`).then((list) =>
-      // Zamiana stringów z DECIMAL na number
-      list.map((e) => ({
-        ...e,
-        planned_amount:
-          e.planned_amount != null
-            ? Number(e.planned_amount)
-            : null,
-        actual_amount:
-          e.actual_amount != null
-            ? Number(e.actual_amount)
-            : null,
-      }))
-    ),
+saveFinanceBudget: (eventId: string, payload: BudgetPayload): Promise<Budget> =>
+  request<Budget>(`/finance/${eventId}/budget`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }),
 
-  createFinanceExpense: (
-    eventId: string,
-    payload: Omit<ExpenseCreatePayload, "event_id">
-  ): Promise<Expense> =>
-    request<Expense>(`/finance/${eventId}/expenses`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }).then((e) => ({
-      ...e,
-      planned_amount:
-        e.planned_amount != null ? Number(e.planned_amount) : null,
-      actual_amount:
-        e.actual_amount != null ? Number(e.actual_amount) : null,
-    })),
+getFinanceExpenses: (eventId: string): Promise<Expense[]> =>
+  request<Expense[]>(`/finance/${eventId}/expenses`).then((list) =>
+    (list ?? []).map((e) => normalizeExpenseFromApi(e))
+  ),
 
-  updateFinanceExpense: (
-    eventId: string,
-    expenseId: string,
-    payload: ExpenseUpdatePayload
-  ): Promise<Expense> =>
-    request<Expense>(`/finance/${eventId}/expenses/${expenseId}`, {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    }).then((e) => ({
-      ...e,
-      planned_amount:
-        e.planned_amount != null ? Number(e.planned_amount) : null,
-      actual_amount:
-        e.actual_amount != null ? Number(e.actual_amount) : null,
-    })),
+createFinanceExpense: (
+  eventId: string,
+  payload: Omit<ExpenseCreatePayload, "event_id">
+): Promise<Expense> =>
+  request<Expense>(`/finance/${eventId}/expenses`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }).then((e) => normalizeExpenseFromApi(e)),
 
-  deleteFinanceExpense: (
-    eventId: string,
-    expenseId: string
-  ): Promise<void> =>
-    request<void>(`/finance/${eventId}/expenses/${expenseId}`, {
-      method: "DELETE",
-    }),
+updateFinanceExpense: (
+  eventId: string,
+  expenseId: string,
+  payload: ExpenseUpdatePayload
+): Promise<Expense> =>
+  request<Expense>(`/finance/${eventId}/expenses/${expenseId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  }).then((e) => normalizeExpenseFromApi(e)),
 
-  getFinanceSummary: (eventId: string): Promise<FinanceSummary> =>
-    request<FinanceSummary>(`/finance/${eventId}/summary`),
+deleteFinanceExpense: (eventId: string, expenseId: string): Promise<void> =>
+  request<void>(`/finance/${eventId}/expenses/${expenseId}`, {
+    method: "DELETE",
+  }),
 
-  exportFinanceExpensesXlsx: async (eventId: string): Promise<Blob> => {
+getFinanceSummary: (eventId: string): Promise<FinanceSummary> =>
+  request<FinanceSummary>(`/finance/${eventId}/summary`),
+
+exportFinanceExpensesXlsx: async (eventId: string): Promise<Blob> => {
   const token = useAuthStore.getState().token;
 
   const res = await fetch(`${BASE_URL}/finance/${eventId}/expenses/export-xlsx`, {

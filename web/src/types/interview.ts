@@ -19,6 +19,9 @@ export type VenueChoice = "WEDDING_HALL" | "RURAL_VENUE";
 export type InterviewPayload = {
   ceremony_type: CeremonyType;
   event_date: string | null;
+
+  finance_initial_budget: number | null; // <-- zostaje
+
   guest_count_range: GuestCountRange;
   guest_list_status: GuestListStatus;
 
@@ -39,3 +42,5 @@ export type InterviewResponse = InterviewPayload & {
   updated_at?: string;
   has_date: boolean;
 };
+
+

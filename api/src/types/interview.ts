@@ -13,6 +13,7 @@ export type VendorKey =
   | "TRANSPORT";
 
 export type NotificationFrequency = "daily" | "every_3_days" | "weekly" | "only_critical";
+export type FinanceCurrency = "PLN" | "EUR" | "USD";
 
 // wymagane wybory (NOWE)
 export type MusicProviderChoice = "DJ" | "BAND"; // DJ / Orkiestra
@@ -20,15 +21,17 @@ export type VenueChoice = "WEDDING_HALL" | "RURAL_VENUE"; // Sala weselna / Sala
 
 export type InterviewPayload = {
   ceremony_type: CeremonyType;
-  event_date: string | null; // YYYY-MM-DD lub null
+  event_date: string | null;
+  
+  finance_initial_budget: number | null;
+
   guest_count_range: GuestCountRange;
   guest_list_status: GuestListStatus;
 
-  // wybory “wymagane”
   music_provider_choice: MusicProviderChoice;
   venue_choice: VenueChoice;
 
-  required_vendors: VendorKey[]; // zawsze zawiera DJ_OR_BAND + VENUE
+  required_vendors: VendorKey[];
   optional_vendors: VendorKey[];
 
   wedding_day_enabled: boolean;

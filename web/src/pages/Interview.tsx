@@ -140,29 +140,33 @@ export default function Interview() {
   // 2) data (opcjonalnie) + przełącznik Tak/Nie
   const [hasEventDate, setHasEventDate] = useState<boolean>(false);
   const [eventDate, setEventDate] = useState<string>(""); // YYYY-MM-DD albo ""
+  
+  // 3) finanse
+  const [hasBudget, setHasBudget] = useState<boolean>(false);
+  const [financeInitial, setFinanceInitial] = useState<string>(""); // string w input
 
-  // 3) ilu gości
+  // 4) ilu gości
   const [guestRange, setGuestRange] = useState<GuestCountRange>("31_60");
 
-  // 4) status listy gości
+  // 5) status listy gości
   const [guestListStatus, setGuestListStatus] = useState<GuestListStatus>("not_started");
 
-  // 5) muzyka
+  // 6) muzyka
   const [musicChoice, setMusicChoice] = useState<MusicProviderChoice>("DJ");
 
-  // 6) sala
+  // 7) sala
   const [venueChoice, setVenueChoice] = useState<VenueChoice>("WEDDING_HALL");
 
   // required vendors systemowo (zawsze)
   const [requiredVendors, setRequiredVendors] = useState<VendorKey[]>(["DJ_OR_BAND", "VENUE"]);
 
-  // 7) dodatkowe usługi (multi)
+  // 8) dodatkowe usługi (multi)
   const [optionalVendors, setOptionalVendors] = useState<VendorKey[]>([]);
 
-  // 8) dzień ślubu (Tak/Nie)
+  // 9) dzień ślubu (Tak/Nie)
   const [weddingDayEnabled, setWeddingDayEnabled] = useState<boolean>(true);
 
-  // 9) powiadomienia (karty)
+  // 10) powiadomienia (karty)
   const [notificationFrequency, setNotificationFrequency] =
     useState<NotificationFrequency>("every_3_days");
 
@@ -231,6 +235,10 @@ export default function Interview() {
     setHasEventDate(!!date);
     setEventDate(date);
 
+    const b = data.finance_initial_budget;
+    setHasBudget(b != null && Number(b) > 0);
+    setFinanceInitial(b != null ? String(b) : "");
+
     setGuestRange(data.guest_count_range);
     setGuestListStatus(data.guest_list_status);
 
@@ -270,6 +278,11 @@ export default function Interview() {
       ceremony_type: ceremonyType,
 
       event_date: hasEventDate && eventDate.trim() ? eventDate.trim() : null,
+
+      finance_initial_budget:
+        hasBudget && financeInitial.trim() !== ""
+          ? Number(financeInitial.trim().replace(",", "."))
+          : null,
 
       guest_count_range: guestRange,
       guest_list_status: guestListStatus,
@@ -425,11 +438,61 @@ export default function Interview() {
             </div>
           </section>
 
-          {/* 3) Ilu gości -> 5 kart */}
+                    {/* 3) Finanse */}
+          <section className={`${cardBase} p-6 md:p-7`}>
+            <div className="flex items-center gap-2 mb-4">
+              <Sparkles className="w-5 h-5 text-[#d7b45a]" />
+              <h2 className="text-white font-semibold text-lg">3) Finanse — budżet </h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <OptionCard
+                title="Nie mam budżetu"
+                description="Pominiemy budżet startowy — możesz dodać później w module Finanse."
+                selected={!hasBudget}
+                onClick={() => {
+                  setHasBudget(false);
+                  setFinanceInitial("");
+                }}
+                icon={<X className="h-4 w-4 text-[#d7b45a]" />}
+              />
+              <OptionCard
+                title="Mam budżet"
+                description="Ustawimy budżet startowy i walutę jako domyślne."
+                selected={hasBudget}
+                onClick={() => setHasBudget(true)}
+                icon={<Check className="h-4 w-4 text-[#d7b45a]" />}
+              />
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+              <div className="md:col-span-2">
+                <label className="block text-xs text-white/70 mb-1">Budżet początkowy</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className={`${inputBase} ${hasBudget ? "" : "opacity-60"}`}
+                  value={financeInitial}
+                  onChange={(e) => setFinanceInitial(e.target.value)}
+                  disabled={!hasBudget}
+                  placeholder="np. 45000"
+                />
+              </div>
+
+              
+            </div>
+
+            <p className="mt-3 text-xs text-white/45">
+              To są ustawienia startowe. W module <b>Finanse</b> i tak możesz później zmieniać budżet i walutę.
+            </p>
+          </section>
+
+
+          {/* 4) Ilu gości -> 5 kart */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <Users className="w-5 h-5 text-[#d7b45a]" />
-              <h2 className="text-white font-semibold text-lg">3) Ilu gości planujecie?</h2>
+              <h2 className="text-white font-semibold text-lg">4) Ilu gości planujecie?</h2>
               <span className="ml-auto text-xs text-white/45">Wybierz jedną opcję</span>
             </div>
 
@@ -451,11 +514,11 @@ export default function Interview() {
             </p>
           </section>
 
-          {/* 4) Status listy gości -> 3 karty */}
+          {/* 5) Status listy gości -> 3 karty */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <ClipboardList className="w-5 h-5 text-[#d7b45a]" />
-              <h2 className="text-white font-semibold text-lg">4) Status listy gości</h2>
+              <h2 className="text-white font-semibold text-lg">5) Status listy gości</h2>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -472,11 +535,11 @@ export default function Interview() {
             </div>
           </section>
 
-          {/* 5) Muzyka -> 2 karty */}
+          {/* 6) Muzyka -> 2 karty */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <Music className="w-5 h-5 text-[#d7b45a]" />
-              <h2 className="text-white font-semibold text-lg">5) Muzyka</h2>
+              <h2 className="text-white font-semibold text-lg">6) Muzyka</h2>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -497,11 +560,11 @@ export default function Interview() {
             </p>
           </section>
 
-          {/* 6) Sala -> 2 karty */}
+          {/* 7) Sala -> 2 karty */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <MapPin className="w-5 h-5 text-[#d7b45a]" />
-              <h2 className="text-white font-semibold text-lg">6) Sala</h2>
+              <h2 className="text-white font-semibold text-lg">7) Sala</h2>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -518,11 +581,11 @@ export default function Interview() {
             </div>
           </section>
 
-          {/* 7) Usługi dodatkowe -> multi karty */}
+          {/* 8) Usługi dodatkowe -> multi karty */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <Sparkles className="w-5 h-5 text-[#d7b45a]" />
-              <h2 className="text-white font-semibold text-lg">7) Usługi dodatkowe</h2>
+              <h2 className="text-white font-semibold text-lg">8) Usługi dodatkowe</h2>
               <span className="ml-auto text-xs text-white/45">Możesz wybrać wiele</span>
             </div>
 
@@ -545,12 +608,12 @@ export default function Interview() {
             </p>
           </section>
 
-          {/* 8) Dzień ślubu -> Tak/Nie */}
+          {/* 9) Dzień ślubu -> Tak/Nie */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <Sparkles className="w-5 h-5 text-[#d7b45a]" />
               <h2 className="text-white font-semibold text-lg">
-                8) Czy chcesz korzystać z modułu „Dzień ślubu”?
+                9) Czy chcesz korzystać z modułu „Dzień ślubu”?
               </h2>
             </div>
 
@@ -572,11 +635,11 @@ export default function Interview() {
             </div>
           </section>
 
-          {/* 9) Powiadomienia -> karty */}
+          {/* 10) Powiadomienia -> karty */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <Bell className="w-5 h-5 text-[#d7b45a]" />
-              <h2 className="text-white font-semibold text-lg">9) Powiadomienia — częstotliwość</h2>
+              <h2 className="text-white font-semibold text-lg">10) Powiadomienia — częstotliwość</h2>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

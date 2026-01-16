@@ -27,6 +27,10 @@ export interface EventInterviewAttributes {
   ceremony_type: ModelCeremonyType;
   event_date: string | null;
 
+  finance_initial_budget: string | null; // DECIMAL => string
+
+
+
   guest_count_range: ModelGuestCountRange;
   guest_list_status: ModelGuestListStatus;
 
@@ -86,6 +90,8 @@ class EventInterview
   declare ceremony_type: ModelCeremonyType;
   declare event_date: string | null;
 
+  declare finance_initial_budget: string | null;
+
   declare guest_count_range: ModelGuestCountRange;
   declare guest_list_status: ModelGuestListStatus;
 
@@ -125,6 +131,15 @@ EventInterview.init(
       type: DataTypes.STRING(10), // YYYY-MM-DD
       allowNull: true,
     },
+
+      finance_initial_budget: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: true,
+      defaultValue: null,
+    },
+    
+
+
 
     guest_count_range: {
       type: DataTypes.ENUM("0_30", "31_60", "61_100", "101_150", "150_PLUS"),
