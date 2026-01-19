@@ -96,14 +96,14 @@ export default function TopBar({ title, onMenu, eventId, eventName }: TopBarProp
               ) : null}
 
               <Button
-  variant="secondary"
-  onClick={handleLogout}
-  className="inline-flex items-center gap-2"
->
-  <span className="hidden lg:inline">Wyloguj</span>
-  <LogoutIcon size={18} className="text-white/80" />
+                variant="secondary"
+                onClick={handleLogout}
+                className="px-3"
+                rightIcon={<LogoutIcon size={18} className="text-white/80" />}
+              >
+                <span className="hidden lg:inline">Wyloguj</span>
+              </Button>
 
-</Button>
               
             </div>
           </div>

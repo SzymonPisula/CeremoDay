@@ -1,0 +1,20 @@
+import type { UserPublic } from "./user";
+
+export type EventRole = "owner" | "coorganizer" | "guest";
+
+export type EventUserStatus = "pending" | "active" | "removed";
+
+export type EventUserRow = {
+  event_id: string;
+  user_id: string;
+  role: EventRole;
+  status?: EventUserStatus;
+  user?: UserPublic;
+};
+
+export type EventUsersResponse = {
+  my_user_id: string;
+  my_role: EventRole;
+  my_status?: EventUserStatus;
+  users: EventUserRow[];
+};

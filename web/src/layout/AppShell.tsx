@@ -6,11 +6,14 @@ import { useAuthStore } from "../store/auth";
 
 type Props = {
   eventId: string | null;
+  weddingDayEnabled?: boolean; // ✅ NOWE
+
 };
+
 
 const TOPBAR_H = 72;
 
-export default function AppShell({ eventId }: Props) {
+export default function AppShell({ eventId, weddingDayEnabled }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile
   // desktop: zwijamy menu "do góry w pasek" (sidebar znika, zostaje tylko segment w topbarze)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -19,6 +22,7 @@ export default function AppShell({ eventId }: Props) {
   // szerokość lewego segmentu topbara dopasowana do stanu sidebara
   const leftW = sidebarCollapsed ? "w-[92px]" : "w-[300px]";
   const location = useLocation();
+
 
   // prosta etykieta modułu z URL (możesz to potem spiąć z configiem routów)
   const moduleTitle = useMemo(() => {
@@ -173,7 +177,9 @@ export default function AppShell({ eventId }: Props) {
   onOpenChange={setSidebarOpen}
   topbarHeightPx={TOPBAR_H}
   topbarGapPx={16}
+  weddingDayEnabled={!!weddingDayEnabled}
 />
+
 
 
       {/* CONTENT */}

@@ -16,9 +16,15 @@ import Tasks from "./pages/Tasks";
 import Vendors from "./pages/Vendors";
 import Finance from "./pages/Finance";
 import Reports from "./pages/Reports";
+import Notifications from "./pages/Notifications";
+import Schedule from "./pages/Schedule";
+import WeddingDay from "./pages/WeddingDay";
 import Interview from "./pages/Interview";
 import InterviewWizard from "./pages/InterviewWizard";
 import RequireInterview from "./components/RequireInterview";
+
+import EventUsers from "./pages/EventUsers";
+import Profile from "./pages/Profile";
 
 /**
  * Nowy routing (2025 redesign):
@@ -46,6 +52,9 @@ export default function App() {
           }
         >
           <Route path="/dashboard" element={<Dashboard />} />
+
+          {/* Profil użytkownika */}
+          <Route path="/profile" element={<Profile />} />
 
           {/* ✅ WYWIAD: startowy wizard (pierwsze przejście) */}
           <Route path="/event/:id/interview/start" element={<InterviewWizard />} />
@@ -104,6 +113,34 @@ export default function App() {
               </RequireInterview>
             }
           />
+
+          <Route
+            path="/event/:id/schedule"
+            element={
+              <RequireInterview>
+                <Schedule />
+              </RequireInterview>
+            }
+          />
+
+          <Route
+            path="/event/:id/notifications"
+            element={
+              <RequireInterview>
+                <Notifications />
+              </RequireInterview>
+            }
+          />
+
+          <Route
+            path="/event/:id/wedding-day"
+            element={
+              <RequireInterview>
+                <WeddingDay />
+              </RequireInterview>
+            }
+          />
+
           <Route
             path="/event/:id/finance"
             element={
@@ -117,6 +154,24 @@ export default function App() {
             element={
               <RequireInterview>
                 <Reports />
+              </RequireInterview>
+            }
+          />
+
+          <Route
+            path="/event/:id/users"
+            element={
+              <RequireInterview>
+                <EventUsers />
+              </RequireInterview>
+            }
+          />
+
+          <Route
+            path="/event/:id/wedding-day"
+            element={
+              <RequireInterview>
+                <WeddingDay />
               </RequireInterview>
             }
           />

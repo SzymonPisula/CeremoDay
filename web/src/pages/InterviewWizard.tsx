@@ -13,6 +13,7 @@ import type {
   MusicProviderChoice,
   VenueChoice,
 } from "../types/interview";
+import DatePicker from "../ui/DatePicker";
 
 type WizardState = {
   // 1
@@ -251,7 +252,7 @@ export default function InterviewWizard() {
   }, [eventId, state]);
 
   const totalQuestions = 10;
-  const currentStep = state.step; // 0..9
+  const currentStep = state.step; // 0..10
   const isIntro = currentStep === 0;
   const isLast = currentStep === totalQuestions;
 
@@ -360,7 +361,7 @@ export default function InterviewWizard() {
                     {isIntro ? (
                       <div className="py-8 md:py-10 text-center">
                         <div className="text-white text-2xl md:text-3xl font-bold">
-                          Przed Tobą 9 krótkich pytań
+                          Przed Tobą 10 krótkich pytań
                         </div>
                         <div className="mt-3 text-white/65 max-w-2xl mx-auto">
                           Dostosują aplikację do Twoich wymagań. Bez obaw — w każdej chwili możesz wrócić do edycji
@@ -419,13 +420,15 @@ export default function InterviewWizard() {
 
                             <div className="mt-3">
                               <label className="block text-xs text-white/70 mb-1">Data (opcjonalnie)</label>
-                              <input
-                                type="date"
-                                className={`${inputBase} ${state.hasEventDate ? "" : "opacity-60"}`}
+                              <DatePicker
                                 value={state.eventDate}
-                                onChange={(e) => setState((p) => ({ ...p, eventDate: e.target.value }))}
+                                onChange={(v) => setState((p) => ({ ...p, eventDate: v }))}
                                 disabled={!state.hasEventDate}
+                                placeholder="Wybierz datę"
+                                size="sm"
+                                maxDropdownWidth={360}
                               />
+
                               <div className="mt-2 text-xs text-white/45">
                                 Jeśli zostawisz puste — nie będziemy sugerować zadań “pod termin”.
                               </div>

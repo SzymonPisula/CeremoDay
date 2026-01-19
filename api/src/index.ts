@@ -19,6 +19,7 @@ import vendorsRouter from "./routes/vendors";
 import financeRoutes from "./routes/finance";
 import reportsRouter from "./routes/reports";
 import interviewRoutes from "./routes/interview";
+import usersRoutes from "./routes/users";
 
 
 // =======================
@@ -42,6 +43,8 @@ import { Vendor } from "./models/Vendor";
 
 import { Document } from "./models/Document";
 import { WeddingDaySchedule } from "./models/WeddingDaySchedule";
+import { WeddingDayChecklistItem } from "./models/WeddingDayChecklistItem";
+import { WeddingDayContact } from "./models/WeddingDayContact";
 import { File } from "./models/File";
 import { SyncLog } from "./models/SyncLog";
 
@@ -86,6 +89,7 @@ app.get("/", (_, res) => res.send("✅ API działa!"));
 // Endpointy
 // =======================
 app.use("/auth", authRoutes);
+app.use("/users", usersRoutes);
 app.use("/events", eventRoutes);
 app.use("/guests", guestRouter);
 app.use("/documents", documentsRouter);

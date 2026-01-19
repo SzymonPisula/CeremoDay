@@ -745,16 +745,19 @@ const [preview, setPreview] = useState<{ open: boolean; url: string; title?: str
                       Brak obrazka
                     </div>
                   )}
-<button
-  type="button"
-  onClick={() => setPreview({ open: true, url: item.image_url!, title: item.title })}
-  className="absolute top-2 left-2 rounded-full border border-white/15 bg-black/35 backdrop-blur px-3 py-1.5 text-xs text-white hover:bg-black/45 transition"
->
-  Podgląd
-</button>
-
-
-
+                  {item.image_url ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = item.image_url;
+                        if (!url) return;
+                        setPreview({ open: true, url, title: item.title });
+                      }}
+                      className="absolute top-2 left-2 rounded-full border border-white/15 bg-black/35 backdrop-blur px-3 py-1.5 text-xs text-white hover:bg-black/45 transition"
+                    >
+                      Podgląd
+                    </button>
+                  ) : null}
                   <label className="absolute bottom-2 right-2 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 backdrop-blur px-3 py-1.5 cursor-pointer text-xs text-white hover:bg-black/45 transition">
                     <ImageIcon className="w-4 h-4 text-[#d7b45a]" />
                     <span>Dodaj / zmień</span>

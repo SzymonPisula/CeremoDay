@@ -3,6 +3,8 @@ import { useParams } from "react-router-dom";
 import { Calendar, CheckSquare, Clock, ListChecks, Loader2, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import type { Task, TaskCategory, TaskStatus, TaskPayload } from "../types/task";
+import Select from "../ui/Select";
+import DatePicker from "../ui/DatePicker";
 
 type Params = {
   id: string;
@@ -81,10 +83,7 @@ export default function Tasks() {
     "w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-white placeholder:text-white/35 " +
     "outline-none focus:border-[#c8a04b]/50 focus:ring-2 focus:ring-[#c8a04b]/15 transition";
 
-  const selectBase =
-    inputBase +
-    " pr-9 appearance-none " +
-    "[&>option]:bg-[#07160f] [&>option]:text-white";
+
 
   const chip =
     "inline-flex items-center gap-2 px-3 py-1 rounded-full " +
@@ -411,26 +410,31 @@ export default function Tasks() {
                 className={inputBase}
               />
               <div className="flex gap-2">
-                <select
-                  className={selectBase + " flex-1"}
-                  value={newTaskCategory}
-                  onChange={(e) => setNewTaskCategory(e.target.value as TaskCategory)}
-                >
-                  {(
-                    ["FORMALNOSCI", "ORGANIZACJA", "USLUGI", "DEKORACJE", "LOGISTYKA", "DZIEN_SLUBU"] as TaskCategory[]
-                  ).map((c) => (
-                    <option key={c} value={c}>
-                      {CATEGORY_LABELS[c]}
-                    </option>
-                  ))}
-                </select>
+                <Select<TaskCategory>
+  value={newTaskCategory}
+  onChange={(v) => setNewTaskCategory(v)}
+  options={[
+    { value: "FORMALNOSCI", label: CATEGORY_LABELS.FORMALNOSCI },
+    { value: "ORGANIZACJA", label: CATEGORY_LABELS.ORGANIZACJA },
+    { value: "USLUGI", label: CATEGORY_LABELS.USLUGI },
+    { value: "DEKORACJE", label: CATEGORY_LABELS.DEKORACJE },
+    { value: "LOGISTYKA", label: CATEGORY_LABELS.LOGISTYKA },
+    { value: "DZIEN_SLUBU", label: CATEGORY_LABELS.DZIEN_SLUBU },
+  ]}
+/>
 
-                <input
-                  type="date"
-                  value={newTaskDueDate}
-                  onChange={(e) => setNewTaskDueDate(e.target.value)}
-                  className={inputBase + " w-[150px]"}
-                />
+<div className="w-[180px]">
+  <DatePicker
+    value={newTaskDueDate}
+    onChange={setNewTaskDueDate}
+    placeholder="Termin"
+    className="w-full"
+    buttonClassName="py-2 text-sm"
+  />
+</div>
+
+
+
               </div>
 
               <button
@@ -519,13 +523,15 @@ export default function Tasks() {
 
                   <div className="flex flex-col items-start md:items-end gap-2">
                     <div className="text-xs text-white/55">{formatDisplayDate(task.due_date)}</div>
-                    <input
-                      type="date"
+                    <DatePicker
                       value={formatDateInputValue(task.due_date)}
-                      onChange={(e) => handleUpdateTaskDate(task, e.target.value)}
-                      className={inputBase + " w-[170px]"}
-                      title="Zmień termin"
+                      onChange={(v) => handleUpdateTaskDate(task, v)}
+                      className="w-[220px]"
+                      buttonClassName="py-2 text-sm"
                     />
+
+
+
 
                     <button
                       type="button"

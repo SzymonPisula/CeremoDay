@@ -12,6 +12,7 @@ function getEventIdFromPath(pathname: string): string | null {
 
 function getTitleFromPath(pathname: string): string {
   if (pathname.startsWith("/event/")) {
+    if (pathname.includes("/users")) return "Użytkownicy";
     if (pathname.includes("/guests")) return "Goście";
     if (pathname.includes("/documents")) return "Dokumenty";
     if (pathname.includes("/vendors")) return "Usługodawcy";
@@ -20,15 +21,20 @@ function getTitleFromPath(pathname: string): string {
     if (pathname.includes("/finance")) return "Finanse";
     if (pathname.includes("/reports")) return "Raporty";
     if (pathname.includes("/interview")) return "Wywiad";
+    if (pathname.includes("/schedule")) return "Harmonogram";
+    if (pathname.includes("/notifications")) return "Powiadomienia";
+    if (pathname.includes("/wedding-day")) return "Dzień ślubu";
     return "Panel wydarzenia";
   }
   if (pathname.startsWith("/dashboard")) return "Moje wydarzenia";
+  if (pathname.startsWith("/profile")) return "Mój profil";
   return "CeremoDay";
 }
 
 export type AppLayoutOutletContext = {
   eventId: string | null;
   eventName: string | null;
+  weddingDayEnabled: boolean; // ✅ NOWE
 };
 
 export default function AppLayout() {
@@ -38,6 +44,7 @@ export default function AppLayout() {
   const title = useMemo(() => getTitleFromPath(location.pathname), [location.pathname]);
 
   const [eventName, setEventName] = useState<string | null>(null);
+  const [weddingDayEnabled, setWeddingDayEnabled] = useState<boolean>(false);
 
   // ✅ overlay sidebar (desktop + mobile)
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -118,18 +125,60 @@ export default function AppLayout() {
     };
   }, [eventId]);
 
-  const outletContext: AppLayoutOutletContext = { eventId, eventName };
+   // ✅ KLUCZ: pobieramy flagę z WYWIADU (event_interviews)
+  useEffect(() => {
+    let alive = true;
+
+    async function loadWeddingDayFlag(id: string | null) {
+      if (!id) {
+        setWeddingDayEnabled(false);
+        return;
+      }
+
+      try {
+        const interview = await api.getInterview(id); // GET /interview/:eventId
+        if (!alive) return;
+
+        const enabled = !!(interview && interview.wedding_day_enabled);
+        setWeddingDayEnabled(enabled);
+      } catch {
+        if (!alive) return;
+        setWeddingDayEnabled(false);
+      }
+    }
+
+    void loadWeddingDayFlag(eventId);
+
+    // ✅ nasłuch: ktoś zapisał wywiad -> odśwież flagę bez refreshu
+    const onInterviewUpdated = (e: Event) => {
+      const detail = (e as CustomEvent<{ eventId?: string }>).detail;
+      if (!detail?.eventId) return;
+      if (detail.eventId !== eventId) return;
+      void loadWeddingDayFlag(detail.eventId);
+    };
+
+    window.addEventListener("ceremoday:interview-updated", onInterviewUpdated as EventListener);
+
+    return () => {
+      alive = false;
+      window.removeEventListener("ceremoday:interview-updated", onInterviewUpdated as EventListener);
+    };
+  }, [eventId]);
+
+
+  const outletContext: AppLayoutOutletContext = { eventId, eventName, weddingDayEnabled };
 
   return (
     <div className="min-h-screen">
       <div className="flex">
-        {/* ✅ Sidebar overlay — props tylko te które masz w SidebarProps */}
+        {/* ✅ Sidebar overlay */}
         <Sidebar
           eventId={eventId}
           open={sidebarOpen}
           onOpenChange={setSidebarOpen}
           topbarHeightPx={topbarHeightPx}
           topbarGapPx={topbarGapPx}
+          weddingDayEnabled={weddingDayEnabled} // ✅ TU
         />
 
         {/* ✅ Prawa część: sticky TopBar + scroll w treści */}
@@ -154,7 +203,6 @@ export default function AppLayout() {
         </div>
       </div>
 
-      {/* (opcjonalnie) placeholder — możesz usunąć */}
       <div style={{ height: topbarGapPx + topbarHeightPx, display: "none" }} />
     </div>
   );

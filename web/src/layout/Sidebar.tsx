@@ -1,3 +1,4 @@
+// web/src/layout/Sidebar.tsx
 import { useEffect, useMemo } from "react";
 import { NavLink } from "react-router-dom";
 import { cn } from "../theme/helpers";
@@ -14,6 +15,9 @@ import {
   Wallet,
   BarChart3,
   Compass,
+  UserCircle2,
+  UserCog,
+  CalendarHeart,
 } from "lucide-react";
 
 type SidebarProps = {
@@ -23,6 +27,9 @@ type SidebarProps = {
 
   topbarHeightPx: number;
   topbarGapPx: number;
+
+  // ✅ sterowane wywiadem eventu
+  weddingDayEnabled?: boolean;
 };
 
 type Item = {
@@ -35,12 +42,19 @@ type Item = {
 
 const ICON_CLASS = "w-5 h-5 text-[rgba(246,226,122,0.95)]";
 
-function buildItems(eventId: string | null): Item[] {
+function buildItems(eventId: string | null, weddingDayEnabled: boolean): Item[] {
   const items: Item[] = [
     {
       label: "Moje wydarzenia",
       to: "/dashboard",
       icon: <Home className={ICON_CLASS} />,
+      end: true,
+      separatorAfter: false,
+    },
+    {
+      label: "Mój profil",
+      to: "/profile",
+      icon: <UserCircle2 className={ICON_CLASS} />,
       end: true,
       separatorAfter: true,
     },
@@ -48,6 +62,7 @@ function buildItems(eventId: string | null): Item[] {
 
   if (eventId) {
     const base = `/event/${eventId}`;
+
     items.push(
       {
         label: "Panel wydarzenia",
@@ -55,6 +70,7 @@ function buildItems(eventId: string | null): Item[] {
         icon: <LayoutDashboard className={ICON_CLASS} />,
         end: true,
       },
+      { label: "Użytkownicy", to: `${base}/users`, icon: <UserCog className={ICON_CLASS} /> },
       { label: "Goście", to: `${base}/guests`, icon: <Users className={ICON_CLASS} /> },
       { label: "Dokumenty", to: `${base}/documents`, icon: <FileText className={ICON_CLASS} /> },
       { label: "Usługodawcy", to: `${base}/vendors`, icon: <MapPin className={ICON_CLASS} /> },
@@ -62,6 +78,12 @@ function buildItems(eventId: string | null): Item[] {
       { label: "Zadania", to: `${base}/tasks`, icon: <CheckSquare className={ICON_CLASS} /> },
       { label: "Finanse", to: `${base}/finance`, icon: <Wallet className={ICON_CLASS} /> },
       { label: "Raporty", to: `${base}/reports`, icon: <BarChart3 className={ICON_CLASS} /> },
+
+      // ✅ TYLKO jeśli włączone w wywiadzie
+      ...(weddingDayEnabled
+        ? [{ label: "Dzień ślubu", to: `${base}/wedding-day`, icon: <CalendarHeart className={ICON_CLASS} /> }]
+        : []),
+
       { label: "Wywiad (Edycja)", to: `${base}/interview`, icon: <Compass className={ICON_CLASS} /> }
     );
   }
@@ -75,8 +97,9 @@ export default function Sidebar({
   onOpenChange,
   topbarHeightPx,
   topbarGapPx,
+  weddingDayEnabled,
 }: SidebarProps) {
-  const items = useMemo(() => buildItems(eventId), [eventId]);
+  const items = useMemo(() => buildItems(eventId, !!weddingDayEnabled), [eventId, weddingDayEnabled]);
 
   const topbarTop = topbarGapPx;
   const sidebarDockTop = topbarTop + topbarHeightPx;

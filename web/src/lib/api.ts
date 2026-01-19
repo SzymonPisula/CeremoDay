@@ -22,6 +22,18 @@ import type {
   ExpenseUpdatePayload,
   FinanceSummary,
 } from "../types/finance";
+import type {
+  WeddingDayResponse,
+  WeddingDayScheduleItem,
+  WeddingDayChecklistItem,
+  WeddingDayContact,
+} from "../types/weddingDay";
+
+
+import type { MeResponse, UpdateMePayload } from "../types/User";
+import type { EventUsersResponse } from "../types/eventUsers";
+
+
 
 
 export const BASE_URL = "http://localhost:4000";
@@ -173,6 +185,52 @@ export const api = {
     request("/events/join", {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+
+  // -----------------------------
+  // EVENT USERS
+  // -----------------------------
+  getEventUsers: (eventId: string): Promise<EventUsersResponse> =>
+    request<EventUsersResponse>(`/events/${eventId}/users`),
+
+  removeEventUser: (eventId: string, userId: string) =>
+    request<{ success: true }>(`/events/${eventId}/users/${userId}`, {
+      method: "DELETE",
+    }),
+
+  leaveEvent: (eventId: string) =>
+    request<{ success: true }>(`/events/${eventId}/leave`, {
+      method: "POST",
+    }),
+
+  approveEventUser: (eventId: string, userId: string, role?: "guest" | "coorganizer") =>
+    request<{ success: true }>(`/events/${eventId}/users/${userId}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ role }),
+    }),
+
+  rejectEventUser: (eventId: string, userId: string) =>
+    request<{ success: true }>(`/events/${eventId}/users/${userId}/reject`, {
+      method: "POST",
+    }),
+
+    changeEventUserRole: (eventId: string, userId: string, role: "guest" | "coorganizer") =>
+  request(`/events/${eventId}/users/${userId}/role`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  }),
+
+  
+
+  // -----------------------------
+  // PROFILE
+  // -----------------------------
+  getMe: (): Promise<MeResponse> => request<MeResponse>("/users/me"),
+
+  updateMe: (payload: UpdateMePayload) =>
+    request<{ success: boolean; user: MeResponse }>("/users/me", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
     }),
 
   // -----------------------------
@@ -689,7 +747,84 @@ saveInterview: (eventId: string, payload: import("../types/interview").Interview
     body: JSON.stringify(payload),
   }),
 
+// -----------------------------
+// WEDDING DAY
+// -----------------------------
 
+getWeddingDay: (eventId: string) =>
+  request<WeddingDayResponse>(`/events/${eventId}/wedding-day`, { method: "GET" }),
+
+getEventInterview: (eventId: string) =>
+    request(`/events/${eventId}/interview`, { method: "GET" }),
+
+addWeddingDaySchedule: (
+  eventId: string,
+  body: Pick<WeddingDayScheduleItem, "time" | "title"> &
+    Partial<Pick<WeddingDayScheduleItem, "description" | "location" | "responsible">>
+) =>
+  request<WeddingDayScheduleItem>(`/events/${eventId}/wedding-day/schedule`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  }),
+
+updateWeddingDaySchedule: (
+  eventId: string,
+  itemId: string,
+  body: Partial<Pick<WeddingDayScheduleItem, "time" | "title" | "description" | "location" | "responsible" | "status">>
+) =>
+  request<WeddingDayScheduleItem>(`/events/${eventId}/wedding-day/schedule/${itemId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  }),
+
+deleteWeddingDaySchedule: (eventId: string, itemId: string) =>
+  request<{ success: true }>(`/events/${eventId}/wedding-day/schedule/${itemId}`, { method: "DELETE" }),
+
+addWeddingDayChecklist: (
+  eventId: string,
+  body: Pick<WeddingDayChecklistItem, "title"> &
+    Partial<Pick<WeddingDayChecklistItem, "note" | "schedule_item_id">>
+) =>
+  request<WeddingDayChecklistItem>(`/events/${eventId}/wedding-day/checklist`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  }),
+
+updateWeddingDayChecklist: (
+  eventId: string,
+  itemId: string,
+  body: Partial<Pick<WeddingDayChecklistItem, "title" | "note" | "schedule_item_id" | "done">>
+) =>
+  request<WeddingDayChecklistItem>(`/events/${eventId}/wedding-day/checklist/${itemId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  }),
+
+deleteWeddingDayChecklist: (eventId: string, itemId: string) =>
+  request<{ success: true }>(`/events/${eventId}/wedding-day/checklist/${itemId}`, { method: "DELETE" }),
+
+addWeddingDayContact: (
+  eventId: string,
+  body: Pick<WeddingDayContact, "name"> &
+    Partial<Pick<WeddingDayContact, "role" | "phone" | "email" | "note">>
+) =>
+  request<WeddingDayContact>(`/events/${eventId}/wedding-day/contacts`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  }),
+
+updateWeddingDayContact: (
+  eventId: string,
+  contactId: string,
+  body: Partial<Pick<WeddingDayContact, "name" | "role" | "phone" | "email" | "note">>
+) =>
+  request<WeddingDayContact>(`/events/${eventId}/wedding-day/contacts/${contactId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  }),
+
+deleteWeddingDayContact: (eventId: string, contactId: string) =>
+  request<{ success: true }>(`/events/${eventId}/wedding-day/contacts/${contactId}`, { method: "DELETE" }),
 
 
 };

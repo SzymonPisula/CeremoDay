@@ -20,6 +20,7 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { api } from "../lib/api";
+import Select from "../ui/Select";
 
 type ExpenseCategory =
   | "HALL"
@@ -647,15 +648,20 @@ const Finance: React.FC = () => {
 
             <div className="md:col-span-2">
               <label className="block text-xs text-white/70 mb-1">Sortuj</label>
-              <select className={selectBase} value={sortField} onChange={(e) => setSortField(e.target.value as SortField)}>
-                <option value="due_date">Termin</option>
-                <option value="paid_date">Data płatności</option>
-                <option value="status">Status</option>
-                <option value="name">Nazwa</option>
-                <option value="category">Kategoria</option>
-                <option value="planned_amount">Kwota planowana</option>
-                <option value="actual_amount">Kwota faktyczna</option>
-              </select>
+              <Select<SortField>
+                value={sortField}
+                onChange={(v) => setSortField(v)}
+                options={[
+                  { value: "due_date", label: "Termin" },
+                  { value: "paid_date", label: "Data płatności" },
+                  { value: "status", label: "Status" },
+                  { value: "name", label: "Nazwa" },
+                  { value: "category", label: "Kategoria" },
+                  { value: "planned_amount", label: "Kwota planowana" },
+                  { value: "actual_amount", label: "Kwota faktyczna" },
+                ]}
+              />
+
             </div>
 
             <div className="md:col-span-2">

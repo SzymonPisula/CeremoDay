@@ -7,10 +7,11 @@ import {
   BarChart3,
   CalendarDays,
   MapPin,
-  Bell,
+  CalendarHeart,
   Sparkles,
   Pencil,
   ArrowRight,
+  UserCog,
 } from "lucide-react";
 
 import PageLayout from "../layout/PageLayout";
@@ -19,83 +20,97 @@ import Button from "../ui/Button";
 import Card from "../ui/Card";
 import type { AppLayoutOutletContext } from "../layout/AppLayout";
 
-
 type Params = { id?: string };
 
 export default function EventDashboard() {
   const { id: eventId } = useParams<Params>();
   const nav = useNavigate();
 
-  // ✅ Bezpiecznie: outletContext może być undefined jeśli ktoś użyje strony poza AppLayout
   const ctx = useOutletContext<AppLayoutOutletContext | undefined>();
   const eventName = ctx?.eventName ?? null;
+  const weddingDayEnabled = ctx?.weddingDayEnabled ?? false;
 
-  const modules = useMemo(
-    () =>
-      [
-        {
-          key: "guests",
-          title: "Goście",
-          subtitle: "Lista, RSVP, podgoście, alergeny.",
-          icon: <Users className="w-5 h-5" />,
-          to: `/event/${eventId}/guests`,
-        },
-        {
-          key: "documents",
-          title: "Dokumenty",
-          subtitle: "Checklisty, pliki, statusy.",
-          icon: <FileText className="w-5 h-5" />,
-          to: `/event/${eventId}/documents`,
-        },
-        {
-          key: "finance",
-          title: "Finanse",
-          subtitle: "Budżet, koszty, płatności.",
-          icon: <Wallet className="w-5 h-5" />,
-          to: `/event/${eventId}/finance`,
-        },
-        {
-          key: "reports",
-          title: "Raporty",
-          subtitle: "Podsumowania i statystyki.",
-          icon: <BarChart3 className="w-5 h-5" />,
-          to: `/event/${eventId}/reports`,
-        },
-        {
-          key: "schedule",
-          title: "Harmonogram",
-          subtitle: "Plan dnia i zadania czasowe.",
-          icon: <CalendarDays className="w-5 h-5" />,
-          to: `/event/${eventId}/schedule`,
-        },
-        {
-          key: "vendors",
-          title: "Usługodawcy",
-          subtitle: "Firmy + sale gminne.",
-          icon: <MapPin className="w-5 h-5" />,
-          to: `/event/${eventId}/vendors`,
-        },
-        {
-          key: "notifications",
-          title: "Powiadomienia",
-          subtitle: "Przypomnienia i alerty.",
-          icon: <Bell className="w-5 h-5" />,
-          to: `/event/${eventId}/notifications`,
-        },
-        {
-          key: "inspirations",
-          title: "Inspiracje",
-          subtitle: "Tablice i moodboard.",
-          icon: <Sparkles className="w-5 h-5" />,
-          to: `/event/${eventId}/inspirations`,
-        },
-      ] as const,
-    [eventId]
-  );
+  const modules = useMemo(() => {
+    const base = `/event/${eventId}`;
+
+    const list = [
+      {
+        key: "users",
+        title: "Użytkownicy",
+        subtitle: "Role i dostęp do wydarzenia.",
+        icon: <UserCog className="w-5 h-5" />,
+        to: `${base}/users`,
+      },
+      {
+        key: "guests",
+        title: "Goście",
+        subtitle: "Lista, RSVP, podgoście, alergeny.",
+        icon: <Users className="w-5 h-5" />,
+        to: `${base}/guests`,
+      },
+      {
+        key: "documents",
+        title: "Dokumenty",
+        subtitle: "Checklisty, pliki, statusy.",
+        icon: <FileText className="w-5 h-5" />,
+        to: `${base}/documents`,
+      },
+      {
+        key: "finance",
+        title: "Finanse",
+        subtitle: "Budżet, koszty, płatności.",
+        icon: <Wallet className="w-5 h-5" />,
+        to: `${base}/finance`,
+      },
+      {
+        key: "reports",
+        title: "Raporty",
+        subtitle: "Podsumowania i statystyki.",
+        icon: <BarChart3 className="w-5 h-5" />,
+        to: `${base}/reports`,
+      },
+      {
+        key: "schedule",
+        title: "Harmonogram",
+        subtitle: "Plan dnia i zadania czasowe.",
+        icon: <CalendarDays className="w-5 h-5" />,
+        to: `${base}/schedule`,
+      },
+      {
+        key: "vendors",
+        title: "Usługodawcy",
+        subtitle: "Firmy + sale gminne.",
+        icon: <MapPin className="w-5 h-5" />,
+        to: `${base}/vendors`,
+      },
+
+      // ✅ tylko jeśli włączone w wywiadzie
+      ...(weddingDayEnabled
+        ? [
+            {
+              key: "wedding-day",
+              title: "Dzień ślubu",
+              subtitle: "Twój wymarzony dzień w jednym miejscu.",
+              icon: <CalendarHeart className="w-5 h-5" />,
+              to: `${base}/wedding-day`,
+            },
+          ]
+        : []),
+
+      {
+        key: "inspirations",
+        title: "Inspiracje",
+        subtitle: "Tablice i moodboard.",
+        icon: <Sparkles className="w-5 h-5" />,
+        to: `${base}/inspirations`,
+      },
+    ] as const;
+
+    return list;
+  }, [eventId, weddingDayEnabled]);
 
   const safeEventId = eventId ?? "";
   const canNavigate = Boolean(eventId);
-
   const pageTitle = eventName?.trim() ? eventName : `Wydarzenie #${safeEventId}`;
 
   return (
@@ -108,10 +123,11 @@ export default function EventDashboard() {
             variant="secondary"
             onClick={() => canNavigate && nav(`/event/${eventId}/interview/edit`)}
             disabled={!canNavigate}
+            leftIcon={<Pencil className="w-4 h-4" />}
           >
-            <Pencil className="w-4 h-4" />
             Edytuj wywiad
           </Button>
+
           <Button variant="ghost" onClick={() => nav("/dashboard")}>
             Powrót do twoich wydarzeń
           </Button>

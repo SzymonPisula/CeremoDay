@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { cn } from "../theme/helpers";
 
 type Variant = "primary" | "secondary" | "ghost";
@@ -8,6 +8,8 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: Variant;
   size?: Size;
   isLoading?: boolean;
+  leftIcon?: ReactNode;
+  rightIcon?: ReactNode;
 };
 
 const base =
@@ -37,6 +39,8 @@ export default function Button({
   variant = "secondary",
   size = "md",
   isLoading,
+  leftIcon,
+  rightIcon,
   className,
   children,
   ...props
@@ -58,7 +62,11 @@ export default function Button({
           <span>{children}</span>
         </>
       ) : (
-        children
+        <>
+          {leftIcon ? <span className="inline-flex items-center justify-center">{leftIcon}</span> : null}
+          <span>{children}</span>
+          {rightIcon ? <span className="inline-flex items-center justify-center">{rightIcon}</span> : null}
+        </>
       )}
     </button>
   );

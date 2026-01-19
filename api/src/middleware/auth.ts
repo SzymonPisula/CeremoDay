@@ -5,6 +5,8 @@ export interface AuthRequest extends Request {
   userId?: string;
 }
 
+type JwtPayload = { userId: string };
+
 export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ message: "Brak tokena" });
@@ -13,10 +15,10 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
   if (!token) return res.status(401).json({ message: "Niepoprawny token" });
 
   try {
-    const payload: any = jwt.verify(token, process.env.JWT_SECRET || "dev-secret");
+    const payload = jwt.verify(token, process.env.JWT_SECRET || "dev-secret") as JwtPayload;
     req.userId = payload.userId;
     next();
-  } catch (err) {
+  } catch {
     return res.status(401).json({ message: "Niepoprawny token" });
   }
 }

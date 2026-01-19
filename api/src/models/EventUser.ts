@@ -7,6 +7,7 @@ export class EventUser extends Model {
   public event_id!: string;
   public user_id!: string;
   public role!: "owner" | "coorganizer" | "guest";
+  public status!: "pending" | "active" | "removed";
 }
 
 EventUser.init(
@@ -25,6 +26,11 @@ EventUser.init(
       type: DataTypes.ENUM("owner", "coorganizer", "guest"),
       allowNull: false,
       defaultValue: "coorganizer", 
+    },
+    status: {
+      type: DataTypes.ENUM("pending", "active", "removed"),
+      allowNull: false,
+      defaultValue: "active",
     },
   },
   {

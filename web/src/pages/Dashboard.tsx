@@ -10,6 +10,7 @@ import Input from "../ui/Input";
 import StatCard from "../ui/StatCard";
 
 type EventRole = "owner" | "coorganizer" | "guest";
+type EventStatus = "pending" | "active" | "removed";
 
 interface Event {
   id: string;
@@ -17,6 +18,7 @@ interface Event {
   access_code: string;
   created_by_me: boolean;
   role: EventRole;
+  status?: EventStatus;
 }
 
 interface CreateEventBody {
@@ -37,6 +39,16 @@ interface JoinEventBody {
 interface JoinEventResponse {
   success?: boolean;
   event?: Event;
+  status?: EventStatus;
+}
+
+function StatusBadge({ status }: { status: EventStatus }) {
+  if (status !== "pending") return null;
+  return (
+    <span className="inline-flex items-center rounded-full border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.06)] px-3 py-1 text-xs font-medium tracking-wide text-[rgba(245,246,248,0.86)]">
+      Oczekuje na akceptację
+    </span>
+  );
 }
 
 interface ApiErrorShape {
@@ -175,10 +187,16 @@ export default function Dashboard() {
 
       const response = (await api.joinEvent(body)) as JoinEventResponse | Event;
 
-      const joined =
-        typeof response === "object" && response !== null && "event" in response && response.event
-          ? ((response as JoinEventResponse).event as Event)
-          : (response as Event);
+      const wrapped = typeof response === "object" && response !== null && "event" in response;
+      const joined = wrapped && (response as JoinEventResponse).event
+        ? ((response as JoinEventResponse).event as Event)
+        : (response as Event);
+
+      // Jeśli backend zwrócił status (np. "pending") – dopinamy go do obiektu eventu
+      const statusFromApi = wrapped ? (response as JoinEventResponse).status : undefined;
+      if (statusFromApi) {
+        joined.status = statusFromApi;
+      }
 
       setEvents((prev) => {
         if (prev.some((ev) => ev.id === joined.id)) return prev;
@@ -186,10 +204,14 @@ export default function Dashboard() {
       });
 
       setJoinCode("");
-      setSuccessMessage("Dołączono do wydarzenia.");
-
-      // ✅ UX: po dołączeniu też od razu wchodzimy do panelu
-      navigate(`/event/${joined.id}`, { replace: true });
+      if (joined.status === "pending") {
+        setSuccessMessage("Wysłano prośbę o dołączenie. Czekasz na akceptację właściciela.");
+        // Nie wchodzimy do panelu, dopóki nie będzie aktywne
+      } else {
+        setSuccessMessage("Dołączono do wydarzenia.");
+        // ✅ UX: po dołączeniu od razu wchodzimy do panelu
+        navigate(`/event/${joined.id}`, { replace: true });
+      }
     } catch (err: unknown) {
       console.error(err);
       const apiError = err as ApiErrorShape;
@@ -242,11 +264,21 @@ export default function Dashboard() {
           </Card>
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {events.map((ev) => (
+            {events.map((ev) => {
+              const isPending = ev.status === "pending" && !ev.created_by_me;
+              return (
               <Card
                 key={ev.id}
-                className="p-6 sm:p-7 cursor-pointer transition-[transform,filter] duration-200 hover:brightness-105 hover:-translate-y-[1px] flex flex-col min-h-[178px]"
-                onClick={() => navigate(`/event/${ev.id}`)}
+                className={
+                  "p-6 sm:p-7 transition-[transform,filter] duration-200 flex flex-col min-h-[178px] " +
+                  (isPending
+                    ? "cursor-not-allowed opacity-90"
+                    : "cursor-pointer hover:brightness-105 hover:-translate-y-[1px]")
+                }
+                onClick={() => {
+                  if (isPending) return;
+                  navigate(`/event/${ev.id}`);
+                }}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
@@ -262,22 +294,33 @@ export default function Dashboard() {
                       {ev.name}
                     </div>
 
-                    <div className="mt-3 text-sm text-[rgba(245,246,248,0.66)]">
-                      Kod dostępu:{" "}
-                      <span className="text-[rgba(246,226,122,0.92)]">{ev.access_code}</span>
-                    </div>
+                    {ev.role === "owner" ? (
+                      <div className="mt-3 text-sm text-[rgba(245,246,248,0.66)]">
+                        Kod dostępu:{" "}
+                        <span className="text-[rgba(246,226,122,0.92)]">{ev.access_code}</span>
+                      </div>
+                    ) : null}
+
                   </div>
 
-                  <RoleBadge role={ev.role} />
+                  <div className="flex flex-col items-end gap-2">
+                    <RoleBadge role={ev.role} />
+                    {ev.status ? <StatusBadge status={ev.status} /> : null}
+                  </div>
                 </div>
 
                 {/* ✅ stopka zawsze na dole */}
                 <div className="mt-auto pt-6 flex items-center justify-between">
-                  <div className="text-xs text-[rgba(245,246,248,0.55)]">Kliknij, aby otworzyć panel</div>
-                  <div className="text-sm font-medium text-[rgba(246,226,122,0.92)]">Otwórz →</div>
+                  <div className="text-xs text-[rgba(245,246,248,0.55)]">
+                    {isPending ? "Oczekuje na akceptację właściciela" : "Kliknij, aby otworzyć panel"}
+                  </div>
+                  <div className="text-sm font-medium text-[rgba(246,226,122,0.92)]">
+                    {isPending ? "—" : "Otwórz →"}
+                  </div>
                 </div>
               </Card>
-            ))}
+            );
+            })}
           </div>
         )}
       </div>

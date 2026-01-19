@@ -25,6 +25,7 @@ import type {
   MusicProviderChoice,
   VenueChoice,
 } from "../types/interview";
+import DatePicker from "../ui/DatePicker";
 
 const CEREMONY_OPTIONS: { value: CeremonyType; label: string; desc: string }[] = [
   { value: "civil", label: "Ślub cywilny", desc: "Wpływa na formalności i checklisty." },
@@ -300,6 +301,9 @@ export default function Interview() {
     try {
       const saved = await api.saveInterview(eventId, payload);
       applyInterviewToState(saved);
+      window.dispatchEvent(
+        new CustomEvent("ceremoday:interview-updated", { detail: { eventId } })
+      );
       navigate(`/event/${eventId}`, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Błąd zapisu wywiadu");
@@ -406,13 +410,13 @@ export default function Interview() {
             <div className="mt-4">
               <label className="block text-xs text-white/70 mb-1">Wybierz datę</label>
               <div className="relative">
-                <input
-                  type="date"
-                  className={`${inputBase} pr-10 ${hasEventDate ? "" : "opacity-60"}`}
+                <DatePicker
                   value={eventDate}
-                  onChange={(e) => setEventDate(e.target.value)}
-                  disabled={!hasEventDate}
+                  onChange={setEventDate}
+                  placeholder="Wybierz datę"
+                  maxDropdownWidth={360}
                 />
+
                 <Calendar className="w-4 h-4 text-white/35 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
 
