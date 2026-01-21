@@ -2,18 +2,41 @@ import { Router, Response } from "express";
 import multer from "multer";
 
 import { authMiddleware, AuthRequest } from "../middleware/auth";
-import { Document } from "../models/Document";
+import { Document, type DocumentStatus } from "../models/Document";
 import { DocumentFile, StorageLocation } from "../models/DocumentFile";
 import { storageService } from "../services/storageService";
 import { getTemplatesForCeremony, CeremonyType } from "../config/documentTemplates";
-import { createDocument } from "../controllers/documentsController";
 
 const router = Router();
-const upload = multer(); // trzymamy pliki w pamięci, potem sami zapisujemy
+const upload = multer();
+
+const allowedNextStatus: Record<DocumentStatus, DocumentStatus[]> = {
+  todo: ["in_progress"],
+  in_progress: ["done"],
+  done: [],
+};
+
+function normalizeStatus(v: unknown): DocumentStatus | null {
+  if (v === "todo" || v === "in_progress" || v === "done") return v;
+  if (v === "pending") return "todo";
+  return null;
+}
+
+function normalizeDocumentType(raw: unknown): "civil" | "concordat" | "custom" {
+  const s = typeof raw === "string" ? raw.toLowerCase().trim() : "custom";
+
+  // wsteczna kompatybilność:
+  // - "church" w starych wersjach -> teraz "concordat"
+  if (s === "church") return "concordat";
+
+  if (s === "civil") return "civil";
+  if (s === "concordat") return "concordat";
+  return "custom";
+}
+
 /**
  * POST /documents/event/:eventId/generate-default
- * Generuje domyślną listę dokumentów dla wydarzenia
- * na podstawie typu ceremonii (cywilny / konkordatowy).
+ * Generuje domyślne dokumenty wg templates (civil/concordat)
  */
 router.post(
   "/event/:eventId/generate-default",
@@ -27,51 +50,46 @@ router.post(
       };
 
       if (ceremony_type !== "civil" && ceremony_type !== "concordat") {
-        return res
-          .status(400)
-          .json({ message: "Nieprawidłowy typ ceremonii" });
+        return res.status(400).json({ message: "Nieprawidłowy typ ceremonii" });
       }
 
-      // 🔎 pobieramy istniejące dokumenty, żeby nie dublować nazw
-      const existingDocs = await Document.findAll({
-        where: { event_id: eventId },
+      // UWAGA: nie blokujemy generowania po samej nazwie,
+      // bo część nazw jest wspólna dla civil i concordat.
+      // Klucz = `${type}::${name}`
+      const existingDocs = await Document.findAll({ where: { event_id: eventId } });
+      const existingKeys = new Set(
+        existingDocs.map((d: any) => {
+          const t = String(d.type ?? "").toLowerCase();
+          const n = String(d.name ?? "").toLowerCase();
+          return `${t}::${n}`;
+        })
+      );
+
+      const templates = getTemplatesForCeremony(ceremony_type, include_extras ?? true);
+
+      const toCreate = templates.filter((tpl) => {
+        const key = `${ceremony_type}::${tpl.name.toLowerCase()}`;
+        return !existingKeys.has(key);
       });
-
-      const existingNames = new Set(
-        existingDocs.map((d: any) => (d.name as string).toLowerCase())
-      );
-
-      const templates = getTemplatesForCeremony(
-        ceremony_type,
-        include_extras ?? true
-      );
-
-      const toCreate = templates.filter(
-        (tpl) => !existingNames.has(tpl.name.toLowerCase())
-      );
 
       const created = await Promise.all(
         toCreate.map((tpl) => {
-          // 🧠 mapowanie na pole "type" z modelu:
-          // - dla ślubu cywilnego wszystkie = "civil"
-          // - dla konkordatu: KOSCIOŁ -> "church", reszta -> "civil"
-          let docType: "civil" | "church";
-
-          if (ceremony_type === "civil") {
-            docType = "civil";
-          } else {
-            // "concordat"
-            docType = tpl.category === "KOSCIOŁ" ? "church" : "civil";
-          }
+          // KLUCZ FIX: type oznacza rodzaj ceremonii (civil|concordat),
+          // a nie "czy z kościoła". To rozróżnia category.
+          const docType: "civil" | "concordat" = ceremony_type;
 
           return Document.create(
             {
               event_id: eventId,
               name: tpl.name,
               description: tpl.description,
+              category: (tpl.category as any) ?? null,
+              holder: (tpl.holder as any) ?? null,
+
               type: docType,
-              // status ma domyślnie "pending"
-              // due_date, checked, notes, attachments zostają defaultowe
+              status: "todo",
+              is_system: true,
+              is_pinned: !tpl.is_extra,
             } as any
           );
         })
@@ -87,13 +105,8 @@ router.post(
   }
 );
 
-router.post("/documents/event/:eventId", createDocument);
-
-
-
 /**
  * GET /documents/event/:eventId
- * Lista dokumentów dla wydarzenia
  */
 router.get(
   "/event/:eventId",
@@ -102,12 +115,16 @@ router.get(
     try {
       const { eventId } = req.params;
 
+      // Bezpieczne sortowanie (nie uzależniamy się od created_at vs createdAt)
       const docs = await Document.findAll({
         where: { event_id: eventId },
-        order: [["created_at", "ASC"]],
+        order: [
+          ["is_pinned", "DESC"],
+          ["is_system", "DESC"],
+          ["name", "ASC"],
+        ],
       });
 
-      // Możemy później dorzucić licznik plików przez osobny endpoint lub JOIN
       return res.json(docs);
     } catch (err) {
       console.error("Error fetching documents:", err);
@@ -118,7 +135,7 @@ router.get(
 
 /**
  * POST /documents/event/:eventId
- * Utworzenie nowego dokumentu ręcznego
+ * Tworzenie własnego dokumentu
  */
 router.post(
   "/event/:eventId",
@@ -133,22 +150,37 @@ router.post(
         holder,
         due_date,
         valid_until,
-      } = req.body;
+        is_pinned,
+        type,
+      } = req.body as Record<string, unknown>;
 
-      if (!name) {
+      if (!name || typeof name !== "string" || !name.trim()) {
         return res.status(400).json({ message: "Nazwa dokumentu jest wymagana" });
       }
 
+      // Typ dla dokumentu:
+      // - civil / concordat / custom
+      // (legacy "church" mapujemy na "concordat")
+      const nextType = normalizeDocumentType(type);
+
       const doc = await Document.create({
         event_id: eventId,
-        name,
-        description: description ?? "",
-        category: category ?? null,
-        holder: holder ?? null,
-        due_date: due_date ? new Date(due_date) : null,
-        valid_until: valid_until ? new Date(valid_until) : null,
-        status: "pending",
+        name: name.trim(),
+        description: typeof description === "string" ? description : null,
+
+        // te pola mogą zostać w modelu — UI możesz już nie wysyłać
+        category: typeof category === "string" ? category : null,
+        holder: typeof holder === "string" ? holder : null,
+
+        type: nextType,
+        status: "todo",
         is_system: false,
+
+        // jeśli UI nie wysyła -> domyślnie false (albo zmień na true jeśli chcesz)
+        is_pinned: typeof is_pinned === "boolean" ? is_pinned : true,
+
+        due_date: due_date ? new Date(String(due_date)) : null,
+        valid_until: valid_until ? new Date(String(valid_until)) : null,
       });
 
       return res.status(201).json(doc);
@@ -161,7 +193,9 @@ router.post(
 
 /**
  * PUT /documents/:documentId
- * Aktualizacja dokumentu (status, terminy, opis, itp.)
+ * Update:
+ * - system docs: only status forward + pin + dates
+ * - manual docs: full update + status forward + pin + dates
  */
 router.put(
   "/:documentId",
@@ -169,36 +203,74 @@ router.put(
   async (req: AuthRequest, res: Response) => {
     try {
       const { documentId } = req.params;
-      const {
-        name,
-        description,
-        category,
-        holder,
-        status,
-        due_date,
-        valid_until,
-      } = req.body;
 
       const doc = await Document.findByPk(documentId);
       if (!doc) {
         return res.status(404).json({ message: "Dokument nie znaleziony" });
       }
 
-      // 👇 małe obejście typów – operujemy na doc jako na "any",
-      // bo definicja TS modelu nie ma jeszcze wszystkich pól
       const d = doc as any;
 
-      if (name !== undefined) d.name = name;
-      if (description !== undefined) d.description = description;
-      if (category !== undefined) d.category = category || null;
-      if (holder !== undefined) d.holder = holder || null;
-      if (status !== undefined) d.status = status;
+      const allowedNext: Record<
+        "todo" | "in_progress" | "done",
+        Array<"todo" | "in_progress" | "done">
+      > = {
+        todo: ["in_progress"],
+        in_progress: ["done"],
+        done: [],
+      };
 
-      if (due_date !== undefined) {
-        d.due_date = due_date ? new Date(due_date) : null;
+      const incoming = req.body as Record<string, unknown>;
+
+      const name = incoming.name;
+      const description = incoming.description;
+      const category = incoming.category;
+      const holder = incoming.holder;
+      const status = incoming.status;
+      const due_date = incoming.due_date;
+      const valid_until = incoming.valid_until;
+      const is_pinned = incoming.is_pinned;
+
+      // Fields update only for manual docs
+      if (!d.is_system) {
+        if (name !== undefined) d.name = String(name);
+        if (description !== undefined) d.description = description ? String(description) : null;
+        if (category !== undefined) d.category = category ? String(category) : null;
+        if (holder !== undefined) d.holder = holder ? String(holder) : null;
       }
-      if (valid_until !== undefined) {
-        d.valid_until = valid_until ? new Date(valid_until) : null;
+
+      // Pin allowed always
+      if (typeof is_pinned === "boolean") {
+        d.is_pinned = is_pinned;
+      }
+
+      // Dates allowed always
+      if (due_date !== undefined) d.due_date = due_date ? new Date(String(due_date)) : null;
+      if (valid_until !== undefined) d.valid_until = valid_until ? new Date(String(valid_until)) : null;
+
+      // Status: only forward
+      if (status !== undefined) {
+        const next = String(status) as "todo" | "in_progress" | "done";
+
+        const currentRaw = String(d.status ?? "todo");
+        const current = (currentRaw === "pending" ? "todo" : currentRaw) as
+          | "todo"
+          | "in_progress"
+          | "done";
+
+        if (next !== current && allowedNext[current]?.includes(next)) {
+          // DONE wymaga min. 1 pliku przypiętego do dokumentu
+          if (next === "done") {
+            const filesCount = await DocumentFile.count({ where: { document_id: documentId } });
+            if (filesCount < 1) {
+              return res.status(400).json({
+                message: "Aby oznaczyć dokument jako ukończony, dodaj przynajmniej jeden plik.",
+              });
+            }
+          }
+
+          d.status = next;
+        }
       }
 
       await doc.save();
@@ -210,12 +282,6 @@ router.put(
   }
 );
 
-
-
-/**
- * DELETE /documents/:documentId
- * Usunięcie dokumentu (tylko ręcznego – docelowo można blokować is_system=true)
- */
 router.delete(
   "/:documentId",
   authMiddleware,
@@ -223,14 +289,9 @@ router.delete(
     try {
       const { documentId } = req.params;
       const doc = await Document.findByPk(documentId);
-      if (!doc) {
-        return res.status(404).json({ message: "Dokument nie znaleziony" });
-      }
 
-      // jeśli chcesz blokować usuwanie systemowych:
-      // if (doc.is_system) {
-      //   return res.status(400).json({ message: "Nie można usuwać dokumentów systemowych" });
-      // }
+      if (!doc) return res.status(404).json({ message: "Dokument nie znaleziony" });
+      if (doc.is_system) return res.status(400).json({ message: "Nie można usuwać dokumentów systemowych" });
 
       await doc.destroy();
       return res.json({ success: true });
@@ -241,10 +302,6 @@ router.delete(
   }
 );
 
-/**
- * GET /documents/:documentId/files
- * Lista plików dla dokumentu
- */
 router.get(
   "/:documentId/files",
   authMiddleware,
@@ -265,11 +322,7 @@ router.get(
   }
 );
 
-/**
- * POST /documents/:documentId/files
- * Upload pliku dla dokumentu – hybryda:
- *  - storage_location = "server" | "local"
- */
+// upload: server (multipart) albo local (JSON metadata)
 router.post(
   "/:documentId/files",
   authMiddleware,
@@ -278,60 +331,68 @@ router.post(
     try {
       const { documentId } = req.params;
       const userId = req.userId;
-      if (!userId) {
-        return res.status(401).json({ message: "Nieautoryzowany" });
-      }
+
+      if (!userId) return res.status(401).json({ message: "Nieautoryzowany" });
 
       const document = await Document.findByPk(documentId);
-      if (!document) {
-        return res.status(404).json({ message: "Dokument nie znaleziony" });
+      if (!document) return res.status(404).json({ message: "Dokument nie znaleziony" });
+
+      const storage_location = (req.body?.storage_location ?? "server") as StorageLocation;
+
+      // LOCAL: backend dostaje tylko metadane (bez pliku)
+      if (storage_location === "local") {
+        const original_name = String(req.body?.original_name ?? "");
+        const mime_type = String(req.body?.mime_type ?? "application/octet-stream");
+        const size = Number(req.body?.size ?? 0);
+
+        if (!original_name) {
+          return res.status(400).json({ message: "Brak original_name dla pliku lokalnego" });
+        }
+
+        const created = await DocumentFile.create({
+          event_id: document.event_id,
+          document_id: document.id,
+          user_id: userId,
+          storage_location: "local",
+          storage_key: null,
+          original_name,
+          mime_type,
+          size: Number.isFinite(size) ? size : 0,
+          person: null,
+        });
+
+        return res.status(201).json(created);
       }
 
-      const { storage_location = "server", person = null } = req.body as {
-        storage_location?: StorageLocation;
-        person?: "bride" | "groom" | "both" | null;
-      };
-
+      // SERVER: multipart file required
       const file = req.file;
-      if (!file) {
-        return res.status(400).json({ message: "Brak pliku w żądaniu" });
-      }
+      if (!file) return res.status(400).json({ message: "Brak pliku w żądaniu" });
 
-      let storageKey: string | null = null;
+      const safeName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+      const storageKey = `events/${document.event_id}/documents/${documentId}/${Date.now()}-${safeName}`;
 
-      if (storage_location === "server") {
-        const safeName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-        storageKey = `events/${document.event_id}/documents/${documentId}/${Date.now()}-${safeName}`;
-
-        await storageService.saveFile(file.buffer, storageKey);
-      }
+      await storageService.saveFile(file.buffer, storageKey);
 
       const created = await DocumentFile.create({
         event_id: document.event_id,
         document_id: document.id,
         user_id: userId,
-        storage_location,
+        storage_location: "server",
         storage_key: storageKey,
         original_name: file.originalname,
         mime_type: file.mimetype,
         size: file.size,
-        person: person ?? null,
+        person: null,
       });
 
       return res.status(201).json(created);
     } catch (err) {
       console.error("Error uploading document file:", err);
-      return res
-        .status(500)
-        .json({ message: "Błąd serwera podczas uploadu pliku" });
+      return res.status(500).json({ message: "Błąd serwera podczas uploadu pliku" });
     }
   }
 );
 
-/**
- * DELETE /documents/files/:fileId
- * Usuwanie załącznika
- */
 router.delete(
   "/files/:fileId",
   authMiddleware,
@@ -339,9 +400,8 @@ router.delete(
     try {
       const { fileId } = req.params;
       const file = await DocumentFile.findByPk(fileId);
-      if (!file) {
-        return res.status(404).json({ message: "Plik nie znaleziony" });
-      }
+
+      if (!file) return res.status(404).json({ message: "Plik nie znaleziony" });
 
       if (file.storage_location === "server" && file.storage_key) {
         await storageService.deleteFile(file.storage_key);
@@ -351,18 +411,11 @@ router.delete(
       return res.json({ success: true });
     } catch (err) {
       console.error("Error deleting document file:", err);
-      return res
-        .status(500)
-        .json({ message: "Błąd serwera podczas usuwania pliku" });
+      return res.status(500).json({ message: "Błąd serwera podczas usuwania pliku" });
     }
   }
 );
 
-/**
- * GET /documents/files/:fileId/download
- * Pobieranie pliku – tylko dla storage_location="server"
- * (dla "local" zwracamy błąd, bo plik jest tylko na urządzeniu użytkownika)
- */
 router.get(
   "/files/:fileId/download",
   authMiddleware,
@@ -370,14 +423,12 @@ router.get(
     try {
       const { fileId } = req.params;
       const file = await DocumentFile.findByPk(fileId);
-      if (!file) {
-        return res.status(404).json({ message: "Plik nie znaleziony" });
-      }
+
+      if (!file) return res.status(404).json({ message: "Plik nie znaleziony" });
 
       if (file.storage_location === "local") {
         return res.status(400).json({
-          message:
-            "Ten plik jest przechowywany tylko lokalnie na urządzeniu użytkownika",
+          message: "Ten plik jest przechowywany tylko lokalnie na urządzeniu użytkownika",
         });
       }
 
@@ -395,9 +446,7 @@ router.get(
       return res.send(buffer);
     } catch (err) {
       console.error("Error downloading document file:", err);
-      return res
-        .status(500)
-        .json({ message: "Błąd serwera podczas pobierania pliku" });
+      return res.status(500).json({ message: "Błąd serwera podczas pobierania pliku" });
     }
   }
 );

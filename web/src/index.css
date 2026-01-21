@@ -167,4 +167,33 @@ select optgroup {
   color: rgba(255, 255, 255, 0.92);
 }
 
+
 }
+/* =========================
+   PDF SAFE (html2canvas)
+   Tailwind v4 uses color-mix(in oklab, ...) for /opacity utilities.
+   html2canvas can't parse oklab, so we override to rgba.
+   ========================= */
+
+.pdf-safe .bg-white\/5 { background-color: rgba(255,255,255,0.05) !important; }
+.pdf-safe .bg-white\/4 { background-color: rgba(255,255,255,0.04) !important; }
+.pdf-safe .bg-white\/10 { background-color: rgba(255,255,255,0.10) !important; }
+.pdf-safe .bg-white\/15 { background-color: rgba(255,255,255,0.15) !important; }
+
+.pdf-safe .border-white\/5 { border-color: rgba(255,255,255,0.05) !important; }
+.pdf-safe .border-white\/10 { border-color: rgba(255,255,255,0.10) !important; }
+.pdf-safe .border-white\/15 { border-color: rgba(255,255,255,0.15) !important; }
+
+.pdf-safe .text-white\/35 { color: rgba(255,255,255,0.35) !important; }
+.pdf-safe .text-white\/45 { color: rgba(255,255,255,0.45) !important; }
+.pdf-safe .text-white\/55 { color: rgba(255,255,255,0.55) !important; }
+.pdf-safe .text-white\/60 { color: rgba(255,255,255,0.60) !important; }
+.pdf-safe .text-white\/65 { color: rgba(255,255,255,0.65) !important; }
+.pdf-safe .text-white\/70 { color: rgba(255,255,255,0.70) !important; }
+.pdf-safe .text-white\/75 { color: rgba(255,255,255,0.75) !important; }
+.pdf-safe .text-white\/80 { color: rgba(255,255,255,0.80) !important; }
+.pdf-safe .text-white\/85 { color: rgba(255,255,255,0.85) !important; }
+.pdf-safe .text-white\/90 { color: rgba(255,255,255,0.90) !important; }
+
+.pdf-safe .bg-amber-500\/10 { background-color: rgba(245,158,11,0.10) !important; }
+.pdf-safe .border-amber-500\/20 { border-color: rgba(245,158,11,0.20) !important; }

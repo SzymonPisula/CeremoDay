@@ -1,979 +1,706 @@
-import { useEffect, useMemo, useState } from "react";
+// /CeremoDay/web/src/pages/Documents.tsx
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import {
-  Document,
-  DocumentFile,
-  StorageLocation,
-  DocumentType,
-} from "../types/document";
-import type { CeremonyType } from "../types/interview";
-import { api, BASE_URL } from "../lib/api";
-import { FileText, FileUp, Download, Trash2, CheckCircle2, Plus } from "lucide-react";
-import PreviewModal from "../components/preview/PreviewModal";
+import { FileText, Loader2, Plus, X } from "lucide-react";
 
-type Params = {
-  id: string;
-};
+import { api } from "../lib/api";
+import type { Document, DocumentStatus, DocumentType } from "../types/document";
 
-// Nazwy dodatkowych (wyjątkowych) dokumentów – po wygenerowaniu
-// trafiły do bazy dokładnie z takimi nazwami.
-const CIVIL_EXTRA_NAMES = new Set(
-  [
-    "Zezwolenie sądu na zawarcie małżeństwa",
-    "Zezwolenie sądu na zawarcie małżeństwa przez pełnomocnika i pełnomocnictwo",
-    "Dokument potwierdzający ustanie poprzedniego małżeństwa",
-    "Dokument potwierdzający możliwość zawarcia małżeństwa (dla cudzoziemca)",
-    "Tłumaczenia przysięgłe dokumentów obcojęzycznych",
-    "Tłumacz podczas czynności w USC",
-    "Wniosek o ślub cywilny poza USC (w plenerze)",
-    // dodatkowe cywilne przy konkordacie:
-    "Dokumenty dotyczące poprzedniego małżeństwa cywilnego",
-  ].map((n) => n.toLowerCase())
-);
+import DocumentStatusInline from "../components/documents/DocumentStatusInline";
+import DocumentFilesList from "../components/documents/DocumentFilesList";
 
-const CHURCH_EXTRA_NAMES = new Set(
-  [
-    "Delegacja lub licencja z parafii zamieszkania",
-    "Zgoda biskupa na ślub poza parafią / w szczególnym miejscu",
-    "Zgoda na małżeństwo mieszane lub z osobą nieochrzczoną",
-    "Dokumenty dotyczące unieważnienia poprzedniego małżeństwa (prawo kanoniczne)",
-  ].map((n) => n.toLowerCase())
-);
+type Params = { id: string };
+type Tab = "main" | "extra";
 
-function isExtraDocument(doc: Document): boolean {
-  const nameKey = doc.name.trim().toLowerCase();
-  if (doc.type === "civil") return CIVIL_EXTRA_NAMES.has(nameKey);
-  if (doc.type === "church") return CHURCH_EXTRA_NAMES.has(nameKey);
-  return false; // custom -> nigdy nie jest extra
+type CeremonyMode = "unknown" | "civil" | "concordat" | "reception";
+
+
+
+function resolveCeremonyMode(interview: unknown): CeremonyMode {
+  if (!interview || typeof interview !== "object") return "unknown";
+
+  const obj = interview as Record<string, unknown>;
+  const raw =
+    (typeof obj.ceremony_type === "string" && obj.ceremony_type) ||
+    (typeof obj.ceremonyType === "string" && obj.ceremonyType) ||
+    (typeof obj.ceremony === "string" && obj.ceremony) ||
+    (typeof obj.type === "string" && obj.type) ||
+    "";
+
+  const s = String(raw).toLowerCase();
+
+  // reception-only
+  if (s.includes("reception") || s.includes("party") || s.includes("przyjec")) {
+    return "reception";
+  }
+
+  // civil
+  if (s.includes("civil") || s.includes("cywil")) {
+    return "civil";
+  }
+
+  // church / concordat
+  if (s.includes("concordat") || s.includes("kosc") || s.includes("church")) {
+    return "concordat";
+  }
+
+  return "unknown";
 }
 
 export default function Documents() {
   const { id: eventId } = useParams<Params>();
 
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [files, setFiles] = useState<Record<string, DocumentFile[]>>({});
   const [loading, setLoading] = useState(false);
-  const [uploadingId, setUploadingId] = useState<string | null>(null);
-  const [storageLocation, setStorageLocation] =
-    useState<StorageLocation>("server");
+  const [savingId, setSavingId] = useState<string | null>(null);
 
-  // ✅ typ ślubu bierze się z wywiadu (a nie z UI)
-  const [interviewCeremony, setInterviewCeremony] =
-    useState<CeremonyType | null>(null);
-  const [interviewLoading, setInterviewLoading] = useState<boolean>(true);
+  const [tab, setTab] = useState<Tab>("main");
 
-  const [showExtras, setShowExtras] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [ceremony, setCeremony] = useState<CeremonyMode>("unknown");
+  const [interviewLoaded, setInterviewLoaded] = useState(false);
 
-  // ✅ Dodawanie własnych dokumentów
-  const [customName, setCustomName] = useState("");
-  const [customDescription, setCustomDescription] = useState("");
-  const [creatingDoc, setCreatingDoc] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const generatedForRef = useRef<Set<CeremonyMode>>(new Set());
 
-  // ===== UI helpers (spójny „CRM vibe”) =====
-  const pageWrap = "w-full max-w-6xl mx-auto px-6 py-8";
   const cardBase =
-    "rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md " +
-    "shadow-[0_24px_80px_rgba(0,0,0,0.45)]";
-  const sectionTitle = "text-sm font-semibold text-white/85";
-  const muted = "text-sm text-white/60";
-
-  const btnSecondary =
-    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium " +
-    "bg-white/5 text-white border border-white/10 " +
-    "hover:bg-white/10 hover:border-white/15 " +
-    "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/40 " +
-    "transition";
-
-  const btnGold =
-    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " +
-    "bg-gradient-to-r from-[#d7b45a] to-[#b98b2f] text-[#0b1b14] " +
-    "shadow-[0_10px_30px_-18px_rgba(215,180,90,0.9)] " +
-    "hover:brightness-105 active:translate-y-[1px] " +
-    "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/45 " +
-    "transition";
-
+    "rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md p-6 shadow-[0_24px_80px_rgba(0,0,0,0.45)]";
   const chip =
-    "inline-flex items-center gap-2 px-3 py-1 rounded-full " +
-    "border border-white/10 bg-white/5 text-white/80 text-xs";
+    "inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/10 bg-white/5 text-white/80 text-xs";
 
-  const docCard =
-    "rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md " +
-    "shadow-[0_18px_60px_rgba(0,0,0,0.35)]";
+  const fetchAll = async (opts?: { allowGenerate?: boolean }) => {
+    if (!eventId) return;
 
-  const fileRow =
-    "flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 " +
-    "hover:bg-white/7 transition";
+    setLoading(true);
+    try {
+      // 1) interview -> ceremony mode
+      const interview = await api.getInterview(eventId);
+      const mode = resolveCeremonyMode(interview);
+      setCeremony(mode);
+      setInterviewLoaded(true);
 
-  // custom radio “kafelek”
-  const radioTile = (active: boolean) =>
-    [
-      "flex-1 rounded-2xl border px-4 py-3 cursor-pointer transition select-none",
-      "bg-white/5 backdrop-blur-md",
-      active
-        ? "border-[#c8a04b]/40 shadow-[0_18px_50px_-30px_rgba(215,180,90,0.85)]"
-        : "border-white/10 hover:border-white/15 hover:bg-white/7",
-    ].join(" ");
+      // 2) documents list
+      const docs = await api.getDocuments(eventId);
 
-  // “checkbox” przy dokumencie
-  const statusBtn = (done: boolean) =>
-    [
-      "w-9 h-9 rounded-xl border flex items-center justify-center transition",
-      done
-        ? "bg-emerald-500/20 border-emerald-400/30 text-emerald-200"
-        : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10",
-      "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/35",
-    ].join(" ");
+      // 3) generate defaults only if:
+      // - mode is civil or concordat
+      // - list is empty
+      // - we are allowed to generate
+      // - we did not already try generating in this session
+      const allowGenerate = opts?.allowGenerate ?? true;
 
-  const inputBase =
-    "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/85 " +
-    "placeholder:text-white/35 outline-none focus:ring-2 focus:ring-[#c8a04b]/35";
+const ceremonyForApi = mode === "civil" ? "civil" : mode === "concordat" ? "concordat" : null;
 
-  // A11y: ukryte radio inputy - zostawiamy, ale styl robimy na kafelkach
-  const RadioDot = ({ active }: { active: boolean }) => (
-    <span
-      className={[
-        "inline-flex items-center justify-center w-5 h-5 rounded-full border transition",
-        active
-          ? "border-[#c8a04b]/55 bg-[#c8a04b]/15"
-          : "border-white/15 bg-white/5",
-      ].join(" ")}
-    >
-      <span
-        className={[
-          "w-2.5 h-2.5 rounded-full transition",
-          active ? "bg-[#d7b45a]" : "bg-transparent",
-        ].join(" ")}
-      />
-    </span>
-  );
+const hasSystemForMode =
+  ceremonyForApi === "civil"
+    ? docs.some((d) => d.is_system && d.type === "civil")
+    : ceremonyForApi === "concordat"
+      ? docs.some((d) => d.is_system && d.type === "concordat")
+      : true; // reception/unknown -> nie generujemy
 
-  // ✅ tryb wg wywiadu
-  type DocMode = "civil" | "church" | "none";
+if (
+  allowGenerate &&
+  ceremonyForApi &&
+  !generatedForRef.current.has(mode) &&
+  !hasSystemForMode
+) {
+  generatedForRef.current.add(mode);
 
-  const docMode: DocMode = useMemo(() => {
-    if (interviewCeremony === "civil") return "civil";
-    if (interviewCeremony === "church") return "church";
-    if (interviewCeremony === "reception_only") return "none";
-    // fallback gdy interview jeszcze się nie załadował:
-    return "church";
-  }, [interviewCeremony]);
+  await api.generateDefaultDocuments(eventId, ceremonyForApi, true);
+
+  const after = await api.getDocuments(eventId);
+  setDocuments(after);
+  return;
+}
 
 
-  const handlePreviewFile = async (file: DocumentFile) => {
-  if (file.storage_location === "local") {
-    alert("Podgląd niedostępny — plik tylko lokalnie.");
-    return;
+      setDocuments(docs);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!eventId) return;
+    generatedForRef.current = new Set();
+    void fetchAll({ allowGenerate: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventId]);
+
+  // Re-fetch when interview is saved elsewhere
+  useEffect(() => {
+    const onInterviewUpdated = (e: Event) => {
+      const ce = e as CustomEvent<{ eventId?: string }>;
+      if (!ce.detail?.eventId) return;
+      if (ce.detail.eventId !== eventId) return;
+      generatedForRef.current = new Set();
+      void fetchAll({ allowGenerate: true });
+    };
+
+    window.addEventListener("ceremoday:interview-updated", onInterviewUpdated as EventListener);
+    return () => {
+      window.removeEventListener("ceremoday:interview-updated", onInterviewUpdated as EventListener);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventId]);
+
+  const visibleDocuments = useMemo(() => {
+  // Zasady widoczności (flow modułu):
+  // - Cywilny: pokazujemy cywilne systemowe + wszystkie własne (nie-systemowe)
+  // - Kościelny/konkordat: pokazujemy konkordatowe systemowe + wszystkie własne (nie-systemowe)
+  // - Samo przyjęcie: brak obowiązkowych → tylko własne
+  // - Unknown: pokazujemy wszystko (żeby user coś widział + debug)
+  if (ceremony === "civil") {
+    return documents.filter((d) => !d.is_system || d.type === "civil");
   }
 
-  try {
-    // pobieramy blob tak jak do pobierania
-    const blob = await api.downloadDocumentFile(file.id);
-    const objectUrl = URL.createObjectURL(blob);
+  if (ceremony === "concordat") {
+    return documents.filter((d) => !d.is_system || d.type === "concordat");
+  }
 
-    setPreview({
-      open: true,
-      url: objectUrl, // to już jest pełny URL (blob:)
-      title: file.original_name,
+  if (ceremony === "reception") {
+    return documents.filter((d) => !d.is_system);
+  }
+
+  return documents;
+}, [documents, ceremony]);
+
+
+  const mainDocs = useMemo(
+    () => visibleDocuments.filter((d) => d.is_pinned),
+    [visibleDocuments]
+  );
+
+  const extraDocs = useMemo(
+    () => visibleDocuments.filter((d) => !d.is_pinned),
+    [visibleDocuments]
+  );
+
+  const docsToShow = tab === "main" ? mainDocs : extraDocs;
+
+  const handleStatusChange = async (doc: Document, next: DocumentStatus) => {
+    try {
+      setSavingId(doc.id);
+      const updated = await api.changeDocumentStatus(doc.id, next);
+      setDocuments((prev) => prev.map((d) => (d.id === doc.id ? updated : d)));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Nie udało się zmienić statusu";
+      alert(msg);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const handleMoveDoc = async (doc: Document, toPinned: boolean) => {
+    try {
+      setSavingId(doc.id);
+      const updated = await api.setDocumentPinned(doc.id, toPinned);
+      setDocuments((prev) => prev.map((d) => (d.id === doc.id ? updated : d)));
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  // -----------------------
+  // Create modal (simple, built-in)
+  // -----------------------
+  const [editOpen, setEditOpen] = useState(false);
+const [editId, setEditId] = useState<string | null>(null);
+
+const [createName, setCreateName] = useState("");
+const [createDesc, setCreateDesc] = useState("");
+const [createType, setCreateType] = useState<DocumentType>("custom");
+
+const [editName, setEditName] = useState("");
+const [editDesc, setEditDesc] = useState("");
+const [editType, setEditType] = useState<DocumentType>("custom");
+
+const openEdit = (doc: Document) => {
+  setEditId(doc.id);
+  setEditName(doc.name ?? "");
+  setEditDesc(doc.description ?? "");
+  setEditType(doc.type ?? "custom");
+  setEditOpen(true);
+};
+
+const resetEdit = () => {
+  setEditId(null);
+  setEditName("");
+  setEditDesc("");
+  setEditType("custom");
+};
+
+const submitEdit = async () => {
+  if (!editId) return;
+  if (!editName.trim()) return;
+
+  try {
+    setSavingId("__edit__");
+    const updated = await api.updateDocument(editId, {
+      name: editName.trim(),
+      description: editDesc.trim() ? editDesc.trim() : null,
+      type: editType,
     });
-  } catch (err) {
-    console.error("❌ Błąd podglądu pliku:", err);
-    setError("Nie udało się otworzyć podglądu pliku");
+
+    setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+    setEditOpen(false);
+    resetEdit();
+  } finally {
+    setSavingId(null);
   }
 };
 
- 
 
-  // ====== helpers ======
-  const refreshFiles = async (documentId: string) => {
-    const docFiles = await api.getDocumentFiles(documentId);
-    setFiles((prev) => ({ ...prev, [documentId]: docFiles }));
-  };
+useEffect(() => {
+  // domyślny typ dla nowego dokumentu:
+  // - reception -> Inny
+  // - civil -> Cywilny
+  // - concordat -> Kościelny
+  if (ceremony === "reception") setCreateType("custom");
+  else if (ceremony === "concordat") setCreateType("concordat");
+  else setCreateType("civil");
+}, [ceremony]);
 
-  
 
-  // ====== LOAD: interview -> docs (auto generate) ======
-  useEffect(() => {
+  const resetCreate = () => {
+  setCreateName("");
+  setCreateDesc("");
+  setCreateType(ceremony === "reception" ? "custom" : ceremony === "concordat" ? "concordat" : "civil");
+};
+
+
+  const submitCreate = async () => {
     if (!eventId) return;
-
-    let alive = true;
-
-    const fetchAll = async () => {
-      try {
-        setInterviewLoading(true);
-        setLoading(true);
-        setError(null);
-
-        // 1) interview
-        const interview = await api.getInterview(eventId);
-        if (!alive) return;
-        const ceremony = interview?.ceremony_type ?? null;
-        setInterviewCeremony(ceremony);
-
-        // 2) docs
-        let docs = await api.getDocuments(eventId);
-        if (!alive) return;
-
-        // 3) AUTO-GENERATE:
-        // - tylko dla civil/church
-        // - tylko jeśli lista pusta
-        // - tylko raz na dany event + tryb (żeby nie spamować)
-        if (docs.length === 0 && ceremony && ceremony !== "reception_only") {
-          const genKey = `docs:autoGenerated:${eventId}:${ceremony}`;
-          const already = localStorage.getItem(genKey) === "1";
-          if (!already) {
-            try {
-              await api.generateDefaultDocuments(
-                eventId,
-                ceremony === "civil" ? "civil" : "concordat",
-                true
-              );
-              localStorage.setItem(genKey, "1");
-              docs = await api.getDocuments(eventId);
-            } catch (e) {
-              console.warn("Auto-generate documents failed:", e);
-            }
-          }
-        }
-
-        setDocuments(docs);
-
-        const allFiles: Record<string, DocumentFile[]> = {};
-        for (const d of docs) {
-          const docFiles = await api.getDocumentFiles(d.id);
-          allFiles[d.id] = docFiles;
-        }
-        if (!alive) return;
-        setFiles(allFiles);
-
-        // zmiana typu => chowamy extras
-        setShowExtras(false);
-      } catch (err) {
-        console.error("❌ Błąd pobierania dokumentów/wywiadu:", err);
-        if (!alive) return;
-        setError("Nie udało się pobrać danych dokumentów");
-      } finally {
-        if (alive) {
-          setInterviewLoading(false);
-          setLoading(false);
-        }
-      }
-    };
-
-    void fetchAll();
-
-    return () => {
-      alive = false;
-    };
-  }, [eventId]);
-
-  const handleToggleStatus = async (document: Document) => {
-    try {
-      const newStatus = document.status === "done" ? "pending" : "done";
-      const updated = await api.updateDocument(document.id, {
-        status: newStatus,
-      });
-      setDocuments((prev) =>
-        prev.map((d) => (d.id === document.id ? updated : d))
-      );
-    } catch (err) {
-      console.error("❌ Błąd zmiany statusu:", err);
-      setError("Nie udało się zmienić statusu dokumentu");
-    }
-  };
-
-
-  const [preview, setPreview] = useState<{
-  open: boolean;
-  url: string;
-  title?: string;
-} | null>(null);
-
-
-  const handleFileUpload = async (
-    documentId: string,
-    file: File,
-    location: StorageLocation
-  ) => {
-    setUploadingId(documentId);
-    try {
-      await api.uploadDocumentFile(documentId, file, location);
-      await refreshFiles(documentId);
-    } catch (err) {
-      console.error("❌ Błąd uploadu pliku:", err);
-      setError("Nie udało się wysłać pliku");
-    } finally {
-      setUploadingId(null);
-    }
-  };
-
-  const handleDeleteFile = async (file: DocumentFile) => {
-    if (!window.confirm("Na pewno chcesz usunąć ten plik?")) return;
-    try {
-      await api.deleteDocumentFile(file.id);
-      await refreshFiles(file.document_id);
-    } catch (err) {
-      console.error("❌ Błąd usuwania pliku:", err);
-      setError("Nie udało się usunąć pliku");
-    }
-  };
-
-  const handleDownloadFile = async (file: DocumentFile) => {
-    if (file.storage_location === "local") {
-      alert(
-        "Ten plik jest oznaczony jako przechowywany tylko lokalnie na urządzeniu. CeremoDay nie ma jego kopii."
-      );
-      return;
-    }
+    if (!createName.trim()) return;
 
     try {
-      const blob = await api.downloadDocumentFile(file.id);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = file.original_name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("❌ Błąd pobierania pliku:", err);
-      setError("Nie udało się pobrać pliku");
-    }
-  };
+      setSavingId("__create__");
 
-  // ✅ Dodaj własny dokument
-  const handleCreateCustomDocument = async () => {
-  if (!eventId) return;
-
-  const name = customName.trim();
-  if (!name) return;
-
-  try {
-    setCreatingDoc(true);
-    setError(null);
-
-    const created = await api.createDocument(eventId, {
-  name,
-  description: customDescription.trim() || null,
-  type: "custom",
-  status: "pending",
+      const created = await api.createDocument(eventId, {
+  name: createName.trim(),
+  description: createDesc.trim() ? createDesc.trim() : null,
+  type: createType,
+  is_pinned: true,
 });
 
 
-    // dorzucamy na górę
-    setDocuments((prev) => [created as Document, ...prev]);
-    setFiles((prev) => ({ ...prev, [created.id]: [] }));
 
-    setCustomName("");
-    setCustomDescription("");
-  } catch (e) {
-    console.error(e);
-    setError(e instanceof Error ? e.message : "Nie udało się dodać dokumentu");
-  } finally {
-    setCreatingDoc(false);
-  }
-};
-
-
-  // === Filtry listy wg trybu ===
-  // - docMode civil -> pokazujemy civil + custom
-  // - docMode church -> pokazujemy church + custom
-  // - docMode none -> pokazujemy tylko custom
-  const visibleDocs = useMemo(() => {
-  if (docMode === "none") return documents.filter((d) => d.type === "custom");
-  if (docMode === "civil")
-    return documents.filter((d) => d.type === "civil" || d.type === "custom");
-  return documents.filter((d) => d.type === "church" || d.type === "custom");
-}, [documents, docMode]);
-
-
-  const mandatoryDocs = useMemo(() => {
-    return visibleDocs.filter((d) => !isExtraDocument(d));
-  }, [visibleDocs]);
-
-  const extraDocs = useMemo(() => {
-    // extras tylko dla civil/church
-    if (docMode === "none") return [];
-    return visibleDocs.filter((d) => isExtraDocument(d));
-  }, [visibleDocs, docMode]);
-
-  const hasAnyVisibleDocs = visibleDocs.length > 0;
-
-  const modeLabel =
-    docMode === "none"
-      ? "Samo przyjęcie weselne"
-      : docMode === "civil"
-      ? "Ślub cywilny"
-      : "Ślub kościelny (konkordatowy)";
-
-  const docTypeBadge = (t: DocumentType) => {
-    if (t === "custom") {
-      return (
-        <span className="text-[10px] px-2 py-0.5 rounded-full border border-white/10 bg-white/5 text-white/70">
-          własny
-        </span>
-      );
+      setDocuments((prev) => [...prev, created]);
+      setCreateOpen(false);
+      resetCreate();
+    } finally {
+      setSavingId(null);
     }
-    if (t === "civil") {
-      return (
-        <span className="text-[10px] px-2 py-0.5 rounded-full border border-sky-300/20 bg-sky-500/10 text-sky-200">
-          cywilny
-        </span>
-      );
-    }
-    return (
-      <span className="text-[10px] px-2 py-0.5 rounded-full border border-violet-300/20 bg-violet-500/10 text-violet-200">
-        kościelny
-      </span>
-    );
   };
 
-  return (
-    <div className={pageWrap}>
-      <div className={`${cardBase} p-6 md:p-8`}>
-        {/* Nagłówek */}
-        <div className="flex items-start justify-between gap-4 mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center">
-              <FileText className="w-5 h-5 text-[#d7b45a]" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold text-white">Dokumenty</h1>
-              <p className={muted}>
-                Lista dokumentów i załączników. Tryb jest ustawiany przez wywiad.
-              </p>
-            </div>
-          </div>
+  const ceremonyBadge = useMemo(() => {
+    if (!interviewLoaded) return null;
+    if (ceremony === "civil") return { label: "Ślub cywilny", cls: "bg-white/5 border-white/10 text-white/70" };
+    if (ceremony === "concordat") return { label: "Ślub kościelny", cls: "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white" };
+    if (ceremony === "reception") return { label: "Samo przyjęcie", cls: "bg-white/5 border-white/10 text-white/70" };
+    return { label: "Brak danych z wywiadu", cls: "bg-white/5 border-white/10 text-white/60" };
+  }, [ceremony, interviewLoaded]);
 
-          <div className="hidden md:flex items-center gap-2">
-            {interviewLoading || loading ? (
-              <span className="text-xs text-white/50">Odświeżanie…</span>
-            ) : (
-              <span className="text-xs text-white/50">
-                Zarządzaj checklistą i plikami
-              </span>
-            )}
+  return (
+    <div className="p-6 max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 grid place-items-center">
+            <FileText className="w-5 h-5 text-[#d7b45a]" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-2xl font-bold text-white">Dokumenty</h2>
+              {ceremonyBadge && (
+                <span className={"inline-flex items-center px-3 py-1 rounded-full border text-xs " + ceremonyBadge.cls}>
+                  {ceremonyBadge.label}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-white/60">
+              Wszystkie formalności i pliki w jednym miejscu
+            </p>
           </div>
         </div>
 
-        {error && (
-          <div className="mb-4 rounded-2xl border border-red-400/20 bg-red-500/10 text-red-100 px-4 py-3 text-sm">
-            {error}
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold bg-gradient-to-r from-[#d7b45a] to-[#b98b2f] text-[#0b1b14]"
+        >
+          <Plus className="w-4 h-4" />
+          Dodaj dokument
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-6">
+        <button
+          type="button"
+          onClick={() => setTab("main")}
+          className={
+            "px-4 py-2 rounded-full text-sm border transition " +
+            (tab === "main"
+              ? "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white"
+              : "bg-white/5 border-white/10 text-white/60 hover:text-white")
+          }
+        >
+          Główne
+          <span className="ml-2 text-xs opacity-70">({mainDocs.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTab("extra")}
+          className={
+            "px-4 py-2 rounded-full text-sm border transition " +
+            (tab === "extra"
+              ? "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white"
+              : "bg-white/5 border-white/10 text-white/60 hover:text-white")
+          }
+        >
+          Dodatkowe
+          <span className="ml-2 text-xs opacity-70">({extraDocs.length})</span>
+        </button>
+      </div>
+
+      {/* List */}
+      <div className={cardBase}>
+        {loading && (
+          <div className="text-xs text-white/60 flex items-center gap-2 mb-3">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Wczytywanie…
           </div>
         )}
 
-        {/* Info: tryb z wywiadu */}
-        <section className="mb-5">
-          <div className="flex items-center justify-between gap-3 mb-2">
-            <h2 className={sectionTitle}>Tryb dokumentów (z wywiadu)</h2>
-            <span className="text-xs text-white/45">Automatycznie</span>
+        {!loading && interviewLoaded && ceremony === "unknown" && (
+          <div className="mb-3 text-xs text-white/60">
+            Nie udało się odczytać typu uroczystości z wywiadu. Uzupełnij wywiad i wróć tutaj.
           </div>
-
-          <div className={chip}>{modeLabel}</div>
-
-          {docMode === "none" && (
-            <p className="mt-2 text-sm text-white/55">
-              Dla opcji <span className="text-white font-semibold">„Samo przyjęcie”</span>{" "}
-              nie generujemy listy formalnych dokumentów. Możesz jednak dodawać własne dokumenty i pliki poniżej.
-            </p>
-          )}
-        </section>
-
-        {/* Storage */}
-        <section className={`${docCard} p-5 mb-6`}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className={sectionTitle}>Miejsce przechowywania załączników</h2>
-              <p className="text-sm text-white/55 mt-1">
-                Wybierz domyślny sposób przechowywania nowych plików.
-              </p>
-            </div>
-            <span className={chip}>
-              {storageLocation === "server" ? "Serwer" : "Lokalnie"}
-            </span>
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label className={radioTile(storageLocation === "server")}>
-              <div className="flex items-start gap-3">
-                <RadioDot active={storageLocation === "server"} />
-                <div>
-                  <div className="text-sm font-semibold text-white">
-                    Na serwerze CeremoDay
-                  </div>
-                  <div className="text-xs text-white/55 mt-1">
-                    Dostępne na innych urządzeniach.
-                  </div>
-                </div>
-              </div>
-              <input
-                className="sr-only"
-                type="radio"
-                value="server"
-                checked={storageLocation === "server"}
-                onChange={() => setStorageLocation("server")}
-              />
-            </label>
-
-            <label className={radioTile(storageLocation === "local")}>
-              <div className="flex items-start gap-3">
-                <RadioDot active={storageLocation === "local"} />
-                <div>
-                  <div className="text-sm font-semibold text-white">
-                    Tylko lokalnie na moim urządzeniu
-                  </div>
-                  <div className="text-xs text-white/55 mt-1">
-                    CeremoDay zapisze metadane, nie treść pliku.
-                  </div>
-                </div>
-              </div>
-              <input
-                className="sr-only"
-                type="radio"
-                value="local"
-                checked={storageLocation === "local"}
-                onChange={() => setStorageLocation("local")}
-              />
-            </label>
-          </div>
-        </section>
-
-        {/* ✅ Dodaj własny dokument (zawsze) */}
-        <section className={`${docCard} p-5 mb-6`}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className={sectionTitle}>Dodaj własny dokument</h2>
-              <p className="text-sm text-white/55 mt-1">
-                Dodaj dowolny dokument do checklisty (np. umowa, potwierdzenie, notatka, skan).
-              </p>
-            </div>
-            <span className={chip}>Własne</span>
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-            
-
-            <div>
-              <label className="text-xs text-white/55">Nazwa</label>
-              <input
-                className={inputBase}
-                placeholder="np. Umowa z salą / Potwierdzenie rezerwacji"
-                value={customName}
-                onChange={(e) => setCustomName(e.target.value)}
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="text-xs text-white/55">Opis (opcjonalnie)</label>
-              <textarea
-                className={inputBase + " min-h-[90px]"}
-                placeholder="Terminy, kto załatwia, co trzeba przygotować…"
-                value={customDescription}
-                onChange={(e) => setCustomDescription(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              disabled={creatingDoc || !customName.trim()}
-              className={btnGold}
-              onClick={() => void handleCreateCustomDocument()}
-            >
-              <Plus className="w-4 h-4" />
-              {creatingDoc ? "Dodawanie…" : "Dodaj dokument"}
-            </button>
-
-            <span className="text-xs text-white/45">
-              Po dodaniu dokumentu możesz od razu dodać załączniki w jego kafelku.
-            </span>
-          </div>
-        </section>
-
-        {/* Lista dokumentów (dla civil/church: system + custom; dla reception_only: tylko custom) */}
-        {!hasAnyVisibleDocs && !loading && (
-          <section className={`${docCard} p-5 mb-6`}>
-            <p className="text-sm text-white/65">
-              Brak dokumentów.{" "}
-              {docMode === "none"
-                ? "Dodaj własny dokument powyżej."
-                : "Lista startowa generuje się automatycznie po wywiadzie (przy pierwszym wejściu). Jeśli nadal jest pusto — dodaj własny dokument powyżej."}
-            </p>
-          </section>
         )}
 
-        {hasAnyVisibleDocs && (
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-base font-semibold text-white">
-                  Lista dokumentów
-                </h2>
-                <p className="text-sm text-white/50 mt-1">
-                  Odhaczaj, dodawaj pliki i trzymaj porządek.
-                </p>
-              </div>
+        {docsToShow.length === 0 && !loading && (
+          <p className="text-sm text-white/60">
+            Brak dokumentów w tej sekcji.
+          </p>
+        )}
 
-              {loading ? (
-                <span className="text-xs text-white/45">Odświeżanie…</span>
-              ) : (
-                <span className={chip}>
-                  {mandatoryDocs.filter((d) => d.status === "done").length}/
-                  {mandatoryDocs.length} done
-                </span>
-              )}
-            </div>
+        <div className="space-y-3">
+          {docsToShow.map((doc) => {
+            const isSaving = savingId === doc.id;
+            const canEditFields = !doc.is_system;
 
-            {/* Obowiązkowe + własne */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className={sectionTitle}>
-                  {docMode === "none" ? "Twoje dokumenty" : "Obowiązkowe + własne"}
-                </h3>
-                <span className="text-xs text-white/45">
-                  {mandatoryDocs.length} pozycji
-                </span>
-              </div>
+            return (
+              <div
+                key={doc.id}
+                className="rounded-2xl border border-white/10 bg-black/20 p-4"
+              >
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className="font-semibold text-white">{doc.name}</span>
+                      {doc.category && <span className={chip}>{doc.category}</span>}
+                      {doc.type === "concordat" && (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full border border-white/10 bg-white/5 text-white/70 text-xs">
+                          Kościół
+                        </span>
+                      )}
 
-              {mandatoryDocs.length === 0 ? (
-                <p className="text-sm text-white/55">
-                  Brak dokumentów w tej sekcji.
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  {mandatoryDocs.map((doc) => {
-                    const docFiles = files[doc.id] ?? [];
-                    const done = doc.status === "done";
+                      {doc.type === "custom" && (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full border border-white/10 bg-white/5 text-white/70 text-xs">
+                          Inny
+                        </span>
+                      )}
+                      {doc.is_system && (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full border border-white/10 bg-white/5 text-white/60 text-xs">
+                          Domyślny
+                        </span>
+                      )}
+                      {isSaving && (
+                        <span className="text-xs text-white/40 flex items-center gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" /> zapis…
+                        </span>
+                      )}
+                    </div>
 
-                    return (
-                      <div key={doc.id} className={`${docCard} p-5`}>
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex items-start gap-3">
-                            <button
-                              type="button"
-                              onClick={() => void handleToggleStatus(doc)}
-                              className={statusBtn(done)}
-                              aria-label={done ? "Oznacz jako niegotowe" : "Oznacz jako gotowe"}
-                            >
-                              {done ? (
-                                <CheckCircle2 className="w-5 h-5" />
-                              ) : (
-                                <span className="text-xs font-semibold">✓</span>
-                              )}
-                            </button>
+                    {doc.description && (
+                      <p className="text-sm text-white/60">{doc.description}</p>
+                    )}
 
-                            <div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-base font-semibold text-white">
-                                  {doc.name}
-                                </span>
+                    {/* Files */}
+                    <DocumentFilesList documentId={doc.id} />
+                  </div>
 
-                                {docTypeBadge(doc.type as DocumentType)}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <DocumentStatusInline
+                      status={doc.status}
+                      onChange={(next) => handleStatusChange(doc, next)}
+                      disabled={isSaving}
+                    />
 
-                                {isExtraDocument(doc) ? (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-amber-300/20 bg-amber-500/10 text-amber-200">
-                                    dodatkowy
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-[#c8a04b]/25 bg-[#c8a04b]/10 text-[#d7b45a]">
-                                    standard
-                                  </span>
-                                )}
-
-                                {done && (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 text-emerald-200">
-                                    gotowe
-                                  </span>
-                                )}
-                              </div>
-
-                              {doc.description && (
-                                <p className="text-sm text-white/55 mt-1">
-                                  {doc.description}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="text-right">
-                            <div className="text-xs text-white/45">Załączniki</div>
-                            <div className="text-sm text-white/80 font-semibold">
-                              {docFiles.length}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Pliki + upload */}
-                        <div className="mt-4 border-t border-white/10 pt-4">
-                          {docFiles.length === 0 ? (
-                            <p className="text-sm text-white/45">
-                              Brak załączonych plików.
-                            </p>
-                          ) : (
-                            <ul className="space-y-2">
-                              {docFiles.map((file) => (
-                                <li key={file.id} className={fileRow}>
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <FileText className="w-4 h-4 text-white/45 shrink-0" />
-                                    <span className="text-sm text-white/85 truncate">
-                                      {file.original_name}
-                                    </span>
-                                    <span className="text-[11px] text-white/40 shrink-0">
-                                      {Math.round(file.size / 1024)} kB
-                                    </span>
-                                    <span className="text-[11px] text-white/55 shrink-0">
-                                      {file.storage_location === "server"
-                                        ? "Serwer"
-                                        : "Tylko lokalnie"}
-                                    </span>
-                                  </div>
-
-                                  <div className="flex items-center gap-2 shrink-0">
-  {/* Podgląd tylko dla plików z serwera */}
-  {file.storage_location === "server" ? (
-  <button
-    type="button"
-    onClick={() => void handlePreviewFile(file)}
-    className="inline-flex items-center gap-1 text-xs text-white/65 hover:text-[#d7b45a] transition"
-    title="Podgląd"
-  >
-    Podgląd
-  </button>
-) : (
-  <span className="text-xs text-white/35" title="Plik tylko lokalnie">
-    Podgląd niedostępny
-  </span>
-)}
-
-
-  <button
-    type="button"
-    onClick={() => void handleDownloadFile(file)}
-    className="inline-flex items-center gap-1 text-xs text-white/65 hover:text-[#d7b45a] transition"
-  >
-    <Download className="w-4 h-4" />
-    Pobierz
-  </button>
-
-  <button
-    type="button"
-    onClick={() => void handleDeleteFile(file)}
-    className="inline-flex items-center gap-1 text-xs text-white/55 hover:text-red-300 transition"
-  >
-    <Trash2 className="w-4 h-4" />
-    Usuń
-  </button>
-</div>
-
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-
-                          <div className="mt-3 flex items-center justify-between gap-3">
-                            <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
-                              <span className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/10 transition">
-                                <FileUp className="w-4 h-4 text-[#d7b45a]" />
-                                {uploadingId === doc.id ? "Wysyłanie..." : "Dodaj plik"}
-                              </span>
-                              <input
-                                type="file"
-                                accept=".pdf,.png,.jpg,.jpeg"
-                                className="hidden"
-                                onChange={(e) => {
-                                  const f = e.target.files?.[0];
-                                  if (f) {
-                                    void handleFileUpload(doc.id, f, storageLocation);
-                                    e.target.value = "";
-                                  }
-                                }}
-                              />
-                            </label>
-
-                            <span className="text-xs text-white/45">
-                              Domyślnie: {storageLocation === "server" ? "serwer" : "lokalnie"}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Dodatkowe (tylko civil/church) */}
-            {docMode !== "none" && extraDocs.length > 0 && (
-              <div className="mt-2">
-                {!showExtras ? (
-                  <div className={`${docCard} p-5`}>
-                    <p className="text-sm text-white/65 mb-3">
-                      Masz{" "}
-                      <span className="text-white font-semibold">{extraDocs.length}</span>{" "}
-                      dokumentów dla sytuacji wyjątkowych (pełnomocnik, cudzoziemiec, unieważnienie itd.).
-                    </p>
+                    {/* Better pin UX */}
                     <button
                       type="button"
-                      onClick={() => setShowExtras(true)}
-                      className={btnSecondary}
+                      disabled={isSaving}
+                      onClick={() => handleMoveDoc(doc, !doc.is_pinned)}
+                      className={
+                        "inline-flex items-center justify-center px-3 py-1 rounded-lg text-xs font-medium border transition " +
+                        (doc.is_pinned
+                          ? "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+                          : "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white hover:bg-[#c8a04b]/20")
+                      }
+                      title={doc.is_pinned ? "Przenieś do dodatkowych" : "Przenieś do głównych"}
                     >
-                      Pokaż dodatkowe dokumenty
+                      {doc.is_pinned ? "Do dodatkowych" : "Do głównych"}
                     </button>
-                  </div>
-                ) : (
-                  <div className={`${docCard} p-5`}>
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <h3 className={sectionTitle}>Dodatkowe (wyjątkowe sytuacje)</h3>
+
+                    {canEditFields && (
                       <button
                         type="button"
-                        onClick={() => setShowExtras(false)}
-                        className="text-xs text-white/55 hover:text-white/80 transition"
+                        disabled={isSaving}
+                        onClick={() => openEdit(doc)}
+                        className="inline-flex items-center justify-center px-3 py-1 rounded-lg text-xs font-medium border border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                        title="Edytuj dokument"
                       >
-                        Ukryj
+                        Edytuj
                       </button>
-                    </div>
+                    )}
 
-                    <div className="space-y-4">
-                      {extraDocs.map((doc) => {
-                        const docFiles = files[doc.id] ?? [];
-                        const done = doc.status === "done";
 
-                        return (
-                          <div key={doc.id} className={`${docCard} p-5 bg-white/4`}>
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex items-start gap-3">
-                                <button
-                                  type="button"
-                                  onClick={() => void handleToggleStatus(doc)}
-                                  className={statusBtn(done)}
-                                  aria-label={done ? "Oznacz jako niegotowe" : "Oznacz jako gotowe"}
-                                >
-                                  {done ? (
-                                    <CheckCircle2 className="w-5 h-5" />
-                                  ) : (
-                                    <span className="text-xs font-semibold">✓</span>
-                                  )}
-                                </button>
-
-                                <div>
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-base font-semibold text-white">
-                                      {doc.name}
-                                    </span>
-                                    {docTypeBadge(doc.type as DocumentType)}
-                                    <span className="text-[10px] px-2 py-0.5 rounded-full border border-amber-300/20 bg-amber-500/10 text-amber-200">
-                                      dodatkowy
-                                    </span>
-                                    {done && (
-                                      <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 text-emerald-200">
-                                        gotowe
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  {doc.description && (
-                                    <p className="text-sm text-white/55 mt-1">
-                                      {doc.description}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="text-right">
-                                <div className="text-xs text-white/45">Załączniki</div>
-                                <div className="text-sm text-white/80 font-semibold">
-                                  {docFiles.length}
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="mt-4 border-t border-white/10 pt-4">
-                              {docFiles.length === 0 ? (
-                                <p className="text-sm text-white/45">Brak załączonych plików.</p>
-                              ) : (
-                                <ul className="space-y-2">
-                                  {docFiles.map((file) => (
-                                    <li key={file.id} className={fileRow}>
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <FileText className="w-4 h-4 text-white/45 shrink-0" />
-                                        <span className="text-sm text-white/85 truncate">
-                                          {file.original_name}
-                                        </span>
-                                        <span className="text-[11px] text-white/40 shrink-0">
-                                          {Math.round(file.size / 1024)} kB
-                                        </span>
-                                        <span className="text-[11px] text-white/55 shrink-0">
-                                          {file.storage_location === "server"
-                                            ? "Serwer"
-                                            : "Tylko lokalnie"}
-                                        </span>
-                                      </div>
-
-                                      <div className="flex items-center gap-2 shrink-0">
-                                        <button
-                                          type="button"
-                                          onClick={() => void handleDownloadFile(file)}
-                                          className="inline-flex items-center gap-1 text-xs text-white/65 hover:text-[#d7b45a] transition"
-                                        >
-                                          <Download className="w-4 h-4" />
-                                          Pobierz
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => void handleDeleteFile(file)}
-                                          className="inline-flex items-center gap-1 text-xs text-white/55 hover:text-red-300 transition"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                          Usuń
-                                        </button>
-                                      </div>
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-
-                              <div className="mt-3">
-                                <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
-                                  <span className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/10 transition">
-                                    <FileUp className="w-4 h-4 text-[#d7b45a]" />
-                                    {uploadingId === doc.id ? "Wysyłanie..." : "Dodaj plik"}
-                                  </span>
-                                  <input
-                                    type="file"
-                                    accept=".pdf,.png,.jpg,.jpeg"
-                                    className="hidden"
-                                    onChange={(e) => {
-                                      const f = e.target.files?.[0];
-                                      if (f) {
-                                        void handleFileUpload(doc.id, f, storageLocation);
-                                        e.target.value = "";
-                                      }
-                                    }}
-                                  />
-                                </label>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    {!canEditFields && (
+                      <span className="text-[11px] text-white/40 w-28 text-right">
+                        Domyślny dokument nie podlega edycji
+                      </span>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
-            )}
-          </section>
-        )}
+            );
+          })}
+        </div>
       </div>
-      <PreviewModal
-  open={!!preview?.open}
-  onClose={() => setPreview(null)}
-  title={preview?.title}
-  url={preview?.url ?? ""}
-  baseUrl={BASE_URL}
-/>
 
+      {/* Create modal */}
+      {createOpen && (
+        <div className="fixed inset-0 z-50">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setCreateOpen(false)}
+          />
+          <div className="absolute inset-0 grid place-items-center p-4">
+            <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#0b1b14] shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
+              <div className="flex items-start justify-between p-5 border-b border-white/10">
+                <div>
+                  <div className="text-white font-semibold">Dodaj dokument</div>
+                  <div className="text-xs text-white/60">
+                    Utwórz własny dokument dla wydarzenia.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCreateOpen(false)}
+                  className="h-9 w-9 rounded-lg border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <div>
+                  <div className="text-xs text-white/70 mb-1">Nazwa</div>
+                  <input
+                    value={createName}
+                    onChange={(e) => setCreateName(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
+                    placeholder="np. Umowa z fotografem"
+                  />
+                </div>
+
+                <div>
+                  <div className="text-xs text-white/70 mb-1">Opis</div>
+                  <textarea
+                    value={createDesc}
+                    onChange={(e) => setCreateDesc(e.target.value)}
+                    className="w-full min-h-[90px] rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
+                    placeholder="Krótka notatka co to jest i kiedy ma być gotowe..."
+                  />
+                </div>
+
+                <div>
+                  <div className="text-xs text-white/70 mb-1">Typ dokumentu</div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCreateType("civil")}
+                      className={
+                        "px-4 py-2 rounded-full text-xs border transition " +
+                        (createType === "civil"
+                          ? "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white"
+                          : "bg-white/5 border-white/10 text-white/60 hover:text-white")
+                      }
+                    >
+                      Cywilny
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreateType("concordat")}
+                      className={
+                        "px-4 py-2 rounded-full text-xs border transition " +
+                        (createType === "concordat"
+                          ? "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white"
+                          : "bg-white/5 border-white/10 text-white/60 hover:text-white")
+                      }
+                    >
+                      Kościelny
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCreateType("custom")}
+                      className={
+                        "px-4 py-2 rounded-full text-xs border transition " +
+                        (createType === "custom"
+                          ? "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white"
+                          : "bg-white/5 border-white/10 text-white/60 hover:text-white")
+                      }
+                    >
+                      Inny
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-5 border-t border-white/10 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreateOpen(false);
+                    resetCreate();
+                  }}
+                  className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-white/70 hover:text-white"
+                >
+                  Anuluj
+                </button>
+                <button
+                  type="button"
+                  disabled={savingId === "__create__" || !createName.trim()}
+                  onClick={() => void submitCreate()}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-[#d7b45a] to-[#b98b2f] text-[#0b1b14] disabled:opacity-60"
+                >
+                  {savingId === "__create__" ? "Zapis..." : "Zapisz"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {editOpen && (
+  <div className="fixed inset-0 z-50">
+    <div className="absolute inset-0 bg-black/60" onClick={() => setEditOpen(false)} />
+    <div className="absolute inset-0 grid place-items-center p-4">
+      <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#0b1b14] shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
+        <div className="flex items-start justify-between p-5 border-b border-white/10">
+          <div>
+            <div className="text-white font-semibold">Edytuj dokument</div>
+            <div className="text-xs text-white/60">Zmień nazwę, opis i typ.</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setEditOpen(false)}
+            className="h-9 w-9 rounded-lg border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div>
+            <div className="text-xs text-white/70 mb-1">Nazwa</div>
+            <input
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
+              placeholder="np. Umowa z fotografem"
+            />
+          </div>
+
+          <div>
+            <div className="text-xs text-white/70 mb-1">Opis</div>
+            <textarea
+              value={editDesc}
+              onChange={(e) => setEditDesc(e.target.value)}
+              className="w-full min-h-[90px] rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
+              placeholder="Krótka notatka…"
+            />
+          </div>
+
+          <div>
+            <div className="text-xs text-white/70 mb-1">Typ dokumentu</div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setEditType("civil")}
+                className={
+                  "px-4 py-2 rounded-full text-xs border transition " +
+                  (editType === "civil"
+                    ? "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white"
+                    : "bg-white/5 border-white/10 text-white/60 hover:text-white")
+                }
+              >
+                Cywilny
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditType("concordat")}
+                className={
+                  "px-4 py-2 rounded-full text-xs border transition " +
+                  (editType === "concordat"
+                    ? "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white"
+                    : "bg-white/5 border-white/10 text-white/60 hover:text-white")
+                }
+              >
+                Kościelny
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditType("custom")}
+                className={
+                  "px-4 py-2 rounded-full text-xs border transition " +
+                  (editType === "custom"
+                    ? "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white"
+                    : "bg-white/5 border-white/10 text-white/60 hover:text-white")
+                }
+              >
+                Inny
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-5 border-t border-white/10 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setEditOpen(false);
+              resetEdit();
+            }}
+            className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-white/70 hover:text-white"
+          >
+            Anuluj
+          </button>
+          <button
+            type="button"
+            disabled={savingId === "__edit__" || !editName.trim()}
+            onClick={() => void submitEdit()}
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-[#d7b45a] to-[#b98b2f] text-[#0b1b14] disabled:opacity-60"
+          >
+            {savingId === "__edit__" ? "Zapis..." : "Zapisz"}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
 
     </div>
   );

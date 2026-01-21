@@ -16,7 +16,12 @@ type Props = {
   // ✅ nowe możliwości (Tasks/Wywiad)
   align?: "left" | "right";
   size?: "sm" | "md";
-  maxDropdownWidth?: number; // maksymalna szerokość dropdownu
+  maxDropdownWidth?: number;
+
+  // ✅ NOWE: zakres dat (wizualnie + blokada)
+  minDate?: string; // YYYY-MM-DD
+  maxDate?: string; // YYYY-MM-DD
+  rangeHint?: string; // opcjonalny tekst pod kalendarzem
 };
 
 type Rect = { left: number; top: number; width: number; height: number; bottom: number };
@@ -30,6 +35,13 @@ function formatDisplay(value: string) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   return d.toLocaleDateString("pl-PL", { year: "numeric", month: "short", day: "2-digit" });
+}
+
+function formatDMY(value: string) {
+  if (!value) return "";
+  const [y, m, d] = value.split("-");
+  if (!y || !m || !d) return value;
+  return `${d}-${m}-${y}`;
 }
 
 function ymd(d: Date) {
@@ -51,6 +63,14 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(Math.max(n, min), max);
 }
 
+// lex compare działa dla YYYY-MM-DD
+function isBefore(a: string, b: string) {
+  return a < b;
+}
+function isAfter(a: string, b: string) {
+  return a > b;
+}
+
 export default function DatePicker({
   label,
   value,
@@ -63,6 +83,9 @@ export default function DatePicker({
   align = "left",
   size = "md",
   maxDropdownWidth = 360,
+  minDate,
+  maxDate,
+  rangeHint,
 }: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const btnRef = useRef<HTMLButtonElement | null>(null);
@@ -150,10 +173,6 @@ export default function DatePicker({
     "outline-none focus:border-[#c8a04b]/50 focus:ring-2 focus:ring-[#c8a04b]/15 transition " +
     (size === "sm" ? "px-3 py-1.5 text-sm" : "px-3 py-2");
 
-  // ✅ klucz do „idealnego” wyglądu: dropdown nie może być wąski jak input w Tasks
-  // - zawsze min 320px (żeby siatka dni wyglądała jak w wywiadzie)
-  // - ale nie większy niż maxDropdownWidth
-  // - i clamp do viewportu
   const viewportW = typeof window !== "undefined" ? window.innerWidth : 1200;
   const viewportPadding = 12;
   const MIN_DROPDOWN_W = 320;
@@ -169,6 +188,15 @@ export default function DatePicker({
     : viewportPadding;
 
   const dropdownTop = rect ? rect.bottom + 8 : 0;
+
+  const isDateAllowed = (dayISO: string) => {
+    if (minDate && isBefore(dayISO, minDate)) return false;
+    if (maxDate && isAfter(dayISO, maxDate)) return false;
+    return true;
+  };
+
+  const rangeMode: "none" | "forward" | "backward" | "between" =
+    minDate && maxDate ? "between" : minDate ? "forward" : maxDate ? "backward" : "none";
 
   const dropdown =
     open && rect
@@ -189,7 +217,7 @@ export default function DatePicker({
               "shadow-[0_18px_55px_rgba(0,0,0,0.55)]"
             )}
           >
-            <div className={cx("p-4", size === "sm" ? "p-3" : "p-4")}>
+            <div className={cx(size === "sm" ? "p-3" : "p-4")}>
               {/* header */}
               <div className="flex items-center justify-between gap-2">
                 <button
@@ -200,10 +228,10 @@ export default function DatePicker({
                     size === "sm" ? "h-8 w-8" : "h-9 w-9"
                   )}
                 >
-                  <ChevronLeft className={cx(size === "sm" ? "w-4 h-4" : "w-4 h-4", "text-white/80")} />
+                  <ChevronLeft className={cx("w-4 h-4", "text-white/80")} />
                 </button>
 
-                <div className={cx("font-semibold text-white", size === "sm" ? "text-sm" : "text-sm")}>
+                <div className={cx("font-semibold text-white", "text-sm")}>
                   {new Date(calendar.year, calendar.month, 1).toLocaleDateString("pl-PL", {
                     month: "long",
                     year: "numeric",
@@ -218,7 +246,7 @@ export default function DatePicker({
                     size === "sm" ? "h-8 w-8" : "h-9 w-9"
                   )}
                 >
-                  <ChevronRight className={cx(size === "sm" ? "w-4 h-4" : "w-4 h-4", "text-white/80")} />
+                  <ChevronRight className={cx("w-4 h-4", "text-white/80")} />
                 </button>
               </div>
 
@@ -232,26 +260,54 @@ export default function DatePicker({
               </div>
 
               {/* days */}
-              <div className={cx("grid grid-cols-7 gap-1", size === "sm" ? "mt-1" : "mt-1")}>
+              <div className={cx("grid grid-cols-7 gap-1", "mt-1")}>
                 {calendar.weeks.flat().map((d, idx) => {
                   const key = d ? ymd(d) : `empty-${idx}`;
-                  const isSelected = d && value && ymd(d) === value;
+                  const dayISO = d ? ymd(d) : "";
+                  const allowed = d ? isDateAllowed(dayISO) : false;
+                  const isSelected = d && value && dayISO === value;
+
+                  // subtelne “podświetlenie zakresu” dla dozwolonych dat
+                  const allowedRangeBg =
+                    rangeMode === "none"
+                      ? ""
+                      : allowed
+                      ? "bg-white/[0.06] border-white/10"
+                      : "bg-black/10 border-white/5";
+
                   return (
                     <button
                       key={key}
                       type="button"
-                      disabled={!d}
+                      disabled={!d || !allowed}
                       onClick={() => {
                         if (!d) return;
-                        onChange(ymd(d));
+                        if (!allowed) return;
+                        onChange(dayISO);
                         setOpen(false);
                       }}
                       className={cx(
-                        "rounded-xl transition",
+                        "rounded-xl border transition",
                         size === "sm" ? "h-8 text-[13px]" : "h-9 text-sm",
-                        d ? "border border-white/10 bg-white/5 hover:bg-white/10" : "opacity-0 cursor-default",
-                        isSelected ? "bg-[#c8a04b]/18 border-[#c8a04b]/45 text-white" : "text-white/85"
+                        d ? allowedRangeBg : "opacity-0 cursor-default border-transparent",
+                        !d
+                          ? ""
+                          : allowed
+                          ? "text-white/85 hover:bg-white/10 hover:border-white/15"
+                          : "text-white/25 opacity-50 cursor-not-allowed hover:bg-transparent",
+                        isSelected ? "bg-[#c8a04b]/18 border-[#c8a04b]/45 text-white shadow-[0_0_0_3px_rgba(200,160,75,0.12)]" : ""
                       )}
+                      title={
+                        d
+                          ? !allowed
+                            ? minDate && isBefore(dayISO, minDate)
+                              ? `Dostępne od: ${formatDMY(minDate)}`
+                              : maxDate && isAfter(dayISO, maxDate)
+                              ? `Dostępne do: ${formatDMY(maxDate)}`
+                              : ""
+                            : ""
+                          : ""
+                      }
                     >
                       {d ? d.getDate() : ""}
                     </button>
@@ -259,15 +315,34 @@ export default function DatePicker({
                 })}
               </div>
 
+              {/* hint zakresu */}
+              {(minDate || maxDate || rangeHint) ? (
+                <div className={cx("mt-2 text-[11px] text-white/45")}>
+                  {rangeHint
+                    ? rangeHint
+                    : minDate && !maxDate
+                    ? `Dostępne od: ${formatDMY(minDate)}`
+                    : maxDate && !minDate
+                    ? `Dostępne do: ${formatDMY(maxDate)}`
+                    : minDate && maxDate
+                    ? `Dostępne w zakresie: ${formatDMY(minDate)} – ${formatDMY(maxDate)}`
+                    : null}
+                </div>
+              ) : null}
+
               {/* footer */}
               <div className={cx("flex items-center justify-between gap-2", size === "sm" ? "mt-2" : "mt-3")}>
                 <button
                   type="button"
                   onClick={() => {
-                    onChange(ymd(new Date()));
+                    const today = ymd(new Date());
+                    if (!isDateAllowed(today)) return;
+                    onChange(today);
                     setOpen(false);
                   }}
-                  className="text-xs text-white/70 hover:text-white transition"
+                  className="text-xs text-white/70 hover:text-white transition disabled:opacity-50"
+                  disabled={!isDateAllowed(ymd(new Date()))}
+                  title={!isDateAllowed(ymd(new Date())) ? "Dzisiejsza data jest poza zakresem" : "Ustaw dzisiejszą datę"}
                 >
                   Dzisiaj
                 </button>

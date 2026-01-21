@@ -8,7 +8,6 @@ import {
   TrendingDown,
   ArrowRightLeft,
   Search,
-  Filter,
   Download,
   Pencil,
   Trash2,
@@ -17,10 +16,13 @@ import {
   Plus,
   CheckCircle2,
   Clock3,
-  CalendarDays,
+  ArrowUpRight,
+  ChevronRight,
 } from "lucide-react";
+
 import { api } from "../lib/api";
 import Select from "../ui/Select";
+import DatePicker from "../ui/DatePicker";
 
 type ExpenseCategory =
   | "HALL"
@@ -34,7 +36,14 @@ type ExpenseCategory =
 
 type ExpenseStatus = "PLANNED" | "IN_PROGRESS" | "PAID";
 
-type SortField = "name" | "planned_amount" | "actual_amount" | "due_date" | "paid_date" | "category" | "status";
+type SortField =
+  | "name"
+  | "planned_amount"
+  | "actual_amount"
+  | "due_date"
+  | "paid_date"
+  | "category"
+  | "status";
 
 type Budget = {
   id: string;
@@ -112,6 +121,8 @@ function money(v: number | string | null | undefined): string {
   return n.toFixed(2);
 }
 
+
+
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 const isDateFuture = (d: string) => d > todayISO();
@@ -133,6 +144,22 @@ function normalizeExpense(e: Expense): Expense & { status: ExpenseStatus } {
   };
 }
 
+function parseMoneyInput(v: string): number | null {
+  if (!v.trim()) return null;
+  const n = Number(v.replace(",", "."));
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
+function formatDateDMY(dateISO: string | null | undefined): string {
+  if (!dateISO) return "—";
+  // zakładamy format YYYY-MM-DD (jak w API)
+  const [y, m, d] = dateISO.split("-");
+  if (!y || !m || !d) return dateISO;
+  return `${d}-${m}-${y}`;
+}
+
+
 const Finance: React.FC = () => {
   const { id: eventId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -142,6 +169,7 @@ const Finance: React.FC = () => {
 
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
 
   // FILTRY / SORT
   const [filterSearch, setFilterSearch] = useState<string>("");
@@ -157,7 +185,7 @@ const Finance: React.FC = () => {
   const [editing, setEditing] = useState<(Expense & { status: ExpenseStatus }) | null>(null);
   const [isSavingExpense, setIsSavingExpense] = useState(false);
 
-  // formularz w modalu
+  // formularz w modalu (add/edit)
   const [fName, setFName] = useState("");
   const [fCategory, setFCategory] = useState<ExpenseCategory>("OTHER");
   const [fStatus, setFStatus] = useState<ExpenseStatus>("PLANNED");
@@ -167,8 +195,30 @@ const Finance: React.FC = () => {
   const [fPaid, setFPaid] = useState("");
   const [fVendor, setFVendor] = useState("");
   const [fNotes, setFNotes] = useState("");
-
   const [formError, setFormError] = useState<string | null>(null);
+
+  // MODAL: status change (tylko do przodu)
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const [statusEditing, setStatusEditing] = useState<(Expense & { status: ExpenseStatus }) | null>(null);
+  const [nextStatus, setNextStatus] = useState<ExpenseStatus | "">("");
+  const [scActual, setScActual] = useState("");
+  const [scDue, setScDue] = useState("");
+  const [scPaid, setScPaid] = useState("");
+  const [scVendor, setScVendor] = useState("");
+  const [scNotes, setScNotes] = useState("");
+  const [scError, setScError] = useState<string | null>(null);
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
+
+  const handleExportFinancePdf = () => {
+  if (!eventId) return;
+
+  const url = `/event/${eventId}/reports?autopdf=1&scope=finance`;
+  window.open(url, "_blank", "noopener,noreferrer,width=1200,height=900");
+};
+
+
+
+
 
   // UI helpers (CeremoDay vibe)
   const cardBase =
@@ -178,11 +228,6 @@ const Finance: React.FC = () => {
   const inputBase =
     "w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-white placeholder:text-white/35 " +
     "outline-none focus:border-[#c8a04b]/50 focus:ring-2 focus:ring-[#c8a04b]/15 transition";
-
-  const selectBase =
-    inputBase +
-    " pr-9 appearance-none " +
-    "[&>option]:bg-[#07160f] [&>option]:text-white";
 
   const chip =
     "inline-flex items-center gap-2 px-3 py-1 rounded-full " +
@@ -210,30 +255,61 @@ const Finance: React.FC = () => {
     "focus:outline-none focus:ring-2 focus:ring-red-400/40 " +
     "transition disabled:opacity-60";
 
-  const statusPill = (s: ExpenseStatus, dateText?: string | null) => {
-    if (s === "PAID") {
-      return (
-        <span className="inline-flex items-center rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200 border border-emerald-400/20">
-          <CheckCircle2 className="w-3.5 h-3.5 mr-2" />
-          Opłacone{dateText ? ` • ${dateText}` : ""}
-        </span>
-      );
-    }
-    if (s === "IN_PROGRESS") {
-      return (
-        <span className="inline-flex items-center rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200 border border-amber-400/20">
-          <Clock3 className="w-3.5 h-3.5 mr-2" />
-          W trakcie{dateText ? ` • termin: ${dateText}` : ""}
-        </span>
-      );
-    }
+
+
+
+  const infoLine = (label: string, value: React.ReactNode) => (
+    <div className="flex items-start justify-between gap-4 py-2 border-b border-white/10 last:border-b-0">
+      <div className="text-xs text-white/55">{label}</div>
+      <div className="text-sm text-white text-right">{value}</div>
+    </div>
+  );
+
+  const statusPill = (s: ExpenseStatus, dateText?: string | null, clickable = false) => {
+  const chevron = clickable ? (
+    <span className="ml-2 inline-flex items-center justify-center">
+    <ChevronRight className="w-4 h-4 opacity-35 group-hover:opacity-90 transition group-hover:translate-x-0.5" />
+    </span>
+  ) : null;
+
+  const common =
+  "inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold border transition " +
+  "group-hover:brightness-110 group-hover:shadow-[0_0_0_3px_rgba(200,160,75,0.12)] " +
+  (clickable ? "cursor-pointer hover:brightness-110 active:brightness-95" : "");
+
+  
+
+
+
+  if (s === "PAID") {
     return (
-      <span className="inline-flex items-center rounded-full bg-white/5 px-3 py-1 text-xs font-semibold text-white/75 border border-white/10">
-        <Sparkles className="w-3.5 h-3.5 mr-2 text-[#d7b45a]" />
-        Planowane
+      <span className={common + " bg-emerald-400/10 text-emerald-200 border-emerald-400/20"}>
+        <CheckCircle2 className="w-3.5 h-3.5 mr-2" />
+        Opłacone{dateText ? ` • ${dateText}` : ""}
+        {chevron}
       </span>
     );
-  };
+  }
+
+  if (s === "IN_PROGRESS") {
+    return (
+      <span className={common + " bg-amber-400/10 text-amber-200 border-amber-400/20"}>
+        <Clock3 className="w-3.5 h-3.5 mr-2" />
+        W trakcie{dateText ? ` • termin: ${dateText}` : ""}
+        {chevron}
+      </span>
+    );
+  }
+
+  return (
+    <span className={common + " bg-white/5 text-white/75 border-white/10"}>
+      <Sparkles className="w-3.5 h-3.5 mr-2 text-[#d7b45a]" />
+      Planowane
+      {chevron}
+    </span>
+  );
+};
+
 
   // -------------------------
   // ŁADOWANIE
@@ -286,7 +362,7 @@ const Finance: React.FC = () => {
     if (filterCategory !== "all") result = result.filter((e) => e.category === filterCategory);
     if (filterStatus !== "all") result = result.filter((e) => e.status === filterStatus);
 
-    const getSortValue = (x: (Expense & { status: ExpenseStatus }), field: SortField): string | number => {
+    const getSortValue = (x: Expense & { status: ExpenseStatus }, field: SortField): string | number => {
       const getNum = (v: number | string | null) => toNumberOrNull(v) ?? 0;
       const getDate = (d: string | null) => (d ? Date.parse(d) : 0);
 
@@ -320,7 +396,7 @@ const Finance: React.FC = () => {
   }, [expenses, filterSearch, filterCategory, filterStatus, sortField, sortDirection]);
 
   // -------------------------
-  // MODAL helpers
+  // MODAL helpers (add/edit)
   // -------------------------
   const openAdd = () => {
     setEditing(null);
@@ -363,30 +439,24 @@ const Finance: React.FC = () => {
   const validateForm = (): string | null => {
     if (!fName.trim()) return "Nazwa jest wymagana.";
 
-    // status-driven wymagania
     if (fStatus === "PLANNED") {
-      // daty niepotrzebne, wyczyśćmy je w payloadzie
+      // Planowane: bez kwoty faktycznej i bez dat
       return null;
     }
 
     if (fStatus === "IN_PROGRESS") {
       if (!fDue) return "Dla statusu „W trakcie” wymagany jest Termin płatności.";
       if (isDatePast(fDue)) return "Termin płatności nie może być w przeszłości (tylko dziś lub przyszłość).";
-
-      // kwota faktyczna — wg Twojego opisu: w trakcie warto ją mieć
-      const a = fActual.trim() === "" ? null : Number(fActual.replace(",", "."));
-      if (a === null || !Number.isFinite(a) || a < 0) return "Dla „W trakcie” podaj poprawną kwotę faktyczną (>= 0).";
-
+      const a = parseMoneyInput(fActual);
+      if (a === null || a < 0) return "Dla „W trakcie” podaj poprawną kwotę faktyczną (>= 0).";
       return null;
     }
 
     if (fStatus === "PAID") {
       if (!fPaid) return "Dla statusu „Opłacone” wymagana jest Data płatności.";
       if (isDateFuture(fPaid)) return "Data płatności nie może być w przyszłości (tylko dziś lub przeszłość).";
-
-      const a = fActual.trim() === "" ? null : Number(fActual.replace(",", "."));
-      if (a === null || !Number.isFinite(a) || a < 0) return "Dla „Opłacone” podaj poprawną kwotę faktyczną (>= 0).";
-
+      const a = parseMoneyInput(fActual);
+      if (a === null || a < 0) return "Dla „Opłacone” podaj poprawną kwotę faktyczną (>= 0).";
       return null;
     }
 
@@ -407,16 +477,18 @@ const Finance: React.FC = () => {
     setError(null);
 
     try {
-      const planned = fPlanned.trim() === "" ? null : Number(fPlanned.replace(",", "."));
-      const actual = fActual.trim() === "" ? null : Number(fActual.replace(",", "."));
+      const planned = parseMoneyInput(fPlanned);
+      const actual = parseMoneyInput(fActual);
 
       const payload: ExpenseCreatePayload = {
         name: fName.trim(),
         category: fCategory,
         status: fStatus,
 
-        planned_amount: Number.isFinite(planned as number) ? planned : null,
-        actual_amount: Number.isFinite(actual as number) ? actual : null,
+        planned_amount: planned,
+
+        // ✅ Planowane: faktyczna zawsze null
+        actual_amount: fStatus === "PLANNED" ? null : actual,
 
         due_date: fStatus === "IN_PROGRESS" ? (fDue || null) : null,
         paid_date: fStatus === "PAID" ? (fPaid || null) : null,
@@ -485,12 +557,156 @@ const Finance: React.FC = () => {
     }
   };
 
+  // -------------------------
+  // STATUS CHANGE FLOW
+  // -------------------------
+  const getAllowedNextStatuses = (current: ExpenseStatus): ExpenseStatus[] => {
+    if (current === "PLANNED") return ["IN_PROGRESS", "PAID"];
+    if (current === "IN_PROGRESS") return ["PAID"];
+    return [];
+  };
+
+  const openStatusChange = (e: Expense & { status: ExpenseStatus }) => {
+    const allowed = getAllowedNextStatuses(e.status);
+    if (allowed.length === 0) return;
+
+    setStatusEditing(e);
+    setNextStatus(allowed[0]);
+    setScError(null);
+
+    // domyślne wartości z wydatku (tylko do podglądu — user wpisuje nowe)
+    setScActual(toNumberOrNull(e.actual_amount)?.toString() ?? "");
+    setScDue(e.due_date ?? "");
+    setScPaid(e.paid_date ?? "");
+
+    // opcjonalne — tylko do dodania jeśli puste
+    setScVendor(e.vendor_name ?? "");
+    setScNotes(e.notes ?? "");
+
+    setStatusModalOpen(true);
+  };
+
+  const closeStatusModal = () => {
+    setStatusModalOpen(false);
+    setStatusEditing(null);
+    setNextStatus("");
+    setScError(null);
+    setIsSavingStatus(false);
+  };
+
+  const validateStatusChange = (): string | null => {
+    if (!statusEditing) return "Brak wydatku.";
+    if (!nextStatus) return "Wybierz docelowy status.";
+
+    const cur = statusEditing.status;
+
+    // Planowane -> W trakcie
+    if (cur === "PLANNED" && nextStatus === "IN_PROGRESS") {
+      const a = parseMoneyInput(scActual);
+      if (a === null || a < 0) return "Podaj kwotę faktyczną (>= 0).";
+      if (!scDue) return "Podaj termin płatności.";
+      if (isDatePast(scDue)) return "Termin płatności nie może być w przeszłości.";
+      return null;
+    }
+
+    // Planowane -> Opłacone
+    if (cur === "PLANNED" && nextStatus === "PAID") {
+      const a = parseMoneyInput(scActual);
+      if (a === null || a < 0) return "Podaj kwotę faktyczną (>= 0).";
+      if (!scPaid) return "Podaj datę płatności.";
+      if (isDateFuture(scPaid)) return "Data płatności nie może być w przyszłości.";
+      return null;
+    }
+
+    // W trakcie -> Opłacone
+    if (cur === "IN_PROGRESS" && nextStatus === "PAID") {
+      const a = parseMoneyInput(scActual);
+      if (a === null || a < 0) return "Podaj kwotę faktyczną (>= 0).";
+      if (!scPaid) return "Podaj datę płatności.";
+      if (isDateFuture(scPaid)) return "Data płatności nie może być w przyszłości.";
+      return null;
+    }
+
+    return "Nieprawidłowe przejście statusu.";
+  };
+
+  const handleApplyStatusChange = async () => {
+    if (!eventId || !statusEditing || !nextStatus) return;
+
+    const msg = validateStatusChange();
+    if (msg) {
+      setScError(msg);
+      return;
+    }
+
+    setScError(null);
+    setIsSavingStatus(true);
+    setError(null);
+
+    try {
+      const cur = statusEditing.status;
+      const a = parseMoneyInput(scActual);
+
+      // bazujemy na istniejących danych
+      const payload: ExpenseUpdatePayload = {
+        name: statusEditing.name,
+        category: statusEditing.category,
+        status: nextStatus,
+        planned_amount: toNumberOrNull(statusEditing.planned_amount),
+
+        actual_amount: a,
+
+        due_date:
+          nextStatus === "IN_PROGRESS"
+            ? scDue || null
+            : nextStatus === "PAID" && cur === "IN_PROGRESS"
+            ? statusEditing.due_date
+            : null,
+
+        paid_date: nextStatus === "PAID" ? scPaid || null : null,
+
+        // opcjonalne: jeśli już były uzupełnione, nie pozwalamy edytować — tylko wyświetlamy
+        vendor_name: statusEditing.vendor_name ? statusEditing.vendor_name : scVendor.trim() || null,
+        notes: statusEditing.notes ? statusEditing.notes : scNotes.trim() || null,
+      };
+
+      const updated = (await api.updateFinanceExpense(eventId, statusEditing.id, payload)) as Expense;
+      setExpenses((prev) => prev.map((x) => (x.id === updated.id ? normalizeExpense(updated) : x)));
+
+      const newSummary = (await api.getFinanceSummary(eventId)) as FinanceSummary;
+      setSummary(newSummary);
+
+      closeStatusModal();
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Nie udało się zmienić statusu.");
+      setIsSavingStatus(false);
+    }
+  };
+
   if (!eventId) return <div className="p-4 text-red-200">Brak identyfikatora wydarzenia w adresie URL.</div>;
 
   const currency = summary?.currency || "PLN";
 
   const activeFilters =
     (filterSearch ? 1 : 0) + (filterCategory !== "all" ? 1 : 0) + (filterStatus !== "all" ? 1 : 0);
+
+  // Szybkie liczby do kafelków
+  const totalPlanned = summary?.total_planned ?? 0;
+  const totalActual = summary?.total_actual ?? 0;
+  const diff = summary?.diff_planned_actual ?? 0;
+  const remaining = summary?.remaining_budget;
+
+  if (loading) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto">
+        <div className={`${cardBase} p-6 flex items-center gap-3 text-white/80`}>
+          <Loader2 className="w-5 h-5 animate-spin" />
+          Ładowanie finansów…
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -502,11 +718,21 @@ const Finance: React.FC = () => {
           </div>
           <div>
             <h2 className="text-2xl font-bold text-white">Finanse</h2>
-            <p className="text-sm text-white/60">Wydatki z widokiem plan/real + statusy (Planowane / W trakcie / Opłacone).</p>
+            <p className="text-sm text-white/60">
+              Wydatki z widokiem plan/real + statusy (Planowane / W trakcie / Opłacone).
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          <button type="button" onClick={handleExportFinancePdf} className={btnGold}>
+            Pobierz PDF
+          </button>
+
+
+
+
+
           <button type="button" onClick={handleExportXlsx} disabled={isExporting} className={btnSecondary}>
             {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             {isExporting ? "Eksport…" : "Eksportuj XLSX"}
@@ -525,81 +751,59 @@ const Finance: React.FC = () => {
         </div>
       )}
 
-      {loading && (
-        <div className={`${cardBase} p-4`}>
-          <div className="text-sm text-white/65 inline-flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Ładowanie danych…
+      {/* Summary */}
+      <section className={cardBase + " p-5"}>
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="text-xs text-white/55">Plan</div>
+            <div className="mt-1 text-2xl font-bold text-white">
+              {money(totalPlanned)} {currency}
+            </div>
+            <div className="mt-2 inline-flex items-center gap-2 text-xs text-white/50">
+              <TrendingUp className="w-4 h-4" />
+              suma planowana
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="text-xs text-white/55">Faktycznie</div>
+            <div className="mt-1 text-2xl font-bold text-white">
+              {money(totalActual)} {currency}
+            </div>
+            <div className="mt-2 inline-flex items-center gap-2 text-xs text-white/50">
+              <TrendingDown className="w-4 h-4" />
+              suma faktyczna
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="text-xs text-white/55">Różnica</div>
+            <div className="mt-1 text-2xl font-bold text-white">
+              {money(diff)} {currency}
+            </div>
+            <div className="mt-2 inline-flex items-center gap-2 text-xs text-white/50">
+              <ArrowRightLeft className="w-4 h-4" />
+              plan vs real
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="text-xs text-white/55">Pozostało</div>
+            <div className="mt-1 text-2xl font-bold text-white">
+              {remaining === null || remaining === undefined ? "—" : `${money(remaining)} ${currency}`}
+            </div>
+            <div className="mt-2 inline-flex items-center gap-2 text-xs text-white/50">
+              <ArrowUpRight className="w-4 h-4" />
+              budżet - faktycznie
+            </div>
           </div>
         </div>
-      )}
+      </section>
 
-      {/* Summary (budżet z wywiadu) */}
-      {summary && (
-        <section className={`${cardBase} p-6 md:p-7`}>
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-[#d7b45a]" />
-              <h3 className="text-white font-semibold text-lg">Podsumowanie</h3>
-            </div>
-            <span className={chip}>{currency}</span>
-          </div>
-
-          <div className="text-xs text-white/55 mb-4">
-            Budżet ustawiasz w <b>Wywiadzie</b>. Tutaj wyświetlamy tylko podsumowania i listę wydatków.
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
-              <div className="text-xs text-white/55 mb-1">Suma planowana</div>
-              <div className="text-white text-lg font-semibold inline-flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-[#d7b45a]" />
-                {summary.total_planned.toFixed(2)} {summary.currency}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
-              <div className="text-xs text-white/55 mb-1">Suma faktyczna</div>
-              <div className="text-white text-lg font-semibold inline-flex items-center gap-2">
-                <TrendingDown className="w-4 h-4 text-[#d7b45a]" />
-                {summary.total_actual.toFixed(2)} {summary.currency}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
-              <div className="text-xs text-white/55 mb-1">Różnica (plan - faktycznie)</div>
-              <div className="text-white text-lg font-semibold inline-flex items-center gap-2">
-                <ArrowRightLeft className="w-4 h-4 text-[#d7b45a]" />
-                {summary.diff_planned_actual.toFixed(2)} {summary.currency}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
-              <div className="text-xs text-white/55 mb-1">Pozostały budżet</div>
-              <div className="text-white text-lg font-semibold inline-flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-[#d7b45a]" />
-                {summary.remaining_budget != null ? `${summary.remaining_budget.toFixed(2)} ${summary.currency}` : "—"}
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Filters + List (zintegrowane) */}
-      <section className={`${cardBase} p-0 overflow-hidden`}>
-        {/* sticky filters */}
-        <div className="sticky top-0 z-10 border-b border-white/10 bg-emerald-950/55 backdrop-blur-xl p-5">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div className="flex items-center gap-2">
-              <Filter className="w-5 h-5 text-[#d7b45a]" />
-              <h3 className="text-white font-semibold text-lg">Wydatki</h3>
-            </div>
-            <span className={chip}>
-              {filteredAndSortedExpenses.length} pozycji{activeFilters ? ` • filtry: ${activeFilters}` : ""}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+      {/* Filters + list */}
+      <section className={cardBase}>
+        <div className="p-5 border-b border-white/10">
+          <div className="grid gap-3 md:grid-cols-12">
             <div className="md:col-span-4">
               <label className="block text-xs text-white/70 mb-1">Szukaj</label>
               <div className="relative">
@@ -616,34 +820,23 @@ const Finance: React.FC = () => {
 
             <div className="md:col-span-2">
               <label className="block text-xs text-white/70 mb-1">Kategoria</label>
-              <select
-                className={selectBase}
+              <Select<ExpenseCategory | "all">
                 value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value as ExpenseCategory | "all")}
-              >
-                <option value="all">Wszystkie</option>
-                {CATEGORY_OPTIONS.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setFilterCategory(v)}
+                options={[{ value: "all", label: "Wszystkie" }, ...CATEGORY_OPTIONS]}
+              />
             </div>
 
             <div className="md:col-span-2">
               <label className="block text-xs text-white/70 mb-1">Status</label>
-              <select
-                className={selectBase}
+              <Select<ExpenseStatus | "all">
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as ExpenseStatus | "all")}
-              >
-                <option value="all">Wszystkie</option>
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setFilterStatus(v)}
+                options={[
+                  { value: "all", label: "Wszystkie" },
+                  ...STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label })),
+                ]}
+              />
             </div>
 
             <div className="md:col-span-2">
@@ -661,15 +854,18 @@ const Finance: React.FC = () => {
                   { value: "actual_amount", label: "Kwota faktyczna" },
                 ]}
               />
-
             </div>
 
             <div className="md:col-span-2">
               <label className="block text-xs text-white/70 mb-1">Kierunek</label>
-              <select className={selectBase} value={sortDirection} onChange={(e) => setSortDirection(e.target.value as "asc" | "desc")}>
-                <option value="asc">Rosnąco</option>
-                <option value="desc">Malejąco</option>
-              </select>
+              <Select<"asc" | "desc">
+                value={sortDirection}
+                onChange={(v) => setSortDirection(v)}
+                options={[
+                  { value: "asc", label: "Rosnąco" },
+                  { value: "desc", label: "Malejąco" },
+                ]}
+              />
             </div>
           </div>
 
@@ -682,7 +878,9 @@ const Finance: React.FC = () => {
                   Kategoria: {CATEGORY_OPTIONS.find((x) => x.value === filterCategory)?.label ?? filterCategory}
                 </span>
               )}
-              {filterStatus !== "all" && <span className={chip}>Status: {STATUS_OPTIONS.find((s) => s.value === filterStatus)?.label ?? filterStatus}</span>}
+              {filterStatus !== "all" && (
+                <span className={chip}>Status: {STATUS_OPTIONS.find((s) => s.value === filterStatus)?.label ?? filterStatus}</span>
+              )}
 
               <button
                 type="button"
@@ -709,13 +907,13 @@ const Finance: React.FC = () => {
               <table className="min-w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-white/5">
-                    <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">Nazwa</th>
                     <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">Status</th>
+                    <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">Termin / płatność</th>
+                    <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">Nazwa</th>
                     <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">Kategoria</th>
                     <th className="border-b border-white/10 px-3 py-3 text-right font-semibold text-white/70">Plan</th>
                     <th className="border-b border-white/10 px-3 py-3 text-right font-semibold text-white/70">Faktycznie</th>
                     <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">Usługodawca</th>
-                    <th className="border-b border-white/10 px-3 py-3 text-left font-semibold text-white/70">Termin / płatność</th>
                     <th className="border-b border-white/10 px-3 py-3 text-right font-semibold text-white/70">Akcje</th>
                   </tr>
                 </thead>
@@ -724,12 +922,28 @@ const Finance: React.FC = () => {
                   {filteredAndSortedExpenses.map((e) => {
                     const catLabel = CATEGORY_OPTIONS.find((c) => c.value === e.category)?.label || e.category;
                     const s = e.status;
-
-                    const dateLabel =
-                      s === "PAID" ? e.paid_date : s === "IN_PROGRESS" ? e.due_date : null;
+                    const dateISO = s === "PAID" ? e.paid_date : s === "IN_PROGRESS" ? e.due_date : null;
 
                     return (
-                      <tr key={e.id} className="hover:bg-white/4 transition">
+                      <tr key={e.id} className=" group transition hover:bg-white/[0.06] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]">
+                        <td className="border-b border-white/5 px-3 py-3">
+                          {getAllowedNextStatuses(s).length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => openStatusChange(e)}
+                              className="inline-flex focus:outline-none"
+                            >
+                              {statusPill(s, null, true)}
+                            </button>
+                          ) : (
+                            statusPill(s)
+                          )}
+
+                        </td>
+                        <td className="border-b border-white/5 px-3 py-3 text-white/75 whitespace-nowrap tabular-nums">
+                          {formatDateDMY(dateISO)}
+                        </td>
+
                         <td className="border-b border-white/5 px-3 py-3 text-white/85">
                           <div className="font-semibold text-white">{e.name}</div>
                           {e.notes ? (
@@ -738,8 +952,6 @@ const Finance: React.FC = () => {
                             </div>
                           ) : null}
                         </td>
-
-                        <td className="border-b border-white/5 px-3 py-3">{statusPill(s, dateLabel)}</td>
 
                         <td className="border-b border-white/5 px-3 py-3 text-white/75">{catLabel}</td>
 
@@ -753,21 +965,7 @@ const Finance: React.FC = () => {
 
                         <td className="border-b border-white/5 px-3 py-3 text-white/75">{e.vendor_name || "—"}</td>
 
-                        <td className="border-b border-white/5 px-3 py-3 text-white/75">
-                          {s === "PLANNED" ? (
-                            <span className="text-white/55">—</span>
-                          ) : s === "IN_PROGRESS" ? (
-                            <span className="inline-flex items-center gap-2">
-                              <CalendarDays className="w-4 h-4 text-white/40" />
-                              {e.due_date || "—"}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-2">
-                              <CalendarDays className="w-4 h-4 text-white/40" />
-                              {e.paid_date || "—"}
-                            </span>
-                          )}
-                        </td>
+                        
 
                         <td className="border-b border-white/5 px-3 py-3 text-right">
                           <div className="inline-flex items-center gap-2">
@@ -813,9 +1011,7 @@ const Finance: React.FC = () => {
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
                 <h3 className="text-xl font-semibold text-white">{editing ? "Edytuj wydatek" : "Dodaj wydatek"}</h3>
-                <p className="text-sm text-white/60 mt-1">
-                  Wybierz status — pola dopasują się do procesu (plan → w trakcie → opłacone).
-                </p>
+                <p className="text-sm text-white/60 mt-1">Wybierz status — pola dopasują się do procesu (plan → w trakcie → opłacone).</p>
               </div>
 
               <button
@@ -829,9 +1025,7 @@ const Finance: React.FC = () => {
             </div>
 
             {formError ? (
-              <div className="mb-4 rounded-xl border border-red-400/25 bg-red-500/10 p-3 text-sm text-red-100">
-                {formError}
-              </div>
+              <div className="mb-4 rounded-xl border border-red-400/25 bg-red-500/10 p-3 text-sm text-red-100">{formError}</div>
             ) : null}
 
             <div className="grid gap-3 md:grid-cols-3">
@@ -842,35 +1036,51 @@ const Finance: React.FC = () => {
 
               <div>
                 <label className="block text-xs text-white/70 mb-1">Kategoria *</label>
-                <select className={selectBase} value={fCategory} onChange={(e) => setFCategory(e.target.value as ExpenseCategory)}>
-                  {CATEGORY_OPTIONS.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
+                <Select<ExpenseCategory>
+                  value={fCategory}
+                  onChange={(v) => setFCategory(v)}
+                  options={CATEGORY_OPTIONS}
+                />
               </div>
 
               <div className="md:col-span-3">
                 <label className="block text-xs text-white/70 mb-1">Status *</label>
-                <select className={selectBase} value={fStatus} onChange={(e) => setFStatus(e.target.value as ExpenseStatus)}>
-                  {STATUS_OPTIONS.map((s) => (
-                    <option key={s.value} value={s.value}>
-                      {s.label} — {s.hint}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <Select<ExpenseStatus>
+                  value={fStatus}
+                  onChange={(v) => {
+                    setFStatus(v);
 
+                    // czyścimy sprzeczne pola, żeby nie zostawały stare wartości
+                    if (v === "PLANNED") {
+                      setFActual("");
+                      setFDue("");
+                      setFPaid("");
+                    } else if (v === "IN_PROGRESS") {
+                      setFPaid("");
+                    } else if (v === "PAID") {
+                      setFDue("");
+                    }
+                  }}
+                  options={STATUS_OPTIONS.map((s) => ({
+                    value: s.value,
+                    label: `${s.label} — ${s.hint}`,
+                  }))}
+                />
+              </div>
               <div>
                 <label className="block text-xs text-white/70 mb-1">Kwota planowana</label>
                 <input type="number" step="0.01" className={inputBase} value={fPlanned} onChange={(e) => setFPlanned(e.target.value)} placeholder="np. 3500" />
               </div>
 
-              <div>
-                <label className="block text-xs text-white/70 mb-1">Kwota faktyczna {fStatus === "PLANNED" ? "(opcjonalnie)" : "*"}</label>
-                <input type="number" step="0.01" className={inputBase} value={fActual} onChange={(e) => setFActual(e.target.value)} placeholder="np. 3200" />
-              </div>
+              {/* ✅ Planowane: bez kwoty faktycznej */}
+              {fStatus !== "PLANNED" ? (
+                <div>
+                  <label className="block text-xs text-white/70 mb-1">Kwota faktyczna *</label>
+                  <input type="number" step="0.01" className={inputBase} value={fActual} onChange={(e) => setFActual(e.target.value)} placeholder="np. 3200" />
+                </div>
+              ) : (
+                <div className="hidden md:block" />
+              )}
 
               <div>
                 <label className="block text-xs text-white/70 mb-1">Usługodawca (opcjonalnie)</label>
@@ -881,26 +1091,16 @@ const Finance: React.FC = () => {
               {fStatus === "IN_PROGRESS" ? (
                 <div className="md:col-span-1">
                   <label className="block text-xs text-white/70 mb-1">Termin płatności *</label>
-                  <input
-                    type="date"
-                    className={inputBase}
-                    value={fDue}
-                    min={todayISO()}
-                    onChange={(e) => setFDue(e.target.value)}
-                  />
+                  <DatePicker value={scDue} onChange={setScDue} minDate={todayISO()} />
+                  <div className="text-[11px] text-white/45 mt-1">Nie może być w przeszłości.</div>
                 </div>
               ) : null}
 
               {fStatus === "PAID" ? (
                 <div className="md:col-span-1">
                   <label className="block text-xs text-white/70 mb-1">Data płatności *</label>
-                  <input
-                    type="date"
-                    className={inputBase}
-                    value={fPaid}
-                    max={todayISO()}
-                    onChange={(e) => setFPaid(e.target.value)}
-                  />
+                  <DatePicker value={scPaid} onChange={setScPaid} maxDate={todayISO()} />
+                  <div className="text-[11px] text-white/45 mt-1">Nie może być w przyszłości.</div>
                 </div>
               ) : null}
 
@@ -923,6 +1123,199 @@ const Finance: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* MODAL status-change */}
+{statusModalOpen && statusEditing ? (() => {
+  const se = statusEditing;
+  const allowed = getAllowedNextStatuses(se.status);
+
+const statusLabel = (st: ExpenseStatus) =>
+  STATUS_OPTIONS.find((x) => x.value === st)?.label ?? st;
+
+const selectOptions = [
+  { value: se.status, label: `Obecny: ${statusLabel(se.status)}`, disabled: true },
+  ...allowed.map((st) => ({ value: st, label: statusLabel(st) })),
+];
+
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999999] flex items-center justify-center"
+      style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
+    >
+      <div className="absolute inset-0" onClick={closeStatusModal} />
+
+      <div className="relative w-full max-w-3xl p-6 overflow-y-auto max-h-[90vh] rounded-2xl shadow-2xl border border-white/10 bg-emerald-950/70 text-white backdrop-blur-xl">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <h3 className="text-xl font-semibold text-white">Zmień status wydatku</h3>
+            <p className="text-sm text-white/60 mt-1">
+              Status może iść tylko do przodu. Dane bazowe są tylko do podglądu.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={closeStatusModal}
+            className="rounded-xl border border-white/10 bg-white/5 p-2 hover:bg-white/10 transition"
+            title="Zamknij"
+          >
+            <X className="w-4 h-4 text-white/80" />
+          </button>
+        </div>
+
+        {scError ? (
+          <div className="mb-4 rounded-xl border border-red-400/25 bg-red-500/10 p-3 text-sm text-red-100">
+            {scError}
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* LEFT: informacje */}
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="text-sm font-semibold text-white mb-2">Obecne dane</div>
+
+            {infoLine(
+              "Status",
+              statusPill(
+                se.status,
+                se.status === "PAID" ? se.paid_date : se.status === "IN_PROGRESS" ? se.due_date : null
+              )
+            )}
+            {infoLine("Nazwa", <span className="font-semibold">{se.name}</span>)}
+            {infoLine("Kategoria", CATEGORY_OPTIONS.find((c) => c.value === se.category)?.label ?? se.category)}
+            {infoLine("Kwota planowana", `${money(se.planned_amount)} ${currency}`)}
+            {infoLine("Kwota faktyczna", `${money(se.actual_amount)} ${currency}`)}
+            {infoLine("Usługodawca", se.vendor_name || "—")}
+            {infoLine("Notatki", se.notes ? <span className="text-white/80">{se.notes}</span> : "—")}
+            {infoLine("Termin płatności", se.due_date || "—")}
+            {infoLine("Data płatności", se.paid_date || "—")}
+          </div>
+
+          {/* RIGHT: formularz przejścia */}
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="text-sm font-semibold text-white mb-2">Aktualizacja</div>
+
+            {/* OBECNY + ZMIEŃ NA */}
+            <div className="mb-3">
+              
+
+              <div className="mt-3">
+                <label className="block text-xs text-white/70 mb-1">Zmień na *</label>
+                <Select<ExpenseStatus>
+                  value={(nextStatus || allowed[0]) as ExpenseStatus}
+                  onChange={(v) => {
+                    // blokujemy wybór “Obecny”
+                    if (v === se.status) return;
+
+                    setNextStatus(v);
+
+                    // czyścimy pola zależne
+                    if (v === "IN_PROGRESS") setScPaid("");
+                    if (v === "PAID") {
+                      // nic obowiązkowo; scDue zostaje jako info jeśli przejście z IN_PROGRESS
+                    }
+                  }}
+                  options={selectOptions}
+                />
+
+
+              </div>
+            </div>
+
+            {/* Pola zależne od przejścia */}
+            <div className="grid gap-3">
+              <div>
+                <label className="block text-xs text-white/70 mb-1">Kwota faktyczna *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className={inputBase}
+                  value={scActual}
+                  onChange={(e) => setScActual(e.target.value)}
+                  placeholder="np. 3200"
+                />
+              </div>
+
+              {/* Planowane -> W trakcie */}
+              {se.status === "PLANNED" && nextStatus === "IN_PROGRESS" ? (
+                <div>
+                  <label className="block text-xs text-white/70 mb-1">Termin płatności *</label>
+                  <DatePicker value={scDue} onChange={setScDue} minDate={todayISO()} />
+                  <div className="text-[11px] text-white/45 mt-1">Nie może być w przeszłości.</div>
+                </div>
+              ) : null}
+
+              {/* Planowane -> Opłacone OR W trakcie -> Opłacone */}
+              {nextStatus === "PAID" ? (
+                <div>
+                  <label className="block text-xs text-white/70 mb-1">Data płatności *</label>
+                  <DatePicker value={scPaid} onChange={setScPaid} maxDate={todayISO()} />
+                  <div className="text-[11px] text-white/45 mt-1">Nie może być w przyszłości.</div>
+                </div>
+              ) : null}
+
+              {/* Opcjonalne: tylko jeśli były puste */}
+              {!se.vendor_name ? (
+                <div>
+                  <label className="block text-xs text-white/70 mb-1">Usługodawca (opcjonalnie)</label>
+                  <input
+                    className={inputBase}
+                    value={scVendor}
+                    onChange={(e) => setScVendor(e.target.value)}
+                    placeholder="np. Studio XYZ"
+                  />
+                </div>
+              ) : (
+                <div className="rounded-xl border border-white/10 bg-black/10 p-3">
+                  <div className="text-xs text-white/55">Usługodawca</div>
+                  <div className="text-sm text-white mt-1">{se.vendor_name}</div>
+                </div>
+              )}
+
+              {!se.notes ? (
+                <div>
+                  <label className="block text-xs text-white/70 mb-1">Notatki (opcjonalnie)</label>
+                  <textarea
+                    className={inputBase + " min-h-[84px] resize-none"}
+                    value={scNotes}
+                    onChange={(e) => setScNotes(e.target.value)}
+                    placeholder="Dodaj notatkę (np. warunki / umowa)…"
+                  />
+                </div>
+              ) : (
+                <div className="rounded-xl border border-white/10 bg-black/10 p-3">
+                  <div className="text-xs text-white/55">Notatki</div>
+                  <div className="text-sm text-white/90 mt-1">{se.notes}</div>
+                </div>
+              )}
+
+              {/* informacja przy IN_PROGRESS -> PAID */}
+              {se.status === "IN_PROGRESS" && nextStatus === "PAID" ? (
+                <div className="rounded-xl border border-white/10 bg-black/10 p-3">
+                  <div className="text-xs text-white/55">Termin płatności (info)</div>
+                  <div className="text-sm text-white mt-1">{se.due_date || "—"}</div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={closeStatusModal} className={btnSecondary}>
+                Anuluj
+              </button>
+
+              <button type="button" onClick={handleApplyStatusChange} disabled={isSavingStatus} className={btnGold}>
+                {isSavingStatus ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Zapisz zmianę
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+})() : null}
+
     </div>
   );
 };

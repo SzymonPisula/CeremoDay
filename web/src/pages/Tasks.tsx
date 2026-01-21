@@ -1,15 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Calendar, CheckSquare, Clock, ListChecks, Loader2, Trash2 } from "lucide-react";
+import {
+  Calendar,
+  Clock,
+  ListChecks,
+  Loader2,
+  Trash2,
+  Pencil,
+  Plus,
+} from "lucide-react";
+
 import { api } from "../lib/api";
 import type { Task, TaskCategory, TaskStatus, TaskPayload } from "../types/task";
-import Select from "../ui/Select";
-import DatePicker from "../ui/DatePicker";
 
-type Params = {
-  id: string;
-};
+import TaskStatusInline from "../components/tasks/TaskStatusInline";
+import TaskCreateEditModal from "../components/tasks/TaskCreateEditModal";
 
+type Params = { id: string };
 type ViewMode = "list" | "timeline" | "calendar";
 
 const CATEGORY_LABELS: Record<TaskCategory, string> = {
@@ -33,19 +40,9 @@ function parseDate(dateStr?: string | null): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-// Format jak "2025-02-15"
-function formatDateInputValue(dateStr?: string | null): string {
-  const d = parseDate(dateStr);
-  if (!d) return "";
-  const year = d.getFullYear();
-  const month = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 function formatDisplayDate(dateStr?: string | null): string {
   const d = parseDate(dateStr);
-  if (!d) return "Brak terminu";
+  if (!d) return "—";
   return d.toLocaleDateString("pl-PL", {
     year: "numeric",
     month: "short",
@@ -63,13 +60,14 @@ export default function Tasks() {
 
   const [viewMode, setViewMode] = useState<ViewMode>("list");
 
-  const [statusFilter, setStatusFilter] = useState<TaskStatus | "all">("all");
-  const [categoryFilter, setCategoryFilter] = useState<TaskCategory | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<Set<TaskStatus>>(new Set());
+  const [categoryFilter, setCategoryFilter] = useState<Set<TaskCategory>>(new Set());
 
-  // szybkie dodanie
-  const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newTaskCategory, setNewTaskCategory] = useState<TaskCategory>("FORMALNOSCI");
-  const [newTaskDueDate, setNewTaskDueDate] = useState<string>("");
+
+  // modal create/edit
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   // kalendarz
   const [calendarMonth, setCalendarMonth] = useState(() => {
@@ -79,12 +77,6 @@ export default function Tasks() {
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
   // === UI helpers: CeremoDay CRM vibe ===
-  const inputBase =
-    "w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-white placeholder:text-white/35 " +
-    "outline-none focus:border-[#c8a04b]/50 focus:ring-2 focus:ring-[#c8a04b]/15 transition";
-
-
-
   const chip =
     "inline-flex items-center gap-2 px-3 py-1 rounded-full " +
     "border border-white/10 bg-white/5 text-white/80 text-xs";
@@ -128,48 +120,58 @@ export default function Tasks() {
     fetchTasks();
   }, [eventId]);
 
-  const handleCreateTask = async () => {
-    if (!eventId) return;
-    if (!newTaskTitle.trim()) {
-      alert("Podaj tytuł zadania");
-      return;
-    }
+  const openCreate = () => {
+    setModalMode("create");
+    setEditingTask(null);
+    setModalOpen(true);
+  };
 
-    const payload: TaskPayload = {
-      title: newTaskTitle.trim(),
-      category: newTaskCategory,
-      status: "pending",
-      due_date: newTaskDueDate || undefined,
-    };
+  const openEdit = (task: Task) => {
+    setModalMode("edit");
+    setEditingTask(task);
+    setModalOpen(true);
+  };
+
+  const handleSubmitModal = async (payload: TaskPayload) => {
+    if (!eventId) return;
 
     try {
-      setSavingId("new");
+      setSavingId("modal");
       setError(null);
-      const created = await api.createTask(eventId, payload);
-      setTasks((prev) => {
-        const arr = Array.isArray(created) ? created : [created];
-        return arr.length === 1 ? [...prev, arr[0]] : [...prev, ...arr];
-      });
-      setNewTaskTitle("");
-      setNewTaskDueDate("");
+
+      if (modalMode === "create") {
+        const created = await api.createTask(eventId, payload);
+        setTasks((prev) => {
+          const arr = Array.isArray(created) ? created : [created];
+          return arr.length === 1 ? [...prev, arr[0]] : [...prev, ...arr];
+        });
+      } else if (modalMode === "edit" && editingTask) {
+        const updated = await api.updateTask(editingTask.id, payload);
+        setTasks((prev) =>
+          prev.map((t) => (t.id === editingTask.id ? (updated as Task) : t))
+        );
+      }
+
+      setModalOpen(false);
+      setEditingTask(null);
     } catch (err) {
-      console.error("❌ Błąd tworzenia zadania:", err);
-      setError("Nie udało się dodać zadania");
+      console.error("❌ Błąd zapisu zadania:", err);
+      setError("Nie udało się zapisać zadania");
     } finally {
       setSavingId(null);
     }
   };
 
-  const handleToggleStatus = async (task: Task) => {
-    const nextStatus: TaskStatus =
-      task.status === "pending"
-        ? "in_progress"
-        : task.status === "in_progress"
-        ? "done"
-        : "pending";
+  const handleChangeStatus = async (task: Task, nextStatus: TaskStatus) => {
+    // reguła: tylko do przodu
+    const order: TaskStatus[] = ["pending", "in_progress", "done"];
+    const curIdx = order.indexOf(task.status);
+    const nextIdx = order.indexOf(nextStatus);
+    if (nextIdx < curIdx) return; // blokada cofania
 
     try {
       setSavingId(task.id);
+      setError(null);
       const updated = await api.updateTask(task.id, { status: nextStatus });
       setTasks((prev) => prev.map((t) => (t.id === task.id ? (updated as Task) : t)));
     } catch (err) {
@@ -180,23 +182,11 @@ export default function Tasks() {
     }
   };
 
-  const handleUpdateTaskDate = async (task: Task, newDate: string) => {
-    try {
-      setSavingId(task.id);
-      const updated = await api.updateTask(task.id, { due_date: newDate || null });
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? (updated as Task) : t)));
-    } catch (err) {
-      console.error("❌ Błąd zmiany daty zadania:", err);
-      setError("Nie udało się zmienić daty zadania");
-    } finally {
-      setSavingId(null);
-    }
-  };
-
   const handleDeleteTask = async (task: Task) => {
     if (!window.confirm("Na pewno chcesz usunąć to zadanie?")) return;
     try {
       setSavingId(task.id);
+      setError(null);
       await api.deleteTask(task.id);
       setTasks((prev) => prev.filter((t) => t.id !== task.id));
     } catch (err) {
@@ -209,12 +199,20 @@ export default function Tasks() {
 
   // filtrowanie
   const filteredTasks = useMemo(() => {
-    return tasks.filter((t) => {
-      if (statusFilter !== "all" && t.status !== statusFilter) return false;
-      if (categoryFilter !== "all" && t.category !== categoryFilter) return false;
-      return true;
-    });
-  }, [tasks, statusFilter, categoryFilter]);
+  return tasks.filter((t) => {
+    // Status: jeśli set pusty => wszystkie
+    if (statusFilter.size > 0 && !statusFilter.has(t.status)) return false;
+
+    // Kategoria: jeśli set pusty => wszystkie
+    if (categoryFilter.size > 0) {
+      if (!t.category) return false;
+      if (!categoryFilter.has(t.category)) return false;
+    }
+
+    return true;
+  });
+}, [tasks, statusFilter, categoryFilter]);
+
 
   // timeline: grupowanie po miesiącu due_date
   const timelineGroups = useMemo(() => {
@@ -239,9 +237,9 @@ export default function Tasks() {
   // kalendarz: siatka
   const calendarData = useMemo(() => {
     const year = calendarMonth.getFullYear();
-    const month = calendarMonth.getMonth(); // 0-11
+    const month = calendarMonth.getMonth();
     const firstDay = new Date(year, month, 1);
-    const firstWeekday = firstDay.getDay() === 0 ? 7 : firstDay.getDay(); // 1-7, pon=1
+    const firstWeekday = firstDay.getDay() === 0 ? 7 : firstDay.getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     const cells: { date: Date | null; tasks: Task[] }[] = [];
@@ -282,17 +280,127 @@ export default function Tasks() {
     });
   };
 
-  const statusOptions: (TaskStatus | "all")[] = ["all", "pending", "in_progress", "done"];
-  const categoryOptions: (TaskCategory | "all")[] = [
-    "all",
-    "FORMALNOSCI",
-    "ORGANIZACJA",
-    "USLUGI",
-    "DEKORACJE",
-    "LOGISTYKA",
-    "DZIEN_SLUBU",
-  ];
+  const statusOptions: TaskStatus[] = ["pending", "in_progress", "done"];
+const categoryOptions: TaskCategory[] = [
+  "FORMALNOSCI",
+  "ORGANIZACJA",
+  "USLUGI",
+  "DEKORACJE",
+  "LOGISTYKA",
+  "DZIEN_SLUBU",
+];
+
   const weekDayLabels = ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"];
+
+  const FiltersHeader = () => (
+    <div className="mb-4">
+      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="text-white font-semibold">Filtry</span>
+          <span className={chip}>{filteredTasks.length} szt.</span>
+          {loading && (
+            <span className="text-xs text-white/55 inline-flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Wczytywanie…
+            </span>
+          )}
+        </div>
+
+        <button type="button" onClick={openCreate} className={btnGold}>
+          <Plus className="w-4 h-4" />
+          Dodaj zadanie
+        </button>
+      </div>
+
+      {/* Statusy */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+  {/* Wszystkie = reset */}
+  <button
+    type="button"
+    onClick={() => setStatusFilter(new Set())}
+    className={
+      "px-3 py-1 rounded-full border text-xs transition " +
+      (statusFilter.size === 0
+        ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
+        : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
+    }
+  >
+    Wszystkie
+  </button>
+
+  {statusOptions.map((s) => {
+    const active = statusFilter.has(s);
+    return (
+      <button
+        key={s}
+        type="button"
+        onClick={() => {
+          setStatusFilter((prev) => {
+            const next = new Set(prev);
+            if (next.has(s)) next.delete(s);
+            else next.add(s);
+            return next;
+          });
+        }}
+        className={
+          "px-3 py-1 rounded-full border text-xs transition " +
+          (active
+            ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
+            : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
+        }
+      >
+        {STATUS_LABELS[s]}
+      </button>
+    );
+  })}
+</div>
+
+
+      {/* Kategorie */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+  {/* Wszystkie = reset */}
+  <button
+    type="button"
+    onClick={() => setCategoryFilter(new Set())}
+    className={
+      "px-3 py-1 rounded-full border text-xs transition " +
+      (categoryFilter.size === 0
+        ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
+        : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
+    }
+  >
+    Wszystkie
+  </button>
+
+  {categoryOptions.map((c) => {
+    const active = categoryFilter.has(c);
+    return (
+      <button
+        key={c}
+        type="button"
+        onClick={() => {
+          setCategoryFilter((prev) => {
+            const next = new Set(prev);
+            if (next.has(c)) next.delete(c);
+            else next.add(c);
+            return next;
+          });
+        }}
+        className={
+          "px-3 py-1 rounded-full border text-xs transition " +
+          (active
+            ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
+            : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
+        }
+      >
+        {CATEGORY_LABELS[c]}
+      </button>
+    );
+  })}
+</div>
+
+    </div>
+  );
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -319,7 +427,6 @@ export default function Tasks() {
               viewMode === "list" ? "bg-[#c8a04b]/15 text-white" : "text-white/60 hover:text-white"
             }`}
           >
-            <CheckSquare className="w-3 h-3" />
             Lista
           </button>
           <button
@@ -351,197 +458,100 @@ export default function Tasks() {
         </div>
       )}
 
-      {/* Filters + quick add */}
-      <div className={`${cardBase} p-6 md:p-7 mb-6`}>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {/* Status */}
-          <div>
-            <div className="text-white font-semibold mb-2">Status</div>
-            <div className="flex flex-wrap gap-2">
-              {statusOptions.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setStatusFilter(s)}
-                  className={
-                    "px-3 py-1 rounded-full border text-xs transition " +
-                    (statusFilter === s
-                      ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
-                      : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
-                  }
-                >
-                  {s === "all" ? "Wszystkie" : STATUS_LABELS[s]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Category */}
-          <div>
-            <div className="text-white font-semibold mb-2">Kategoria</div>
-            <div className="flex flex-wrap gap-2">
-              {categoryOptions.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setCategoryFilter(c)}
-                  className={
-                    "px-3 py-1 rounded-full border text-xs transition " +
-                    (categoryFilter === c
-                      ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
-                      : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
-                  }
-                >
-                  {c === "all" ? "Wszystkie" : CATEGORY_LABELS[c as TaskCategory]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Quick add */}
-          <div>
-            <div className="text-white font-semibold mb-2">Szybkie dodanie</div>
-            <div className="space-y-2">
-              <input
-                type="text"
-                placeholder="Tytuł zadania…"
-                value={newTaskTitle}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
-                className={inputBase}
-              />
-              <div className="flex gap-2">
-                <Select<TaskCategory>
-  value={newTaskCategory}
-  onChange={(v) => setNewTaskCategory(v)}
-  options={[
-    { value: "FORMALNOSCI", label: CATEGORY_LABELS.FORMALNOSCI },
-    { value: "ORGANIZACJA", label: CATEGORY_LABELS.ORGANIZACJA },
-    { value: "USLUGI", label: CATEGORY_LABELS.USLUGI },
-    { value: "DEKORACJE", label: CATEGORY_LABELS.DEKORACJE },
-    { value: "LOGISTYKA", label: CATEGORY_LABELS.LOGISTYKA },
-    { value: "DZIEN_SLUBU", label: CATEGORY_LABELS.DZIEN_SLUBU },
-  ]}
-/>
-
-<div className="w-[180px]">
-  <DatePicker
-    value={newTaskDueDate}
-    onChange={setNewTaskDueDate}
-    placeholder="Termin"
-    className="w-full"
-    buttonClassName="py-2 text-sm"
-  />
-</div>
-
-
-
-              </div>
-
-              <button
-                type="button"
-                onClick={handleCreateTask}
-                disabled={savingId === "new"}
-                className={btnGold + " w-full"}
-              >
-                {savingId === "new" ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Dodawanie…
-                  </>
-                ) : (
-                  "Dodaj zadanie"
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Views */}
+      {/* LIST */}
       {viewMode === "list" && (
         <div className={cardBase + " p-6 md:p-7"}>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-white font-semibold">Lista zadań</h3>
-            <span className={chip}>{filteredTasks.length} szt.</span>
+          <FiltersHeader />
+
+          {/* table header */}
+          <div className="hidden lg:grid grid-cols-[180px_140px_220px_1fr_170px_140px] gap-3 px-3 py-2 text-xs text-white/60 border-b border-white/10">
+            <div>Status</div>
+            <div>Termin</div>
+            <div>Tytuł</div>
+            <div>Opis</div>
+            <div>Kategoria</div>
+            <div className="text-right">Akcje</div>
           </div>
 
-          {loading && (
-            <div className="text-xs text-white/55 mb-3 inline-flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Wczytywanie…
-            </div>
-          )}
-
           {filteredTasks.length === 0 && !loading && (
-            <p className="text-sm text-white/55">
+            <p className="text-sm text-white/55 mt-4">
               Brak zadań spełniających filtry. Dodaj zadanie lub zmień filtry.
             </p>
           )}
 
-          <div className="space-y-3">
+          <div className="space-y-2 mt-3">
             {filteredTasks.map((task) => (
-              <div key={task.id} className="rounded-2xl border border-white/10 bg-white/4 p-4">
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleStatus(task)}
-                      className={
-                        "mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center transition " +
-                        (task.status === "done"
-                          ? "bg-emerald-500/80 border-emerald-400/60"
-                          : task.status === "in_progress"
-                          ? "bg-amber-400/15 border-amber-300/40"
-                          : "bg-white/5 border-white/10 hover:bg-white/10")
-                      }
-                      title="Zmień status"
-                    >
-                      {task.status === "done" ? (
-                        <span className="text-[11px] text-white">✓</span>
-                      ) : task.status === "in_progress" ? (
-                        <span className="text-[10px] text-amber-200">•</span>
-                      ) : null}
-                    </button>
-
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-white">{task.title}</span>
-                        {task.category && <span className={chip}>{CATEGORY_LABELS[task.category]}</span>}
-                        <span className="text-xs text-white/55">{STATUS_LABELS[task.status]}</span>
-                        {savingId === task.id && (
-                          <span className="text-xs text-white/45 inline-flex items-center gap-2">
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            zapis…
-                          </span>
-                        )}
-                      </div>
-                      {task.description && (
-                        <p className="text-sm text-white/60 mt-2">{task.description}</p>
-                      )}
-                    </div>
+              <div key={task.id} className="rounded-2xl border border-white/10 bg-white/4 p-3">
+                <div className="grid grid-cols-1 lg:grid-cols-[180px_140px_220px_1fr_170px_140px] gap-3 items-start">
+                  {/* Status */}
+                  <div className="flex items-center">
+                    <TaskStatusInline
+                      value={task.status}
+                      isSaving={savingId === task.id}
+                      forwardOnly={true}
+                      onChange={(next) => handleChangeStatus(task, next)}
+                    />
                   </div>
 
-                  <div className="flex flex-col items-start md:items-end gap-2">
-                    <div className="text-xs text-white/55">{formatDisplayDate(task.due_date)}</div>
-                    <DatePicker
-                      value={formatDateInputValue(task.due_date)}
-                      onChange={(v) => handleUpdateTaskDate(task, v)}
-                      className="w-[220px]"
-                      buttonClassName="py-2 text-sm"
-                    />
+                  {/* Termin */}
+                  <div className="text-sm text-white/80">
+                    {task.due_date ? formatDisplayDate(task.due_date) : "—"}
+                  </div>
 
+                  {/* Tytuł */}
+                  <div className="text-sm text-white font-semibold break-words">
+                    {task.title}
+                  </div>
 
+                  {/* Opis */}
+                  <div className="text-sm text-white/60 break-words">
+                    {task.description ? task.description : "—"}
+                  </div>
 
+                  {/* Kategoria */}
+                  <div className="text-sm text-white/80">
+                    {task.category ? CATEGORY_LABELS[task.category] : "—"}
+                  </div>
 
+                  {/* Akcje */}
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(task)}
+                      className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white hover:bg-white/10 transition"
+                      title="Edytuj"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleDeleteTask(task)}
-                      className="inline-flex items-center gap-2 text-xs text-white/55 hover:text-red-200"
+                      className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-red-200 hover:bg-white/10 transition"
+                      title="Usuń"
                     >
                       <Trash2 className="w-4 h-4" />
-                      Usuń
                     </button>
                   </div>
+                </div>
+
+                {/* mobile info */}
+                <div className="lg:hidden mt-3 pt-3 border-t border-white/10 text-xs text-white/60 flex flex-wrap gap-3">
+                  <span>
+                    Termin:{" "}
+                    <span className="text-white/80">
+                      {task.due_date ? formatDisplayDate(task.due_date) : "—"}
+                    </span>
+                  </span>
+                  <span>
+                    Kategoria:{" "}
+                    <span className="text-white/80">
+                      {task.category ? CATEGORY_LABELS[task.category] : "—"}
+                    </span>
+                  </span>
+                  <span>
+                    Status:{" "}
+                    <span className="text-white/80">{STATUS_LABELS[task.status]}</span>
+                  </span>
                 </div>
               </div>
             ))}
@@ -549,14 +559,10 @@ export default function Tasks() {
         </div>
       )}
 
+      {/* TIMELINE */}
       {viewMode === "timeline" && (
         <div className={cardBase + " p-6 md:p-7"}>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-white font-semibold">Oś czasu</h3>
-            <span className={chip}>
-              {timelineGroups.keys.length + (timelineGroups.noDate.length ? 1 : 0)} grup
-            </span>
-          </div>
+          <FiltersHeader />
 
           {timelineGroups.keys.length === 0 && timelineGroups.noDate.length === 0 && (
             <p className="text-sm text-white/55">
@@ -581,7 +587,11 @@ export default function Tasks() {
                   <div className="ml-3 space-y-2">
                     {tasksInGroup
                       .slice()
-                      .sort((a, b) => (parseDate(a.due_date)?.getTime() ?? 0) - (parseDate(b.due_date)?.getTime() ?? 0))
+                      .sort(
+                        (a, b) =>
+                          (parseDate(a.due_date)?.getTime() ?? 0) -
+                          (parseDate(b.due_date)?.getTime() ?? 0)
+                      )
                       .map((task) => (
                         <div
                           key={task.id}
@@ -589,17 +599,38 @@ export default function Tasks() {
                         >
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
+                              <TaskStatusInline
+                                value={task.status}
+                                isSaving={savingId === task.id}
+                                forwardOnly={true}
+                                onChange={(next) => handleChangeStatus(task, next)}
+                              />
                               <span className="font-semibold text-white truncate">{task.title}</span>
                               {task.category && <span className={chip}>{CATEGORY_LABELS[task.category]}</span>}
-                              <span className="text-xs text-white/55">{STATUS_LABELS[task.status]}</span>
+                              <span className="text-xs text-white/55">{formatDisplayDate(task.due_date)}</span>
                             </div>
                             {task.description && (
-                              <p className="text-sm text-white/60 mt-1">{task.description}</p>
+                              <p className="text-sm text-white/60 mt-2 break-words">{task.description}</p>
                             )}
                           </div>
 
-                          <div className="text-xs text-white/55 md:text-right">
-                            {formatDisplayDate(task.due_date)}
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openEdit(task)}
+                              className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white hover:bg-white/10 transition"
+                              title="Edytuj"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTask(task)}
+                              className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-red-200 hover:bg-white/10 transition"
+                              title="Usuń"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -623,17 +654,38 @@ export default function Tasks() {
                     >
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
+                          <TaskStatusInline
+                            value={task.status}
+                            isSaving={savingId === task.id}
+                            forwardOnly={true}
+                            onChange={(next) => handleChangeStatus(task, next)}
+                          />
                           <span className="font-semibold text-white truncate">{task.title}</span>
                           {task.category && <span className={chip}>{CATEGORY_LABELS[task.category]}</span>}
-                          <span className="text-xs text-white/55">{STATUS_LABELS[task.status]}</span>
+                          <span className="text-xs text-white/55">Brak terminu</span>
                         </div>
                         {task.description && (
-                          <p className="text-sm text-white/60 mt-1">{task.description}</p>
+                          <p className="text-sm text-white/60 mt-2 break-words">{task.description}</p>
                         )}
                       </div>
 
-                      <div className="text-xs text-white/55 md:text-right">
-                        Brak terminu
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(task)}
+                          className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white hover:bg-white/10 transition"
+                          title="Edytuj"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTask(task)}
+                          className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-red-200 hover:bg-white/10 transition"
+                          title="Usuń"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -644,8 +696,11 @@ export default function Tasks() {
         </div>
       )}
 
+      {/* CALENDAR */}
       {viewMode === "calendar" && (
         <div className={cardBase + " p-6 md:p-7"}>
+          <FiltersHeader />
+
           <div className="flex items-center justify-between gap-3 mb-4">
             <h3 className="text-white font-semibold">Kalendarz zadań</h3>
 
@@ -774,14 +829,38 @@ export default function Tasks() {
                     >
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
+                          <TaskStatusInline
+                            value={task.status}
+                            isSaving={savingId === task.id}
+                            forwardOnly={true}
+                            onChange={(next) => handleChangeStatus(task, next)}
+                          />
                           <span className="font-semibold text-white">{task.title}</span>
                           {task.category && <span className={chip}>{CATEGORY_LABELS[task.category]}</span>}
                         </div>
                         {task.description && (
-                          <p className="text-sm text-white/60 mt-2">{task.description}</p>
+                          <p className="text-sm text-white/60 mt-2 break-words">{task.description}</p>
                         )}
                       </div>
-                      <div className="text-xs text-white/55">{STATUS_LABELS[task.status]}</div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(task)}
+                          className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white hover:bg-white/10 transition"
+                          title="Edytuj"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTask(task)}
+                          className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-red-200 hover:bg-white/10 transition"
+                          title="Usuń"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   ))}
 
@@ -795,14 +874,21 @@ export default function Tasks() {
               </div>
             </div>
           )}
-
-          {filteredTasks.length === 0 && !loading && (
-            <p className="mt-4 text-sm text-white/55">
-              Brak zadań spełniających filtry – dodaj zadanie w widoku listy.
-            </p>
-          )}
         </div>
       )}
+
+      {/* modal create/edit */}
+      <TaskCreateEditModal
+        open={modalOpen}
+        mode={modalMode}
+        initialTask={editingTask}
+        saving={savingId === "modal"}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingTask(null);
+        }}
+        onSubmit={handleSubmitModal}
+      />
     </div>
   );
 }

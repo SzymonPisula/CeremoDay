@@ -87,3 +87,14 @@ export type ReportsSummary = {
     missingData: Array<{ id: string; name: string; missing: string[] }>;
   };
 };
+
+export type ReportSectionKey = "summary" | "guests" | "finance" | "tasks" | "docsVendors";
+
+export type ReportExportPdfBody = {
+  sections?: ReportSectionKey[];
+  includeCharts?: boolean;
+  includeAlerts?: boolean;
+  includeLongLists?: boolean;
+  listLimit?: 10 | 20 | 50;
+};
+

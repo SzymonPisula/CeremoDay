@@ -33,8 +33,19 @@ import type {
 import type { MeResponse, UpdateMePayload } from "../types/User";
 import type { EventUsersResponse } from "../types/eventUsers";
 
+import {
+  saveLocalDocumentFile,
+  getLocalDocumentFile,
+  deleteLocalDocumentFile,
+} from "../services/localDocumentStorage";
+import { ReportExportPdfBody } from "../types/reports";
 
-
+// helper: id bez uuid
+const makeId = (): string => {
+  const g = globalThis as unknown as { crypto?: { randomUUID?: () => string } };
+  if (g.crypto?.randomUUID) return g.crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
 
 export const BASE_URL = "http://localhost:4000";
 
@@ -275,165 +286,142 @@ export const api = {
   }),
 
 
-  // -----------------------------
-  // DOCUMENTS 2.0
-  // -----------------------------
-  /**
-   * Lista dokumentów dla wydarzenia.
-   * Backend: GET /documents/event/:eventId
-   */
-  getDocuments: (eventId: string): Promise<Document[]> =>
-    request<Document[]>(`/documents/event/${eventId}`),
 
 
-    generateDefaultDocuments: (
-    eventId: string,
-    ceremonyType: "civil" | "concordat",
-    includeExtras = true
-  ): Promise<Document[]> =>
-    request<Document[]>(`/documents/event/${eventId}/generate-default`, {
+// -----------------------------
+// DOCUMENTS 2.0
+// -----------------------------
+getDocuments: (eventId: string): Promise<Document[]> =>
+  request<Document[]>(`/documents/event/${eventId}`),
+
+generateDefaultDocuments: (
+  eventId: string,
+  ceremonyType: "civil" | "concordat",
+  includeExtras = true
+): Promise<Document[]> =>
+  request<Document[]>(`/documents/event/${eventId}/generate-default`, {
+    method: "POST",
+    body: JSON.stringify({
+      ceremony_type: ceremonyType,
+      include_extras: includeExtras,
+    }),
+  }),
+
+createDocument: (eventId: string, body: Partial<Document>): Promise<Document> =>
+  request<Document>(`/documents/event/${eventId}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  }),
+
+updateDocument: (id: string, body: Partial<Document>): Promise<Document> =>
+  request<Document>(`/documents/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  }),
+
+setDocumentPinned: (id: string, pinned: boolean): Promise<Document> =>
+  request<Document>(`/documents/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ is_pinned: pinned }),
+  }),
+
+changeDocumentStatus: (
+  id: string,
+  status: "todo" | "in_progress" | "done"
+): Promise<Document> =>
+  request<Document>(`/documents/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ status }),
+  }),
+
+deleteDocument: (id: string): Promise<{ success: boolean }> =>
+  request<{ success: boolean }>(`/documents/${id}`, { method: "DELETE" }),
+
+getDocumentFiles: (documentId: string): Promise<DocumentFile[]> =>
+  request<DocumentFile[]>(`/documents/${documentId}/files`),
+
+deleteDocumentFile: async (fileId: string): Promise<{ success: boolean }> => {
+  // 1) usuń rekord pliku (i ewentualnie plik na serwerze)
+  const res = await request<{ success: boolean }>(`/documents/files/${fileId}`, {
+    method: "DELETE",
+  });
+
+  // 2) posprzątaj też lokalny IndexedDB (bezpieczne nawet gdy pliku nie ma)
+  try {
+    await deleteLocalDocumentFile(fileId);
+  } catch (e) {
+    void e;
+  }
+
+  return res;
+},
+
+/**
+ * Upload pliku do dokumentu:
+ * - server: multipart
+ * - local: zapis do IndexedDB + metadata do backendu JSON
+ */
+uploadDocumentFile: async (
+  documentId: string,
+  file: File,
+  storageLocation: StorageLocation
+): Promise<DocumentFile> => {
+  const token = useAuthStore.getState().token;
+
+  if (storageLocation === "local") {
+    // 1) najpierw metadata do backendu -> dostajemy prawdziwe id
+    const meta = await request<DocumentFile>(`/documents/${documentId}/files`, {
       method: "POST",
       body: JSON.stringify({
-        ceremony_type: ceremonyType,
-        include_extras: includeExtras,
+        storage_location: "local",
+        original_name: file.name,
+        mime_type: file.type || "application/octet-stream",
+        size: file.size,
       }),
-    }),
+    });
+
+    // 2) zapis blob pod id z backendu (spójność listy)
+    await saveLocalDocumentFile(meta.id || makeId(), documentId, file);
+    return meta;
+  }
+
+  // server
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("storage_location", "server");
+
+  const res = await fetch(`${BASE_URL}/documents/${documentId}/files`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Upload error ${res.status}: ${text || res.statusText}`);
+  }
+
+  return (await res.json()) as DocumentFile;
+},
+
+downloadDocumentFile: async (fileId: string): Promise<Blob> => {
+  const local = await getLocalDocumentFile(fileId);
+  if (local) return local;
+
+  const token = useAuthStore.getState().token;
+  const res = await fetch(`${BASE_URL}/documents/files/${fileId}/download`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || "Nie udało się pobrać pliku");
+  }
+
+  return res.blob();
+},
 
 
-  /**
-   * Utworzenie nowego dokumentu (ręcznego).
-   * Backend: POST /documents/event/:eventId
-   */
-  createDocument: (
-    eventId: string,
-    body: Partial<Document>
-  ): Promise<Document> =>
-    request<Document>(`/documents/event/${eventId}`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-
-  /**
-   * Aktualizacja dokumentu (status, opis, kategoria, terminy, itp.)
-   * Backend: PUT /documents/:id
-   */
-  updateDocument: (
-    id: string,
-    body: Partial<Document>
-  ): Promise<Document> =>
-    request<Document>(`/documents/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    }),
-
-  /**
-   * Usunięcie dokumentu.
-   * Backend: DELETE /documents/:id
-   */
-  deleteDocument: (id: string): Promise<{ success: boolean }> =>
-    request<{ success: boolean }>(`/documents/${id}`, {
-      method: "DELETE",
-    }),
-
-  /**
-   * Skrót do zmiany samego statusu (pending/done).
-   * W środku używa updateDocument.
-   */
-  toggleDocumentStatus: async (
-    id: string,
-    status: "pending" | "done"
-  ): Promise<Document> => {
-    return api.updateDocument(id, { status });
-  },
-
-  /**
-   * Lista plików dla dokumentu.
-   * Backend: GET /documents/:id/files
-   */
-  getDocumentFiles: (documentId: string): Promise<DocumentFile[]> =>
-    request<DocumentFile[]>(`/documents/${documentId}/files`),
-
-  /**
-   * Upload pliku dla dokumentu – HYBRYDA:
-   * - storageLocation = "server" -> plik na serwerze (zaszyfrowany w storageService)
-   * - storageLocation = "local"  -> backend nie zapisuje pliku, tylko metadane
-   *
-   * Uwaga: tu NIE używamy helpera request(), bo wysyłamy FormData, nie JSON.
-   */
-  uploadDocumentFile: async (
-    documentId: string,
-    file: File,
-    storageLocation: StorageLocation
-  ): Promise<DocumentFile> => {
-    const token = useAuthStore.getState().token;
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("storage_location", storageLocation);
-
-    const res = await fetch(
-      `${BASE_URL}/documents/${documentId}/files`,
-      {
-        method: "POST",
-        headers: token
-          ? {
-              Authorization: `Bearer ${token}`,
-            }
-          : undefined,
-        body: formData,
-      }
-    );
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(
-        `Błąd uploadu pliku (${res.status}): ${text || res.statusText}`
-      );
-    }
-
-    const data = (await res.json()) as DocumentFile;
-    return data;
-  },
-
-  /**
-   * Usunięcie załącznika dokumentu.
-   * Backend: DELETE /documents/files/:fileId
-   */
-  deleteDocumentFile: (fileId: string): Promise<{ success: boolean }> =>
-    request<{ success: boolean }>(`/documents/files/${fileId}`, {
-      method: "DELETE",
-    }),
-
-  /**
-   * Pobieranie pliku dokumentu:
-   * - dla storage_location="server" – backend zwraca binarny plik
-   * - dla storage_location="local" – backend zwraca błąd (plik tylko lokalnie)
-   *
-   * Zwracamy BLOB, który frontend może zapisać jako URL i pobrać.
-   */
-  downloadDocumentFile: async (fileId: string): Promise<Blob> => {
-    const token = useAuthStore.getState().token;
-
-    const res = await fetch(
-      `${BASE_URL}/documents/files/${fileId}/download`,
-      {
-        method: "GET",
-        headers: token
-          ? {
-              Authorization: `Bearer ${token}`,
-            }
-          : undefined,
-      }
-    );
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(
-        `Błąd pobierania pliku (${res.status}): ${text || res.statusText}`
-      );
-    }
-
-    return res.blob();
-  },
 
   // -----------------------------
 // TASKS / HARMONOGRAM
@@ -709,6 +697,30 @@ exportFinanceExpensesXlsx: async (eventId: string): Promise<Blob> => {
 
   return res.blob();
 },
+
+exportReportPdf: async (eventId: string, body: ReportExportPdfBody): Promise<Blob> => {
+  const token = useAuthStore.getState().token;
+
+  const res = await fetch(`${BASE_URL}/reports/${eventId}/export/pdf`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || "Nie udało się wygenerować PDF");
+  }
+
+  return res.blob();
+},
+
+
+
+
 
 
 // -----------------------------

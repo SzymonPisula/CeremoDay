@@ -211,7 +211,6 @@ async function geocodeOne(venue: RuralVenue): Promise<{ lat: number; lng: number
         return result;
       }
 
-      // delikatny odstęp między wariantami też
       await sleep(900);
     } catch (err) {
       console.error(`   ❌ Błąd przy zapytaniu "${q}":`, err);
@@ -223,7 +222,7 @@ async function geocodeOne(venue: RuralVenue): Promise<{ lat: number; lng: number
 }
 
 async function main() {
-  console.log("🚀 Start geokodowania sal gminnych (Nominatim)...");
+  console.log("🚀 Start geokodowania sal gminnych...");
 
   try {
     await sequelize.authenticate();
@@ -252,7 +251,7 @@ async function main() {
         fail += 1;
       }
 
-      // minimalnie >1s per obiekt (Nominatim fair use)
+      // minimalnie >1s per obiekt 
       await sleep(1200);
     }
 

@@ -1,51 +1,47 @@
-export type DocumentStatus = "pending" | "done";
+export type DocumentStatus = "todo" | "in_progress" | "done";
 
-export type DocumentCategory = "USC" | "KOSCIOŁ" | "URZĄD" | "INNE";
-export type DocumentHolder = "bride" | "groom" | "both";
-export type DocumentType = "civil" | "church" | "custom";
+export type DocumentType = "civil" | "concordat" | "custom";
 
 export interface Document {
   id: string;
   event_id: string;
+
   name: string;
+  description: string | null;
 
-  // ✅ było: description: string
-  description?: string | null;
+  category: string | null;
+  holder: string | null;
 
-  status?: DocumentStatus;
+  type: DocumentType;
 
-  category?: DocumentCategory | null;
-  holder?: DocumentHolder | null;
-  due_date?: string | null;
-  valid_until?: string | null;
-  is_system?: boolean;
-  created_at?: string;
-  updated_at?: string;
+  status: DocumentStatus;
 
-  // w backendzie jest wymagane, ale backend może jeszcze nie zwracać w starych rekordach
-  type?: DocumentType;
+  due_date: string | null;
+  valid_until: string | null;
 
-  checked?: boolean;
-  notes?: string | null;
-  attachments?: unknown;
+  is_system: boolean;
+  is_pinned: boolean;
+
+  created_at: string;
+  updated_at: string;
 }
 
 export type StorageLocation = "server" | "local";
-export type FilePerson = "bride" | "groom" | "both";
 
 export interface DocumentFile {
   id: string;
   event_id: string;
   document_id: string;
   user_id: string;
+
   storage_location: StorageLocation;
   storage_key: string | null;
+
   original_name: string;
   mime_type: string;
   size: number;
-  person: FilePerson | null;
-  created_at?: string;
-  updated_at?: string;
-}
 
-export type DocumentPayload = Partial<Document>;
+  person: "bride" | "groom" | "both" | null;
+
+  created_at: string;
+}

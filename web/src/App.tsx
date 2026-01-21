@@ -14,7 +14,7 @@ import Documents from "./pages/Documents";
 import Inspirations from "./pages/Inspiration";
 import Tasks from "./pages/Tasks";
 import Vendors from "./pages/Vendors";
-import Finance from "./pages/Finance";
+import Finance from "./pages/Finanse";
 import Reports from "./pages/Reports";
 import Notifications from "./pages/Notifications";
 import Schedule from "./pages/Schedule";
