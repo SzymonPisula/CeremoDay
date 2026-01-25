@@ -142,13 +142,13 @@ export async function importGuests(req: Request, res: Response) {
     const parents = items.filter((i) => i.type === "guest");
     const subs = items.filter((i) => i.type === "subguest");
 
-    // mapowanie rodziców z importu: "Imię Nazwisko" -> rekord w DB
+    // mapowanie osób kontakowych z importu: "Imię Nazwisko" -> rekord w DB
     const parentMap = new Map<string, Guest>();
 
     let created = 0;
     let skipped = 0;
 
-    // 1) rodzice
+    // 1) Osoby kontaktowe
     for (const p of parents) {
       const first = norm(p.first_name);
       const last = norm(p.last_name);
@@ -191,7 +191,6 @@ export async function importGuests(req: Request, res: Response) {
       parentMap.set(`${first} ${last}`.trim(), createdParent);
     }
 
-    // 1b) dołóż do parentMap także rodziców już istniejących w DB (po nazwie)
     // (bo subgoście mogą przychodzić w kolejnych importach)
     const existingParents = await Guest.findAll({
       where: { event_id: eventId, parent_guest_id: { [Op.is]: null } },
@@ -212,7 +211,9 @@ export async function importGuests(req: Request, res: Response) {
 
       const parent = parentMap.get(parentKey);
       if (!parent) {
-        errors.push(`Brak gościa-rodzica "${parentKey}" (współgość: ${first} ${last})`);
+errors.push(
+  `Brak gościa - osoby kontaktowej "${parentKey}" (współgość: ${first} ${last})`
+);
         skipped++;
         continue;
       }

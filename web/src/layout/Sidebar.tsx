@@ -3,6 +3,8 @@ import { useEffect, useMemo } from "react";
 import { NavLink } from "react-router-dom";
 import { cn } from "../theme/helpers";
 import type { ReactNode } from "react";
+import { useAuthStore } from "../store/auth";
+import { Shield } from "lucide-react";
 
 import {
   Home,
@@ -18,7 +20,9 @@ import {
   UserCircle2,
   UserCog,
   CalendarHeart,
+  Bell, 
 } from "lucide-react";
+
 
 type SidebarProps = {
   eventId: string | null;
@@ -42,7 +46,7 @@ type Item = {
 
 const ICON_CLASS = "w-5 h-5 text-[rgba(246,226,122,0.95)]";
 
-function buildItems(eventId: string | null, weddingDayEnabled: boolean): Item[] {
+function buildItems(eventId: string | null, weddingDayEnabled: boolean, isAdmin: boolean): Item[] {
   const items: Item[] = [
     {
       label: "Moje wydarzenia",
@@ -60,9 +64,18 @@ function buildItems(eventId: string | null, weddingDayEnabled: boolean): Item[] 
     },
   ];
 
+  if (isAdmin) {
+    items.push({
+      label: "Admin",
+      to: "/admin",
+      icon: <Shield className={ICON_CLASS} />,
+      end: true,
+      separatorAfter: true,
+    });
+  }
+
   if (eventId) {
     const base = `/event/${eventId}`;
-
     items.push(
       {
         label: "Panel wydarzenia",
@@ -70,6 +83,7 @@ function buildItems(eventId: string | null, weddingDayEnabled: boolean): Item[] 
         icon: <LayoutDashboard className={ICON_CLASS} />,
         end: true,
       },
+      { label: "Powiadomienia", to: `${base}/notifications`, icon: <Bell className={ICON_CLASS} /> },
       { label: "Użytkownicy", to: `${base}/users`, icon: <UserCog className={ICON_CLASS} /> },
       { label: "Goście", to: `${base}/guests`, icon: <Users className={ICON_CLASS} /> },
       { label: "Dokumenty", to: `${base}/documents`, icon: <FileText className={ICON_CLASS} /> },
@@ -78,18 +92,17 @@ function buildItems(eventId: string | null, weddingDayEnabled: boolean): Item[] 
       { label: "Zadania", to: `${base}/tasks`, icon: <CheckSquare className={ICON_CLASS} /> },
       { label: "Finanse", to: `${base}/finance`, icon: <Wallet className={ICON_CLASS} /> },
       { label: "Raporty", to: `${base}/reports`, icon: <BarChart3 className={ICON_CLASS} /> },
-
-      // ✅ TYLKO jeśli włączone w wywiadzie
       ...(weddingDayEnabled
         ? [{ label: "Dzień ślubu", to: `${base}/wedding-day`, icon: <CalendarHeart className={ICON_CLASS} /> }]
         : []),
-
       { label: "Wywiad (Edycja)", to: `${base}/interview`, icon: <Compass className={ICON_CLASS} /> }
     );
   }
 
   return items;
 }
+
+
 
 export default function Sidebar({
   eventId,
@@ -99,10 +112,20 @@ export default function Sidebar({
   topbarGapPx,
   weddingDayEnabled,
 }: SidebarProps) {
-  const items = useMemo(() => buildItems(eventId, !!weddingDayEnabled), [eventId, weddingDayEnabled]);
+  const me = useAuthStore((s) => s.me);
+  const isAdmin = me?.role === "admin";
+
+  const items = useMemo(
+    () => buildItems(eventId, !!weddingDayEnabled, isAdmin),
+    [eventId, weddingDayEnabled, isAdmin]
+  );
+
+
+
 
   const topbarTop = topbarGapPx;
   const sidebarDockTop = topbarTop + topbarHeightPx;
+
 
   const linkBase =
     "flex items-center gap-3 rounded-[18px] px-3 py-2.5 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(212,175,55,0.35)]";

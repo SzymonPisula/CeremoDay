@@ -3,15 +3,14 @@
 export type VendorSource = "GOOGLE" | "RURAL" | "CUSTOM";
 
 export type VendorType =
-  | "HALL"
-  | "CATERING"
-  | "DJ"
-  | "BAND"
-  | "PHOTO"
-  | "VIDEO"
-  | "DECOR"
-  | "TRANSPORT"
-  | "OTHER";
+  | "venue"
+  | "catering"
+  | "music"
+  | "photo_video"
+  | "decorations"
+  | "transport"
+  | "other";
+
 
 export interface VendorLocation {
   lat: number;

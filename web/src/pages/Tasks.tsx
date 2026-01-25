@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   Calendar,
@@ -8,16 +8,22 @@ import {
   Trash2,
   Pencil,
   Plus,
+  Info,
 } from "lucide-react";
 
 import { api } from "../lib/api";
+import { useUiStore } from "../store/ui";
+import { useFormErrors } from "../ui/useFormErrors";
 import type { Task, TaskCategory, TaskStatus, TaskPayload } from "../types/task";
 
 import TaskStatusInline from "../components/tasks/TaskStatusInline";
 import TaskCreateEditModal from "../components/tasks/TaskCreateEditModal";
+import TaskDetailsModal from "../components/tasks/TaskDetailsModal";
+import { useSearchParams } from "react-router-dom";
 
 type Params = { id: string };
 type ViewMode = "list" | "timeline" | "calendar";
+
 
 const CATEGORY_LABELS: Record<TaskCategory, string> = {
   FORMALNOSCI: "Formalności",
@@ -40,6 +46,20 @@ function parseDate(dateStr?: string | null): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function startOfToday(): Date {
+  const t = new Date();
+  t.setHours(0, 0, 0, 0);
+  return t;
+}
+
+function isTaskOverdue(task: Task): boolean {
+  if (task.status === "done") return false;
+  const d = parseDate(task.due_date);
+  if (!d) return false;
+  d.setHours(0, 0, 0, 0);
+  return d < startOfToday();
+}
+
 function formatDisplayDate(dateStr?: string | null): string {
   const d = parseDate(dateStr);
   if (!d) return "—";
@@ -50,8 +70,14 @@ function formatDisplayDate(dateStr?: string | null): string {
   });
 }
 
+
 export default function Tasks() {
   const { id: eventId } = useParams<Params>();
+  const confirmAsync = useUiStore((s) => s.confirmAsync);
+  const toast = useUiStore((s) => s.toast);
+
+  // Walidacje formularza w modalu (backend -> pola)
+  const modalForm = useFormErrors();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
@@ -62,6 +88,25 @@ export default function Tasks() {
 
   const [statusFilter, setStatusFilter] = useState<Set<TaskStatus>>(new Set());
   const [categoryFilter, setCategoryFilter] = useState<Set<TaskCategory>>(new Set());
+const [detailsOpen, setDetailsOpen] = useState(false);
+const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+
+const [searchParams] = useSearchParams();
+const focusTaskId = searchParams.get("task");
+
+// mapka refów do scrolla
+const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+function openDetails(task: Task) {
+  setSelectedTask({ ...task, description: task.description ?? null });
+  setDetailsOpen(true);
+}
+
+function closeDetails() {
+  setDetailsOpen(false);
+  setSelectedTask(null);
+}
+
 
 
   // modal create/edit
@@ -75,6 +120,16 @@ export default function Tasks() {
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+
+  // UX: oś i kalendarz startują na bieżącym miesiącu
+  useEffect(() => {
+    if (viewMode !== "calendar" && viewMode !== "timeline") return;
+    const now = new Date();
+    setCalendarMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+    if (viewMode === "calendar") {
+      setSelectedDateKey(now.toISOString().slice(0, 10));
+    }
+  }, [viewMode]);
 
   // === UI helpers: CeremoDay CRM vibe ===
   const chip =
@@ -100,6 +155,31 @@ export default function Tasks() {
     "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/45 " +
     "transition disabled:opacity-60";
 
+useEffect(() => {
+  if (!focusTaskId) return;
+  if (!tasks || tasks.length === 0) return;
+
+  const t = tasks.find((x) => x.id === focusTaskId);
+  if (!t) return;
+
+  // 1) przewiń do wiersza (jeśli ref jest ustawiony)
+  const el = rowRefs.current[focusTaskId];
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+
+  // 2) otwórz modal szczegółów
+  openDetails(t);
+
+  // 3) opcjonalnie usuń query param, żeby nie odpalało ponownie po refresh
+  // setSearchParams((prev) => {
+  //   const next = new URLSearchParams(prev);
+  //   next.delete("task");
+  //   return next;
+  // }, { replace: true });
+
+}, [focusTaskId, tasks]);
+
+
+
   useEffect(() => {
     if (!eventId) return;
 
@@ -121,12 +201,14 @@ export default function Tasks() {
   }, [eventId]);
 
   const openCreate = () => {
+    modalForm.clear();
     setModalMode("create");
     setEditingTask(null);
     setModalOpen(true);
   };
 
   const openEdit = (task: Task) => {
+    modalForm.clear();
     setModalMode("edit");
     setEditingTask(task);
     setModalOpen(true);
@@ -138,6 +220,7 @@ export default function Tasks() {
     try {
       setSavingId("modal");
       setError(null);
+      modalForm.clear();
 
       if (modalMode === "create") {
         const created = await api.createTask(eventId, payload);
@@ -156,7 +239,10 @@ export default function Tasks() {
       setEditingTask(null);
     } catch (err) {
       console.error("❌ Błąd zapisu zadania:", err);
-      setError("Nie udało się zapisać zadania");
+      modalForm.setFromApiError(err, "Popraw pola w formularzu.");
+      const msg = "Nie udało się zapisać zadania";
+      setError(msg);
+      toast({ tone: "danger", title: msg, message: "Sprawdź pola i spróbuj ponownie." });
     } finally {
       setSavingId(null);
     }
@@ -183,19 +269,46 @@ export default function Tasks() {
   };
 
   const handleDeleteTask = async (task: Task) => {
-    if (!window.confirm("Na pewno chcesz usunąć to zadanie?")) return;
-    try {
-      setSavingId(task.id);
-      setError(null);
-      await api.deleteTask(task.id);
-      setTasks((prev) => prev.filter((t) => t.id !== task.id));
-    } catch (err) {
-      console.error("❌ Błąd usuwania zadania:", err);
-      setError("Nie udało się usunąć zadania");
-    } finally {
-      setSavingId(null);
-    }
-  };
+  const ok = await confirmAsync({
+    title: "Usunąć zadanie?",
+    message:
+      "To działanie jest nieodwracalne. Zadanie zostanie trwale usunięte z tego wydarzenia.",
+    confirmText: "Usuń",
+    cancelText: "Anuluj",
+    tone: "danger",
+  });
+
+  if (!ok) return;
+
+  try {
+    setSavingId(task.id);
+    setError(null);
+
+    await api.deleteTask(task.id);
+    setTasks((prev) => prev.filter((t) => t.id !== task.id));
+
+    toast({
+      tone: "info",
+      title: "Usunięto zadanie",
+      message: `„${task.title}”`,
+    });
+  } catch (err: unknown) {
+    console.error("❌ Błąd usuwania zadania:", err);
+
+    const msg = err instanceof Error ? err.message : "Nie udało się usunąć zadania";
+    setError(msg);
+
+    toast({
+      tone: "danger",
+      title: "Błąd",
+      message: msg,
+    });
+  } finally {
+    setSavingId(null);
+  }
+};
+
+
 
   // filtrowanie
   const filteredTasks = useMemo(() => {
@@ -212,6 +325,51 @@ export default function Tasks() {
     return true;
   });
 }, [tasks, statusFilter, categoryFilter]);
+
+  // LISTA: UX
+  // - Zadania "Zrobione" na koniec
+  // - Zaległe (due_date < dziś i != done) na górę
+  // - Następnie po terminie rosnąco (brak daty na końcu)
+  const listTasks = useMemo(() => {
+    const today = startOfToday();
+    const arr = [...filteredTasks];
+
+    arr.sort((a, b) => {
+      // 1) done last
+      const aDone = a.status === "done";
+      const bDone = b.status === "done";
+      if (aDone !== bDone) return aDone ? 1 : -1;
+
+      // 2) overdue first (only if not done)
+      const aOver = (() => {
+        const d = parseDate(a.due_date);
+        if (!d) return false;
+        d.setHours(0, 0, 0, 0);
+        return d < today;
+      })();
+      const bOver = (() => {
+        const d = parseDate(b.due_date);
+        if (!d) return false;
+        d.setHours(0, 0, 0, 0);
+        return d < today;
+      })();
+      if (aOver !== bOver) return aOver ? -1 : 1;
+
+      // 3) by due_date
+      const ad = parseDate(a.due_date);
+      const bd = parseDate(b.due_date);
+      if (!!ad !== !!bd) return ad ? -1 : 1;
+      if (ad && bd) {
+        const diff = ad.getTime() - bd.getTime();
+        if (diff !== 0) return diff;
+      }
+
+      // 4) fallback by title
+      return a.title.localeCompare(b.title, "pl");
+    });
+
+    return arr;
+  }, [filteredTasks]);
 
 
   // timeline: grupowanie po miesiącu due_date
@@ -473,15 +631,31 @@ const categoryOptions: TaskCategory[] = [
             <div className="text-right">Akcje</div>
           </div>
 
-          {filteredTasks.length === 0 && !loading && (
+          {listTasks.length === 0 && !loading && (
             <p className="text-sm text-white/55 mt-4">
               Brak zadań spełniających filtry. Dodaj zadanie lub zmień filtry.
             </p>
           )}
 
           <div className="space-y-2 mt-3">
-            {filteredTasks.map((task) => (
-              <div key={task.id} className="rounded-2xl border border-white/10 bg-white/4 p-3">
+            {listTasks.map((task) => {
+              const overdue = isTaskOverdue(task);
+              return (
+<div
+  key={task.id}
+  ref={(node) => {
+    rowRefs.current[task.id] = node;
+  }}
+  className={
+    "rounded-2xl border p-3 transition " +
+    (overdue
+      ? "border-red-500/30 bg-red-500/10"
+      : "") +
+    (task.id === focusTaskId
+      ? "border-[#d7b45a]/40 bg-[#d7b45a]/10"
+      : "border-white/10 bg-white/4")
+  }
+>
                 <div className="grid grid-cols-1 lg:grid-cols-[180px_140px_220px_1fr_170px_140px] gap-3 items-start">
                   {/* Status */}
                   <div className="flex items-center">
@@ -494,8 +668,8 @@ const categoryOptions: TaskCategory[] = [
                   </div>
 
                   {/* Termin */}
-                  <div className="text-sm text-white/80">
-                    {task.due_date ? formatDisplayDate(task.due_date) : "—"}
+                  <div className={"text-sm " + (overdue ? "text-red-200 font-semibold" : "text-white/80")}>
+                    {overdue ? "Uzupełnij!" : task.due_date ? formatDisplayDate(task.due_date) : "—"}
                   </div>
 
                   {/* Tytuł */}
@@ -504,9 +678,20 @@ const categoryOptions: TaskCategory[] = [
                   </div>
 
                   {/* Opis */}
-                  <div className="text-sm text-white/60 break-words">
-                    {task.description ? task.description : "—"}
-                  </div>
+{/* Szczegóły (zamiast opisu) */}
+<div className="flex items-center">
+  <button
+    type="button"
+    onClick={() => openDetails(task)}
+    className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/80 hover:bg-white/10"
+    title="Szczegóły zadania"
+  >
+    <Info size={14} />
+    Szczegóły
+  </button>
+</div>
+
+
 
                   {/* Kategoria */}
                   <div className="text-sm text-white/80">
@@ -539,7 +724,7 @@ const categoryOptions: TaskCategory[] = [
                   <span>
                     Termin:{" "}
                     <span className="text-white/80">
-                      {task.due_date ? formatDisplayDate(task.due_date) : "—"}
+                      {overdue ? "Uzupełnij!" : task.due_date ? formatDisplayDate(task.due_date) : "—"}
                     </span>
                   </span>
                   <span>
@@ -552,9 +737,10 @@ const categoryOptions: TaskCategory[] = [
                     Status:{" "}
                     <span className="text-white/80">{STATUS_LABELS[task.status]}</span>
                   </span>
-                </div>
               </div>
-            ))}
+              </div>
+            );
+            })}
           </div>
         </div>
       )}
@@ -572,6 +758,9 @@ const categoryOptions: TaskCategory[] = [
 
           <div className="space-y-5">
             {timelineGroups.keys.map((key) => {
+              const now = new Date();
+              const nowKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+              const isCurrentMonth = key === nowKey;
               const [year, month] = key.split("-");
               const date = new Date(Number(year), Number(month) - 1, 1);
               const label = date.toLocaleDateString("pl-PL", { year: "numeric", month: "long" });
@@ -582,59 +771,59 @@ const categoryOptions: TaskCategory[] = [
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-2 h-2 rounded-full bg-[#d7b45a]" />
                     <h4 className="text-sm font-semibold text-white">{label}</h4>
+                    {isCurrentMonth && <span className={chip}>Obecny miesiąc</span>}
                   </div>
 
-                  <div className="ml-3 space-y-2">
-                    {tasksInGroup
-                      .slice()
-                      .sort(
-                        (a, b) =>
-                          (parseDate(a.due_date)?.getTime() ?? 0) -
-                          (parseDate(b.due_date)?.getTime() ?? 0)
-                      )
-                      .map((task) => (
-                        <div
-                          key={task.id}
-                          className="rounded-2xl border border-white/10 bg-white/4 p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <TaskStatusInline
-                                value={task.status}
-                                isSaving={savingId === task.id}
-                                forwardOnly={true}
-                                onChange={(next) => handleChangeStatus(task, next)}
-                              />
-                              <span className="font-semibold text-white truncate">{task.title}</span>
-                              {task.category && <span className={chip}>{CATEGORY_LABELS[task.category]}</span>}
-                              <span className="text-xs text-white/55">{formatDisplayDate(task.due_date)}</span>
-                            </div>
-                            {task.description && (
-                              <p className="text-sm text-white/60 mt-2 break-words">{task.description}</p>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => openEdit(task)}
-                              className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white hover:bg-white/10 transition"
-                              title="Edytuj"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteTask(task)}
-                              className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-red-200 hover:bg-white/10 transition"
-                              title="Usuń"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
+                  <div className="space-y-2">
+                {tasksInGroup
+                  .slice()
+                  .sort(
+                    (a, b) =>
+                      (parseDate(a.due_date)?.getTime() ?? 0) - (parseDate(b.due_date)?.getTime() ?? 0)
+                  )
+                  .map((task) => (
+                    <div
+                      key={task.id}
+                      className="rounded-2xl border border-white/10 bg-black/20 p-4 flex items-start justify-between gap-3"
+                    >
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <TaskStatusInline
+                            value={task.status}
+                            isSaving={savingId === task.id}
+                            forwardOnly={true}
+                            onChange={(next) => handleChangeStatus(task, next)}
+                          />
+                          <span className="font-semibold text-white">{task.title}</span>
+                          {task.category && <span className={chip}>{CATEGORY_LABELS[task.category]}</span>}
                         </div>
-                      ))}
-                  </div>
+                        {task.description && (
+                          <p className="text-sm text-white/60 mt-2 break-words">{task.description}</p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(task)}
+                          className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white hover:bg-white/10 transition"
+                          title="Edytuj"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTask(task)}
+                          className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-red-200 hover:bg-white/10 transition"
+                          title="Usuń"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+              </div>
                 </div>
               );
             })}
@@ -883,12 +1072,31 @@ const categoryOptions: TaskCategory[] = [
         mode={modalMode}
         initialTask={editingTask}
         saving={savingId === "modal"}
+        fieldErrors={modalForm.fieldErrors}
+        formError={modalForm.formError ?? undefined}
         onClose={() => {
+          modalForm.clear();
           setModalOpen(false);
           setEditingTask(null);
         }}
         onSubmit={handleSubmitModal}
       />
+      <TaskDetailsModal
+  open={detailsOpen}
+  task={selectedTask}
+  onClose={closeDetails}
+  onEdit={(t) => {
+    closeDetails();
+    openEdit(t as Task);
+  }}
+  onDelete={(t) => {
+    closeDetails();
+    handleDeleteTask(t as Task);
+  }}
+/>
+
+
+
     </div>
   );
 }

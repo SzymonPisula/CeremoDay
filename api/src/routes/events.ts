@@ -6,6 +6,20 @@ import { EventSetting } from "../models/EventSetting";
 import { User } from "../models/User";
 import { EventUser } from "../models/EventUser";
 import { authMiddleware, AuthRequest } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import {
+  eventCreateSchema,
+  eventJoinSchema,
+} from "../validation/event.schema";
+import {
+  weddingDayChecklistCreateSchema,
+  weddingDayChecklistUpdateSchema,
+  weddingDayContactCreateSchema,
+  weddingDayContactUpdateSchema,
+  weddingDayScheduleCreateSchema,
+  weddingDayScheduleUpdateSchema,
+  eventUserRoleUpdateSchema,
+} from "../validation/event.schema";
 import WeddingDayScheduleItem from "../models/WeddingDayScheduleItem";
 import { WeddingDayChecklistItem } from "../models/WeddingDayChecklistItem";
 import { WeddingDayContact } from "../models/WeddingDayContact";
@@ -32,7 +46,7 @@ async function requireActiveMember(eventId: string, userId: string) {
   return link;
 }
 
-router.post("/", authMiddleware, async (req: AuthRequest, res: Response) => {
+router.post("/", authMiddleware, validateBody(eventCreateSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { name, start_date, location } = req.body;
     if (!name) {
@@ -177,7 +191,7 @@ router.get("/", authMiddleware, async (req: AuthRequest, res: Response) => {
  * - tworzy zgłoszenie dołączenia (status: "pending")
  * - rola domyślna: "guest" (owner może potem zatwierdzić i ewentualnie zmienić rolę)
  */
-router.post("/join", authMiddleware, async (req: AuthRequest, res: Response) => {
+router.post("/join", authMiddleware, validateBody(eventJoinSchema), async (req: AuthRequest, res: Response) => {
   try {
     if (!req.userId) {
       return res.status(401).json({ message: "Nieautoryzowany" });
@@ -277,6 +291,7 @@ router.get("/:id/users", authMiddleware, async (req: AuthRequest, res: Response)
 router.post(
   "/:id/users/:userId/approve",
   authMiddleware,
+  validateBody(eventUserRoleUpdateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       if (!req.userId) return res.status(401).json({ message: "Nieautoryzowany" });
@@ -460,15 +475,18 @@ router.get("/:id/wedding-day", authMiddleware, async (req: AuthRequest, res) => 
   return res.json({ schedule, checklist, contacts });
 });
 
-router.post("/:id/wedding-day/schedule", authMiddleware, async (req: AuthRequest, res) => {
+router.post(
+  "/:id/wedding-day/schedule",
+  authMiddleware,
+  validateBody(weddingDayScheduleCreateSchema),
+  async (req: AuthRequest, res) => {
   const eventId = req.params.id;
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
 
   const member = await requireActiveMember(eventId, req.userId);
   if (!member) return res.status(403).json({ message: "Brak dostępu do wydarzenia" });
 
-  const { time, title, description, location, responsible } = req.body ?? {};
-  if (!time || !title) return res.status(400).json({ message: "Brak wymaganych pól: time, title" });
+  const { time, title, description, location, responsible, status } = req.body ?? {};
 
   const item = await WeddingDayScheduleItem.create({
     event_id: eventId,
@@ -477,13 +495,17 @@ router.post("/:id/wedding-day/schedule", authMiddleware, async (req: AuthRequest
     description: description ?? null,
     location: location ?? null,
     responsible: responsible ?? null,
-    status: "planned",
+    status: status ?? "planned",
   });
 
   return res.json(item);
 });
 
-router.patch("/:id/wedding-day/schedule/:itemId", authMiddleware, async (req: AuthRequest, res) => {
+router.patch(
+  "/:id/wedding-day/schedule/:itemId",
+  authMiddleware,
+  validateBody(weddingDayScheduleUpdateSchema),
+  async (req: AuthRequest, res) => {
   const eventId = req.params.id;
   const itemId = req.params.itemId;
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
@@ -525,28 +547,35 @@ router.delete("/:id/wedding-day/schedule/:itemId", authMiddleware, async (req: A
   return res.json({ success: true });
 });
 
-router.post("/:id/wedding-day/checklist", authMiddleware, async (req: AuthRequest, res) => {
+router.post(
+  "/:id/wedding-day/checklist",
+  authMiddleware,
+  validateBody(weddingDayChecklistCreateSchema),
+  async (req: AuthRequest, res) => {
   const eventId = req.params.id;
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
 
   const member = await requireActiveMember(eventId, req.userId);
   if (!member) return res.status(403).json({ message: "Brak dostępu do wydarzenia" });
 
-  const { title, note, schedule_item_id } = req.body ?? {};
-  if (!title) return res.status(400).json({ message: "Brak pola title" });
+  const { title, note, schedule_item_id, done } = req.body ?? {};
 
   const item = await WeddingDayChecklistItem.create({
     event_id: eventId,
     title,
     note: note ?? null,
     schedule_item_id: schedule_item_id ?? null,
-    done: false,
+    done: !!done,
   });
 
   return res.json(item);
 });
 
-router.patch("/:id/wedding-day/checklist/:itemId", authMiddleware, async (req: AuthRequest, res) => {
+router.patch(
+  "/:id/wedding-day/checklist/:itemId",
+  authMiddleware,
+  validateBody(weddingDayChecklistUpdateSchema),
+  async (req: AuthRequest, res) => {
   const eventId = req.params.id;
   const itemId = req.params.itemId;
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
@@ -579,7 +608,11 @@ router.delete("/:id/wedding-day/checklist/:itemId", authMiddleware, async (req: 
   return res.json({ success: true });
 });
 
-router.post("/:id/wedding-day/contacts", authMiddleware, async (req: AuthRequest, res) => {
+router.post(
+  "/:id/wedding-day/contacts",
+  authMiddleware,
+  validateBody(weddingDayContactCreateSchema),
+  async (req: AuthRequest, res) => {
   const eventId = req.params.id;
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
 
@@ -587,7 +620,6 @@ router.post("/:id/wedding-day/contacts", authMiddleware, async (req: AuthRequest
   if (!member) return res.status(403).json({ message: "Brak dostępu do wydarzenia" });
 
   const { name, role, phone, email, note } = req.body ?? {};
-  if (!name) return res.status(400).json({ message: "Brak pola name" });
 
   const item = await WeddingDayContact.create({
     event_id: eventId,
@@ -601,7 +633,11 @@ router.post("/:id/wedding-day/contacts", authMiddleware, async (req: AuthRequest
   return res.json(item);
 });
 
-router.patch("/:id/wedding-day/contacts/:contactId", authMiddleware, async (req: AuthRequest, res) => {
+router.patch(
+  "/:id/wedding-day/contacts/:contactId",
+  authMiddleware,
+  validateBody(weddingDayContactUpdateSchema),
+  async (req: AuthRequest, res) => {
   const eventId = req.params.id;
   const contactId = req.params.contactId;
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
@@ -635,5 +671,38 @@ router.delete("/:id/wedding-day/contacts/:contactId", authMiddleware, async (req
   return res.json({ success: true });
 });
 
+// POST /events/:id/leave  — użytkownik opuszcza wydarzenie (status=removed)
+router.post("/:id/leave", authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const eventId = req.params.id;
+// CeremoDay/api/src/routes/events.ts
+const userId =
+  // najczęstsze warianty w projektach
+  (req as any).user?.id ??
+  (req as any).userId ??
+  (req as any).auth?.id ??
+  (req as any).auth?.userId;
+
+if (!userId) {
+  return res.status(401).json({ message: "Brak autoryzacji." });
+}
+
+    const eu = await EventUser.findOne({ where: { event_id: eventId, user_id: userId } });
+    if (!eu) return res.status(404).json({ message: "Nie jesteś członkiem tego wydarzenia." });
+
+    // owner nie może wyjść (bo rozwala event); ewentualnie: najpierw przekaż ownership
+    if (eu.role === "owner") {
+      return res.status(400).json({ message: "Owner nie może opuścić wydarzenia. Usuń wydarzenie lub przekaż rolę owner." });
+    }
+
+    eu.status = "removed";
+    await eu.save();
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Błąd serwera." });
+  }
+});
 
 export default router;

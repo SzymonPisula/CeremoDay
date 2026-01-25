@@ -1,6 +1,9 @@
 import { Router, Response } from "express";
 import type { AuthRequest } from "../middleware/auth";
 import { authMiddleware } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import { interviewSaveSchema } from "../validation/schemas";
+import { requireActiveMember } from "../middleware/requireActiveMember";
 import Budget from "../models/Budget";
 
 import EventInterview, {
@@ -350,7 +353,7 @@ async function upsertFinanceBudgetFromInterview(eventId: string, initialBudget: 
 
 
 // GET /interview/:eventId
-router.get("/:eventId", authMiddleware, async (req: AuthRequest, res: Response) => {
+router.get("/:eventId", authMiddleware, requireActiveMember("eventId"), async (req: AuthRequest, res: Response) => {
   try {
     const { eventId } = req.params;
     const interview = await EventInterview.findOne({ where: { event_id: eventId } });
@@ -362,14 +365,12 @@ router.get("/:eventId", authMiddleware, async (req: AuthRequest, res: Response) 
 });
 
 // PUT /interview/:eventId (upsert)
-router.put("/:eventId", authMiddleware, async (req: AuthRequest, res: Response) => {
+router.put("/:eventId", authMiddleware, requireActiveMember("eventId"), validateBody(interviewSaveSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { eventId } = req.params;
 
-    const validated = validatePayload(req.body);
-    if (!validated.ok) return res.status(400).json({ message: validated.message });
-
-    const payload = validated.payload;
+    // validateBody(interviewSaveSchema) gwarantuje poprawny payload + normalizuje wartości
+    const payload = req.body as InterviewPayload;
 
     const dbPayload = {
       event_id: eventId,

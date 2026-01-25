@@ -1,5 +1,5 @@
+/* CeremoDay/web/src/index.css */
 @import "tailwindcss";
-
 
 /* =========================================================
    CeremoDay — 2025 UI (jeden spójny styl)
@@ -10,19 +10,19 @@
   color-scheme: dark;
 
   /* Core palette */
-  --cd-bg-0: #061a12;      /* deep green */
-  --cd-bg-1: #052016;      /* slightly brighter */
+  --cd-bg-0: #061a12; /* deep green */
+  --cd-bg-1: #052016; /* slightly brighter */
   --cd-ink: rgba(245, 246, 248, 0.92);
   --cd-muted: rgba(245, 246, 248, 0.68);
 
   /* Gold */
-  --cd-gold-0: #F6E27A;
-  --cd-gold-1: #D4AF37;
+  --cd-gold-0: #f6e27a;
+  --cd-gold-1: #d4af37;
 
   /* Surfaces */
   --cd-surface: rgba(10, 40, 28, 0.46);
   --cd-surface-strong: rgba(8, 30, 22, 0.72);
-  --cd-border: rgba(255, 255, 255, 0.10);
+  --cd-border: rgba(255, 255, 255, 0.1);
   --cd-border-soft: rgba(255, 255, 255, 0.08);
 
   /* Shadows */
@@ -39,8 +39,8 @@ body,
 body {
   min-height: 100%;
   margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
-    "Apple Color Emoji", "Segoe UI Emoji";
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+    Arial, "Apple Color Emoji", "Segoe UI Emoji";
   color: var(--cd-ink);
 
   /* fallback (tło właściwe jest na ::before jako stała tafla) */
@@ -55,8 +55,7 @@ body::before {
   z-index: -1;
   pointer-events: none;
 
-  background:
-    radial-gradient(900px 600px at 20% 10%, rgba(32, 88, 70, 0.55), transparent 60%),
+  background: radial-gradient(900px 600px at 20% 10%, rgba(32, 88, 70, 0.55), transparent 60%),
     radial-gradient(700px 520px at 82% 16%, rgba(212, 175, 55, 0.18), transparent 60%),
     radial-gradient(900px 700px at 60% 92%, rgba(18, 60, 48, 0.62), transparent 62%),
     linear-gradient(180deg, var(--cd-bg-1) 0%, var(--cd-bg-0) 55%, var(--cd-bg-1) 100%);
@@ -79,28 +78,48 @@ a {
 
 /* -----------------------------
    Base controls (żeby nie było "surowych" formularzy)
+   UWAGA: usunięto @apply, bo VSCode/CSS linter krzyczał "Unknown at rule"
+   (Tailwind i tak to rozumie, ale to była Twoja lista błędów).
    ----------------------------- */
 @layer base {
   input,
   select,
   textarea {
-    @apply w-full rounded-xl border border-white/12 bg-white/[0.06] px-4 py-3 text-[15px] text-white/90
-      placeholder:text-white/45 outline-none backdrop-blur-xl;
+    width: 100%;
+    border-radius: 0.75rem; /* rounded-xl */
+    border: 1px solid rgba(255, 255, 255, 0.12); /* border-white/12 */
+    background-color: rgba(255, 255, 255, 0.06); /* bg-white/[0.06] */
+    padding: 0.75rem 1rem; /* px-4 py-3 */
+    font-size: 15px; /* text-[15px] */
+    line-height: 1.2;
+    color: rgba(255, 255, 255, 0.9); /* text-white/90 */
+    outline: none;
+    backdrop-filter: blur(24px); /* backdrop-blur-xl */
+    -webkit-backdrop-filter: blur(24px);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  }
+
+  input::placeholder,
+  select::placeholder,
+  textarea::placeholder {
+    color: rgba(255, 255, 255, 0.45); /* placeholder:text-white/45 */
   }
 
   input:focus,
   select:focus,
   textarea:focus {
-    @apply border-[rgba(212,175,55,0.45)] ring-2 ring-[rgba(212,175,55,0.18)];
+    border-color: rgba(212, 175, 55, 0.45); /* border-[rgba(212,175,55,0.45)] */
+    box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.18); /* ring-2 ring-[rgba(...,0.18)] */
   }
 
   label {
-    @apply text-sm text-white/75;
+    font-size: 0.875rem; /* text-sm */
+    line-height: 1.25rem;
+    color: rgba(255, 255, 255, 0.75); /* text-white/75 */
   }
 
   hr {
-    @apply border-white/10;
+    border-color: rgba(255, 255, 255, 0.1); /* border-white/10 */
   }
 }
 
@@ -134,9 +153,8 @@ a {
   .cd-card {
     border-radius: 28px;
     border: 1px solid var(--cd-border);
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%),
-      radial-gradient(1200px 320px at 10% 0%, rgba(18, 120, 84, 0.18) 0%, rgba(18, 120, 84, 0.00) 60%),
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%),
+      radial-gradient(1200px 320px at 10% 0%, rgba(18, 120, 84, 0.18) 0%, rgba(18, 120, 84, 0) 60%),
       var(--cd-surface);
     box-shadow: var(--cd-shadow);
     backdrop-filter: blur(14px);
@@ -152,48 +170,85 @@ a {
 
   .cd-focus {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.20);
+    box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.2);
     border-color: rgba(212, 175, 55, 0.35);
   }
 
   /* Force dark dropdown panels for native selects (best-effort across browsers) */
-select option {
-  background-color: #0b1512; /* deep noble green */
-  color: rgba(255, 255, 255, 0.92);
+  select option {
+    background-color: #0b1512; /* deep noble green */
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  select optgroup {
+    background-color: #0b1512;
+    color: rgba(255, 255, 255, 0.92);
+  }
 }
 
-select optgroup {
-  background-color: #0b1512;
-  color: rgba(255, 255, 255, 0.92);
-}
-
-
-}
 /* =========================
    PDF SAFE (html2canvas)
    Tailwind v4 uses color-mix(in oklab, ...) for /opacity utilities.
    html2canvas can't parse oklab, so we override to rgba.
    ========================= */
 
-.pdf-safe .bg-white\/5 { background-color: rgba(255,255,255,0.05) !important; }
-.pdf-safe .bg-white\/4 { background-color: rgba(255,255,255,0.04) !important; }
-.pdf-safe .bg-white\/10 { background-color: rgba(255,255,255,0.10) !important; }
-.pdf-safe .bg-white\/15 { background-color: rgba(255,255,255,0.15) !important; }
+.pdf-safe .bg-white\/5 {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+.pdf-safe .bg-white\/4 {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+}
+.pdf-safe .bg-white\/10 {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+.pdf-safe .bg-white\/15 {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+}
 
-.pdf-safe .border-white\/5 { border-color: rgba(255,255,255,0.05) !important; }
-.pdf-safe .border-white\/10 { border-color: rgba(255,255,255,0.10) !important; }
-.pdf-safe .border-white\/15 { border-color: rgba(255,255,255,0.15) !important; }
+.pdf-safe .border-white\/5 {
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+.pdf-safe .border-white\/10 {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+.pdf-safe .border-white\/15 {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
 
-.pdf-safe .text-white\/35 { color: rgba(255,255,255,0.35) !important; }
-.pdf-safe .text-white\/45 { color: rgba(255,255,255,0.45) !important; }
-.pdf-safe .text-white\/55 { color: rgba(255,255,255,0.55) !important; }
-.pdf-safe .text-white\/60 { color: rgba(255,255,255,0.60) !important; }
-.pdf-safe .text-white\/65 { color: rgba(255,255,255,0.65) !important; }
-.pdf-safe .text-white\/70 { color: rgba(255,255,255,0.70) !important; }
-.pdf-safe .text-white\/75 { color: rgba(255,255,255,0.75) !important; }
-.pdf-safe .text-white\/80 { color: rgba(255,255,255,0.80) !important; }
-.pdf-safe .text-white\/85 { color: rgba(255,255,255,0.85) !important; }
-.pdf-safe .text-white\/90 { color: rgba(255,255,255,0.90) !important; }
+.pdf-safe .text-white\/35 {
+  color: rgba(255, 255, 255, 0.35) !important;
+}
+.pdf-safe .text-white\/45 {
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+.pdf-safe .text-white\/55 {
+  color: rgba(255, 255, 255, 0.55) !important;
+}
+.pdf-safe .text-white\/60 {
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+.pdf-safe .text-white\/65 {
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+.pdf-safe .text-white\/70 {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+.pdf-safe .text-white\/75 {
+  color: rgba(255, 255, 255, 0.75) !important;
+}
+.pdf-safe .text-white\/80 {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+.pdf-safe .text-white\/85 {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+.pdf-safe .text-white\/90 {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
 
-.pdf-safe .bg-amber-500\/10 { background-color: rgba(245,158,11,0.10) !important; }
-.pdf-safe .border-amber-500\/20 { border-color: rgba(245,158,11,0.20) !important; }
+.pdf-safe .bg-amber-500\/10 {
+  background-color: rgba(245, 158, 11, 0.1) !important;
+}
+.pdf-safe .border-amber-500\/20 {
+  border-color: rgba(245, 158, 11, 0.2) !important;
+}

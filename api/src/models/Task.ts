@@ -33,6 +33,10 @@ export interface TaskAttributes {
   auto_generated?: boolean;
   generated_from?: string | null;
 
+  source: "generator" | "manual" | "document";
+  linked_document_id: string | null;
+
+
   created_at?: Date;
   updated_at?: Date;
 }
@@ -67,6 +71,9 @@ export class Task
 
   public auto_generated!: boolean;
   public generated_from!: string | null;
+
+  public source!: "generator" | "manual" | "document";
+  public linked_document_id!: string | null;
 
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
@@ -120,6 +127,16 @@ Task.init(
       type: DataTypes.STRING(50),
       allowNull: true,
     },
+    source: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: "manual",
+    },
+    linked_document_id: {
+      type: DataTypes.UUID,
+      allowNull: true,
+    },
+
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,

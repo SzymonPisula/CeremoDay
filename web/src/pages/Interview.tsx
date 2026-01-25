@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Calendar,
@@ -9,7 +9,6 @@ import {
   Users,
   Bell,
   Sparkles,
-  X,
   Loader2,
   ArrowLeft,
 } from "lucide-react";
@@ -26,6 +25,8 @@ import type {
   VenueChoice,
 } from "../types/interview";
 import DatePicker from "../ui/DatePicker";
+import { useUiStore } from "../store/ui";
+import { msg } from "../ui/uiMessages";
 
 const CEREMONY_OPTIONS: { value: CeremonyType; label: string; desc: string }[] = [
   { value: "civil", label: "Ślub cywilny", desc: "Wpływa na formalności i checklisty." },
@@ -81,18 +82,20 @@ type OptionCardProps = {
   description?: string;
   selected: boolean;
   onClick: () => void;
-  icon?: React.ReactNode;
+  icon?: ReactNode;
   disabled?: boolean;
 };
 
 function OptionCard({ title, description, selected, onClick, icon, disabled }: OptionCardProps) {
   const base =
-    "w-full text-left rounded-2xl border px-4 py-4 transition " +
+    "relative w-full text-left rounded-2xl border px-4 py-4 transition " +
     "bg-white/5 border-white/10 hover:bg-white/7 hover:border-white/15 " +
     "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/40";
+
   const active =
     "bg-gradient-to-b from-white/10 to-white/5 border-[#c8a04b]/35 " +
     "shadow-[0_18px_55px_rgba(200,160,75,0.18)]";
+
   const off = "opacity-60 cursor-not-allowed hover:bg-white/5 hover:border-white/10";
 
   return (
@@ -103,33 +106,47 @@ function OptionCard({ title, description, selected, onClick, icon, disabled }: O
       disabled={disabled}
       className={`${base} ${selected ? active : ""} ${disabled ? off : ""}`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            {icon ? (
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5">
-                {icon}
-              </span>
-            ) : null}
-            <div className="font-semibold text-white">{title}</div>
-          </div>
-          {description ? <div className="mt-1 text-sm text-white/55">{description}</div> : null}
-        </div>
+      {/* Badge zawsze w prawym górnym rogu – poza flow, więc nic nie skacze */}
+      <span
+        className={[
+          "absolute right-3 top-3 inline-flex items-center gap-1 rounded-full border px-3 py-1",
+          "text-xs font-semibold",
+          "border-emerald-400/20 bg-emerald-400/10 text-emerald-200",
+          "transition-opacity",
+          selected ? "opacity-100" : "opacity-0",
+        ].join(" ")}
+        aria-hidden={!selected}
+      >
+        <Check className="h-3.5 w-3.5" />
+        Wybrane
+      </span>
 
-        {selected ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-            <Check className="h-3.5 w-3.5" />
-            Wybrane
-          </span>
-        ) : null}
+      {/* Rezerwujemy miejsce na badge (żeby nigdy nie nachodził na tytuł) */}
+      <div className="pt-6">
+        <div className="flex items-start gap-3">
+          {icon ? (
+            <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5">
+              {icon}
+            </span>
+          ) : null}
+
+          <div className="min-w-0">
+            <div className="font-semibold text-white leading-snug">{title}</div>
+            {description ? <div className="mt-1 text-sm text-white/55">{description}</div> : null}
+          </div>
+        </div>
       </div>
     </button>
   );
 }
 
+
 export default function Interview() {
   const { id: eventId } = useParams();
   const navigate = useNavigate();
+
+  const uiToast = useUiStore((s) => s.toast);
+  const uiConfirm = useUiStore((s) => s.confirmAsync);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -138,12 +155,10 @@ export default function Interview() {
   // 1) typ uroczystości
   const [ceremonyType, setCeremonyType] = useState<CeremonyType>("civil");
 
-  // 2) data (opcjonalnie) + przełącznik Tak/Nie
-  const [hasEventDate, setHasEventDate] = useState<boolean>(false);
-  const [eventDate, setEventDate] = useState<string>(""); // YYYY-MM-DD albo ""
-  
+  // 2) DATA — teraz zawsze obowiązkowa (orientacyjna, można potem dopasować)
+  const [eventDate, setEventDate] = useState<string>(""); // YYYY-MM-DD
+
   // 3) finanse
-  const [hasBudget, setHasBudget] = useState<boolean>(false);
   const [financeInitial, setFinanceInitial] = useState<string>(""); // string w input
 
   // 4) ilu gości
@@ -173,6 +188,12 @@ export default function Interview() {
 
   const requiredSet = useMemo(() => new Set(requiredVendors), [requiredVendors]);
   const optionalSet = useMemo(() => new Set(optionalVendors), [optionalVendors]);
+  const minTomorrow = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10); // YYYY-MM-DD
+  }, []);
 
   // -------------------------
   // UI helpers (CeremoDay vibe)
@@ -232,12 +253,10 @@ export default function Interview() {
   function applyInterviewToState(data: InterviewResponse) {
     setCeremonyType(data.ceremony_type);
 
-    const date = data.event_date ?? "";
-    setHasEventDate(!!date);
-    setEventDate(date);
+    // data obowiązkowa — jeśli brak w danych, zostaje ""
+    setEventDate(data.event_date ?? "");
 
     const b = data.finance_initial_budget;
-    setHasBudget(b != null && Number(b) > 0);
     setFinanceInitial(b != null ? String(b) : "");
 
     setGuestRange(data.guest_count_range);
@@ -264,12 +283,65 @@ export default function Interview() {
     setOptionalVendors((prev) => toggleInArray(prev, v));
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!eventId) return;
 
     setSaving(true);
     setError(null);
+
+    const trimmedDate = eventDate.trim();
+    if (!trimmedDate) {
+      setSaving(false);
+      setError("Data wydarzenia jest obowiązkowa (może być orientacyjna).");
+      return;
+    }
+    if (trimmedDate < minTomorrow) {
+      setSaving(false);
+      setError("Data wydarzenia nie może być wcześniejsza niż jutro.");
+      return;
+    }
+
+
+        const budgetRaw = financeInitial.trim();
+    if (!budgetRaw) {
+      setSaving(false);
+      setError("Planowany budżet (limit) jest obowiązkowy.");
+      return;
+    }
+
+    // pozwalamy na: 123, 123.45, 123,45
+    const okMoney = /^[0-9]{1,9}([.,][0-9]{1,2})?$/.test(budgetRaw);
+    if (!okMoney) {
+      setSaving(false);
+      setError("Budżet: podaj liczbę (cyfry, opcjonalnie , lub . i max 2 miejsca).");
+      return;
+    }
+
+    const budgetValue = Number(budgetRaw.replace(",", "."));
+    if (!Number.isFinite(budgetValue) || budgetValue <= 0) {
+      setSaving(false);
+      setError("Budżet musi być większy od 0.");
+      return;
+    }
+
+
+    
+
+        const ok = await uiConfirm({
+      tone: "warning",
+      title: "Dostrojenie zadań",
+      message:
+        "Zapis wywiadu może przesunąć terminy zadań nieukończonych, żeby plan był wykonalny. Kontynuować?",
+      confirmText: "Zapisz i dostrój",
+      cancelText: "Anuluj",
+    });
+
+    if (!ok) {
+      setSaving(false);
+      return;
+    }
+
 
     const reqSet = new Set<VendorKey>(requiredVendors);
     reqSet.add("DJ_OR_BAND");
@@ -278,12 +350,11 @@ export default function Interview() {
     const payload: InterviewPayload = {
       ceremony_type: ceremonyType,
 
-      event_date: hasEventDate && eventDate.trim() ? eventDate.trim() : null,
+      // OBOWIĄZKOWE
+      event_date: trimmedDate,
 
-      finance_initial_budget:
-        hasBudget && financeInitial.trim() !== ""
-          ? Number(financeInitial.trim().replace(",", "."))
-          : null,
+      finance_initial_budget: budgetValue,
+
 
       guest_count_range: guestRange,
       guest_list_status: guestListStatus,
@@ -299,12 +370,20 @@ export default function Interview() {
     };
 
     try {
-      const saved = await api.saveInterview(eventId, payload);
+            const saved = await api.saveInterview(eventId, payload);
       applyInterviewToState(saved);
-      window.dispatchEvent(
-        new CustomEvent("ceremoday:interview-updated", { detail: { eventId } })
-      );
+
+      uiToast(msg("INTERVIEW_SAVED"));
+
+      await api.generateEvent(eventId, { mode: "regen", keep_done: true });
+
+      // Jeśli generator zwraca flagi/meta, możesz dopiąć później:
+      // uiToast(msg("TASKS_TUNED", { clamped: gen.meta?.clamped }));
+      // if (gen.requires_check) uiToast(msg("TASKS_REQUIRE_CHECK"));
+
+      window.dispatchEvent(new CustomEvent("ceremoday:interview-updated", { detail: { eventId } }));
       navigate(`/event/${eventId}`, { replace: true });
+
     } catch (err) {
       setError(err instanceof Error ? err.message : "Błąd zapisu wywiadu");
     } finally {
@@ -332,7 +411,7 @@ export default function Interview() {
           <div>
             <h1 className="text-2xl font-bold text-white">Wywiad startowy</h1>
             <p className="text-sm text-white/60 mt-1">
-              Ten widok służy do <b>edycji odpowiedzi</b>. Startowy wywiad zrobimy później jako osobne sceny.
+              Ten widok służy do <b>edycji odpowiedzi</b>. Po zapisie system dostroi zadania.
             </p>
           </div>
         </div>
@@ -358,7 +437,7 @@ export default function Interview() {
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* 1) Typ uroczystości -> 3 karty w poziomie */}
+          {/* 1) Typ uroczystości */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <Sparkles className="w-5 h-5 text-[#d7b45a]" />
@@ -380,34 +459,15 @@ export default function Interview() {
             </div>
           </section>
 
-          {/* 2) Data -> NIE/TAK karty + odblokowanie inputa */}
+          {/* 2) Data — OBOWIĄZKOWA */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <Calendar className="w-5 h-5 text-[#d7b45a]" />
-              <h2 className="text-white font-semibold text-lg">2) Data wydarzenia (opcjonalnie)</h2>
+              <h2 className="text-white font-semibold text-lg">2) Data wydarzenia (orientacyjna, obowiązkowa)</h2>
+              <span className="ml-auto text-xs text-white/45">Możesz później dopasować</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <OptionCard
-                title="Nie"
-                description="Nie podajemy daty — bez sugerowania zadań “pod termin”."
-                selected={!hasEventDate}
-                onClick={() => {
-                  setHasEventDate(false);
-                  setEventDate("");
-                }}
-                icon={<X className="h-4 w-4 text-[#d7b45a]" />}
-              />
-              <OptionCard
-                title="Tak"
-                description="Podaj datę — aplikacja może proponować zadania pod termin."
-                selected={hasEventDate}
-                onClick={() => setHasEventDate(true)}
-                icon={<Check className="h-4 w-4 text-[#d7b45a]" />}
-              />
-            </div>
-
-            <div className="mt-4">
+            <div className="mt-2">
               <label className="block text-xs text-white/70 mb-1">Wybierz datę</label>
               <div className="relative">
                 <DatePicker
@@ -415,84 +475,61 @@ export default function Interview() {
                   onChange={setEventDate}
                   placeholder="Wybierz datę"
                   maxDropdownWidth={360}
+                  minDate={minTomorrow}
                 />
 
                 <Calendar className="w-4 h-4 text-white/35 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
 
-              {hasEventDate ? (
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    className={btnSecondary}
-                    onClick={() => {
-                      setEventDate("");
-                      setHasEventDate(false);
-                    }}
-                  >
-                    <X className="w-4 h-4" />
-                    Wyczyść datę
-                  </button>
-                </div>
+              {!eventDate.trim() ? (
+                <p className="mt-2 text-xs text-red-200">
+                  Data jest wymagana. Jeśli nie znasz dokładnej — wybierz orientacyjną (potem dopasujesz w edycji).
+                </p>
               ) : (
                 <p className="mt-2 text-xs text-white/45">
-                  Jeśli zostawisz “Nie” — nie będziemy proponować zadań “pod termin”.
+                  Minimalna data: <b>{minTomorrow}</b> (jutro). To orientacyjna data startowa do wygenerowania planu.
+                  Zmiana daty może przesunąć terminy zadań nieukończonych.
                 </p>
+                
+
               )}
             </div>
           </section>
 
-                    {/* 3) Finanse */}
-          <section className={`${cardBase} p-6 md:p-7`}>
-            <div className="flex items-center gap-2 mb-4">
-              <Sparkles className="w-5 h-5 text-[#d7b45a]" />
-              <h2 className="text-white font-semibold text-lg">3) Finanse — budżet </h2>
-            </div>
+          {/* 3) Finanse */}
+<section className={`${cardBase} p-6 md:p-7`}>
+  <div className="flex items-center gap-2 mb-2">
+    <Sparkles className="w-5 h-5 text-[#d7b45a]" />
+    <h2 className="text-white font-semibold text-lg">3) Finanse — planowany budżet (limit)</h2>
+  </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <OptionCard
-                title="Nie mam budżetu"
-                description="Pominiemy budżet startowy — możesz dodać później w module Finanse."
-                selected={!hasBudget}
-                onClick={() => {
-                  setHasBudget(false);
-                  setFinanceInitial("");
-                }}
-                icon={<X className="h-4 w-4 text-[#d7b45a]" />}
-              />
-              <OptionCard
-                title="Mam budżet"
-                description="Ustawimy budżet startowy i walutę jako domyślne."
-                selected={hasBudget}
-                onClick={() => setHasBudget(true)}
-                icon={<Check className="h-4 w-4 text-[#d7b45a]" />}
-              />
-            </div>
+  <p className="text-sm text-white/60 mt-1">
+    To <b>wstępny limit do planowania</b>. Na jego podstawie system lepiej dobiera rozwiązania
+    i raporty. Możesz go później zmienić w module <b>Wywiad (edycja)</b>.
+  </p>
 
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-              <div className="md:col-span-2">
-                <label className="block text-xs text-white/70 mb-1">Budżet początkowy</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className={`${inputBase} ${hasBudget ? "" : "opacity-60"}`}
-                  value={financeInitial}
-                  onChange={(e) => setFinanceInitial(e.target.value)}
-                  disabled={!hasBudget}
-                  placeholder="np. 45000"
-                />
-              </div>
+  <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+    <div className="md:col-span-2">
+      <label className="block text-xs text-white/70 mb-1">Planowany budżet (limit)</label>
+      <input
+        type="number"
+        step="0.01"
+        min={0}
+        className={inputBase}
+        value={financeInitial}
+        onChange={(e) => setFinanceInitial(e.target.value)}
+        placeholder="np. 67000"
+      />
 
-              
-            </div>
-
-            <p className="mt-3 text-xs text-white/45">
-              To są ustawienia startowe. W module <b>Finanse</b> i tak możesz później zmieniać budżet i walutę.
-            </p>
-          </section>
+      {!financeInitial.trim() ? (
+        <p className="mt-2 text-xs text-red-200">To pole jest obowiązkowe.</p>
+      ) : null}
+    </div>
+  </div>
+</section>
 
 
-          {/* 4) Ilu gości -> 5 kart */}
+          {/* 4) Ilu gości */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <Users className="w-5 h-5 text-[#d7b45a]" />
@@ -512,13 +549,9 @@ export default function Interview() {
                 />
               ))}
             </div>
-
-            <p className="mt-3 text-xs text-white/45">
-              Zakres pomaga dobrać checklisty i budżetowe podpowiedzi.
-            </p>
           </section>
 
-          {/* 5) Status listy gości -> 3 karty */}
+          {/* 5) Status listy gości */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <ClipboardList className="w-5 h-5 text-[#d7b45a]" />
@@ -539,7 +572,7 @@ export default function Interview() {
             </div>
           </section>
 
-          {/* 6) Muzyka -> 2 karty */}
+          {/* 6) Muzyka */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <Music className="w-5 h-5 text-[#d7b45a]" />
@@ -558,13 +591,9 @@ export default function Interview() {
                 />
               ))}
             </div>
-
-            <p className="mt-3 text-xs text-white/45">
-              Systemowo zapisujemy wymagane: <b>DJ_OR_BAND</b> oraz <b>VENUE</b>. Tutaj ustawiasz preferencję.
-            </p>
           </section>
 
-          {/* 7) Sala -> 2 karty */}
+          {/* 7) Sala */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <MapPin className="w-5 h-5 text-[#d7b45a]" />
@@ -585,7 +614,7 @@ export default function Interview() {
             </div>
           </section>
 
-          {/* 8) Usługi dodatkowe -> multi karty */}
+          {/* 8) Usługi dodatkowe */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <Sparkles className="w-5 h-5 text-[#d7b45a]" />
@@ -606,13 +635,9 @@ export default function Interview() {
                 />
               ))}
             </div>
-
-            <p className="mt-3 text-xs text-white/45">
-              Wybrane usługi wpływają na sugestie checklist i priorytetów.
-            </p>
           </section>
 
-          {/* 9) Dzień ślubu -> Tak/Nie */}
+          {/* 9) Dzień ślubu */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <Sparkles className="w-5 h-5 text-[#d7b45a]" />
@@ -627,19 +652,19 @@ export default function Interview() {
                 description="Nie używam modułu „Dzień ślubu”."
                 selected={!weddingDayEnabled}
                 onClick={() => setWeddingDayEnabled(false)}
-                icon={<X className="h-4 w-4 text-[#d7b45a]" />}
+                icon={<Sparkles className="h-4 w-4 text-[#d7b45a]" />}
               />
               <OptionCard
                 title="Tak"
                 description="Chcę checklistę i plan dnia w jednym miejscu."
                 selected={weddingDayEnabled}
                 onClick={() => setWeddingDayEnabled(true)}
-                icon={<Check className="h-4 w-4 text-[#d7b45a]" />}
+                icon={<Sparkles className="h-4 w-4 text-[#d7b45a]" />}
               />
             </div>
           </section>
 
-          {/* 10) Powiadomienia -> karty */}
+          {/* 10) Powiadomienia */}
           <section className={`${cardBase} p-6 md:p-7`}>
             <div className="flex items-center gap-2 mb-4">
               <Bell className="w-5 h-5 text-[#d7b45a]" />
@@ -663,7 +688,7 @@ export default function Interview() {
           {/* Footer actions */}
           <div className={`${cardBase} p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4`}>
             <div className="text-sm text-white/60">
-              Zawsze możesz wrócić do edycji odpowiedzi z menu.
+              Po zapisie system <b>dostroi zadania</b> na podstawie odpowiedzi.
             </div>
 
             <div className="flex items-center gap-2">
@@ -676,9 +701,13 @@ export default function Interview() {
                 Anuluj
               </button>
 
-              <button type="submit" disabled={saving} className={btnGold}>
+<button
+  type="submit"
+  disabled={saving || !eventDate.trim() || !financeInitial.trim()}
+  className={btnGold}
+>
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                {saving ? "Zapisywanie…" : "Zapisz i przejdź dalej"}
+                {saving ? "Zapisywanie…" : "Zapisz i dostrój"}
               </button>
             </div>
           </div>

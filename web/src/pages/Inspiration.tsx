@@ -1,5 +1,5 @@
 // /CeremoDay/web/src/pages/Inspiration.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 import {
@@ -11,8 +11,10 @@ import {
   Search,
   Pencil,
   X,
+  Files,
 } from "lucide-react";
 import { api, BASE_URL } from "../lib/api";
+import { useUiStore } from "../store/ui";
 import Select from "../ui/Select";
 import type {
   InspirationBoard,
@@ -52,6 +54,53 @@ const FILTER_CATEGORY_OPTIONS = ([
   value: "all" | InspirationCategory;
   label: string;
 }>;
+
+// ===== Walidacja plików (JPG/PNG/PDF) =====
+const FILE_ACCEPT = "image/jpeg,image/png,application/pdf";
+const ALLOWED_MIMES = new Set(["image/jpeg", "image/png", "application/pdf"]);
+const ALLOWED_EXT = new Set(["jpg", "jpeg", "png", "pdf"]);
+
+function getExt(name: string) {
+  const parts = name.toLowerCase().split(".");
+  return parts.length > 1 ? parts[parts.length - 1] : "";
+}
+
+function validateFile(file: File): string | null {
+  const ext = getExt(file.name);
+
+  // mime (najpewniejsze)
+  if (file.type && ALLOWED_MIMES.has(file.type)) return null;
+
+  // fallback po rozszerzeniu (czasem Windows / drag&drop potrafi dać pusty mime)
+  if (!file.type && ext && ALLOWED_EXT.has(ext)) return null;
+
+  // czasem mime bywa dziwny, ale rozszerzenie poprawne
+  if (ext && ALLOWED_EXT.has(ext)) return null;
+
+  return "Dozwolone pliki: JPG, PNG lub PDF.";
+}
+
+function isPdfUrl(url?: string | null) {
+  if (!url) return false;
+  const u = url.split("?")[0].toLowerCase();
+  return u.endsWith(".pdf");
+}
+
+function isAllowedUpload(file: File) {
+  const type = (file.type || "").toLowerCase();
+  const name = (file.name || "").toLowerCase();
+
+  const okByMime =
+    type === "image/jpeg" || type === "image/png" || type === "application/pdf";
+
+  const okByExt =
+    name.endsWith(".jpg") ||
+    name.endsWith(".jpeg") ||
+    name.endsWith(".png") ||
+    name.endsWith(".pdf");
+
+  return okByMime || okByExt;
+}
 
 // ===== Modal (spójny, jak w Gościach) =====
 const Modal: React.FC<{
@@ -95,9 +144,7 @@ const Modal: React.FC<{
       {/* content */}
       <div className="relative w-full max-w-2xl p-6 overflow-y-auto max-h-[90vh] rounded-2xl shadow-2xl border border-white/10 bg-emerald-950/70 text-white backdrop-blur-xl">
         <div className="flex items-start justify-between gap-3 mb-4">
-          <div>
-            {title ? <h3 className="text-xl font-semibold text-white">{title}</h3> : null}
-          </div>
+          <div>{title ? <h3 className="text-xl font-semibold text-white">{title}</h3> : null}</div>
           <button
             type="button"
             onClick={onClose}
@@ -117,6 +164,8 @@ const Modal: React.FC<{
 
 export default function Inspiration() {
   const { id: eventId } = useParams<Params>();
+  const confirmAsync = useUiStore((s) => s.confirmAsync);
+  const toast = useUiStore((s) => s.toast);
 
   const [boards, setBoards] = useState<InspirationBoard[]>([]);
   const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
@@ -137,6 +186,8 @@ export default function Inspiration() {
   const [newItemTags, setNewItemTags] = useState("");
   const [newItemDescription, setNewItemDescription] = useState("");
   const [newFile, setNewFile] = useState<File | null>(null);
+  const [newFileError, setNewFileError] = useState<string | null>(null);
+  const newFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // filtrowanie
   const [categoryFilter, setCategoryFilter] = useState<InspirationCategory | "all">("all");
@@ -153,6 +204,10 @@ export default function Inspiration() {
   const [editItemCategory, setEditItemCategory] = useState<InspirationCategory>("DEKORACJE");
   const [editItemTags, setEditItemTags] = useState("");
   const [editItemDescription, setEditItemDescription] = useState("");
+
+  const [preview, setPreview] = useState<{ open: boolean; url: string; title?: string } | null>(
+    null
+  );
 
   // UI helpers — spójne z resztą “CRM vibe”
   const inputBase =
@@ -176,7 +231,6 @@ export default function Inspiration() {
     "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/40 " +
     "transition";
 
-
   const cardBase =
     "rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md " +
     "shadow-[0_24px_80px_rgba(0,0,0,0.45)]";
@@ -184,6 +238,11 @@ export default function Inspiration() {
   const chip =
     "inline-flex items-center gap-2 px-3 py-1 rounded-full " +
     "border border-white/10 bg-white/5 text-white/80 text-xs";
+
+  const fail = (msg: string) => {
+    setError(msg);
+    toast({ tone: "warning", title: "Uwaga", message: msg });
+  };
 
   // === Fetch: tablice ===
   useEffect(() => {
@@ -203,14 +262,14 @@ export default function Inspiration() {
         });
       } catch (err) {
         console.error("❌ Błąd pobierania tablic inspiracji:", err);
-        setError("Nie udało się pobrać tablic inspiracji");
+        fail("Nie udało się pobrać tablic inspiracji");
       } finally {
         setLoadingBoards(false);
       }
     };
 
     fetchBoards();
-  }, [eventId]);
+  }, [eventId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // === Fetch: elementy tablicy ===
   useEffect(() => {
@@ -227,14 +286,14 @@ export default function Inspiration() {
         setItems(data);
       } catch (err) {
         console.error("❌ Błąd pobierania inspiracji:", err);
-        setError("Nie udało się pobrać inspiracji");
+        fail("Nie udało się pobrać inspiracji");
       } finally {
         setLoadingItems(false);
       }
     };
 
     fetchItems();
-  }, [selectedBoardId]);
+  }, [selectedBoardId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedBoard = useMemo(
     () => boards.find((b) => b.id === selectedBoardId) || null,
@@ -254,7 +313,7 @@ export default function Inspiration() {
   const handleCreateBoard = async () => {
     if (!eventId) return;
     if (!newBoardName.trim()) {
-      alert("Podaj nazwę tablicy");
+      fail("Podaj nazwę tablicy.");
       return;
     }
 
@@ -267,13 +326,16 @@ export default function Inspiration() {
       setSaving(true);
       setError(null);
       const created = await api.createInspirationBoard(eventId, payload);
+
       setBoards((prev) => [...prev, created]);
       setNewBoardName("");
       setNewBoardDescription("");
+
       setSelectedBoardId((prev) => prev ?? created.id);
+      toast({  tone: "success", title: "Sukces", message: "Tablica została dodana." });
     } catch (err) {
       console.error("❌ Błąd tworzenia tablicy inspiracji:", err);
-      setError("Nie udało się utworzyć tablicy");
+      fail("Nie udało się utworzyć tablicy.");
     } finally {
       setSaving(false);
     }
@@ -289,7 +351,7 @@ export default function Inspiration() {
     if (!editingBoard) return;
     const name = editBoardName.trim();
     if (!name) {
-      alert("Nazwa tablicy nie może być pusta");
+      fail("Nazwa tablicy nie może być pusta.");
       return;
     }
 
@@ -303,33 +365,50 @@ export default function Inspiration() {
 
       setBoards((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
       setEditingBoard(null);
+
+      toast({  tone: "success", title: "Sukces", message: "Tablica została zapisana." });
     } catch (err) {
       console.error("❌ Błąd edycji tablicy:", err);
-      setError("Nie udało się zapisać zmian tablicy");
+      fail("Nie udało się zapisać zmian tablicy.");
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteBoard = async (board: InspirationBoard) => {
-    if (!window.confirm(`Na pewno chcesz usunąć tablicę "${board.name}"?`)) return;
+    const ok = await confirmAsync({
+      title: "Usunąć tablicę?",
+      message: `Tablica „${board.name}” zostanie usunięta.`,
+      confirmText: "Usuń",
+      cancelText: "Anuluj",
+      tone: "danger",
+    });
+    if (!ok) return;
 
     try {
       setSaving(true);
-      await api.deleteInspirationBoard(board.id);
-      setBoards((prev) => prev.filter((b) => b.id !== board.id));
+      setError(null);
 
-      if (selectedBoardId === board.id) {
+      await api.deleteInspirationBoard(board.id);
+
+      // ✅ bezpiecznie na podstawie "prev"
+      setBoards((prev) => {
+        const next = prev.filter((b) => b.id !== board.id);
+        // jeśli usuwamy aktywną -> ustaw pierwszą pozostałą
         setSelectedBoardId((prevSelected) => {
           if (prevSelected !== board.id) return prevSelected;
-          const remaining = boards.filter((b) => b.id !== board.id);
-          return remaining.length ? remaining[0].id : null;
+          return next.length ? next[0].id : null;
         });
-        setItems([]);
-      }
+        return next;
+      });
+
+      // jeśli usuwamy aktywną, czyścimy elementy (efekt i tak dociągnie)
+      if (selectedBoardId === board.id) setItems([]);
+
+      toast({  tone: "success", title: "Sukces", message: "Tablica usunięta." });
     } catch (err) {
       console.error("❌ Błąd usuwania tablicy:", err);
-      setError("Nie udało się usunąć tablicy");
+      fail("Nie udało się usunąć tablicy.");
     } finally {
       setSaving(false);
     }
@@ -337,12 +416,22 @@ export default function Inspiration() {
 
   const handleCreateItem = async () => {
     if (!selectedBoardId) {
-      alert("Najpierw wybierz tablicę");
+      fail("Najpierw wybierz tablicę.");
       return;
     }
     if (!newItemTitle.trim()) {
-      alert("Podaj tytuł inspiracji");
+      fail("Podaj tytuł inspiracji.");
       return;
+    }
+
+    // walidacja pliku (jeśli jest)
+    if (newFile) {
+      const msg = validateFile(newFile);
+      if (msg) {
+        setNewFileError(msg);
+        fail(msg);
+        return;
+      }
     }
 
     const payload: InspirationItemPayload = {
@@ -361,8 +450,19 @@ export default function Inspiration() {
 
       // 2) jeśli user wybrał plik -> upload od razu
       let finalItem = created;
+
       if (newFile) {
-        finalItem = await api.uploadInspirationImage(created.id, newFile);
+        try {
+          finalItem = await api.uploadInspirationImage(created.id, newFile);
+        } catch (e) {
+          // ✅ rekord jest utworzony, ale upload padł — pokazujemy czytelny toast
+          console.error("❌ Upload po create nie wyszedł:", e);
+          toast({
+            tone: "warning", title: "Uwaga",
+            message:
+              "Inspiracja została dodana, ale nie udało się wgrać pliku. Spróbuj dodać plik jeszcze raz.",
+          });
+        }
       }
 
       setItems((prev) => [...prev, finalItem]);
@@ -373,9 +473,13 @@ export default function Inspiration() {
       setNewItemTags("");
       setNewItemCategory("DEKORACJE");
       setNewFile(null);
+      setNewFileError(null);
+      if (newFileInputRef.current) newFileInputRef.current.value = "";
+
+      toast({  tone: "success", title: "Sukces", message: "Inspiracja została dodana." });
     } catch (err) {
       console.error("❌ Błąd tworzenia inspiracji:", err);
-      setError("Nie udało się dodać inspiracji");
+      fail("Nie udało się dodać inspiracji.");
     } finally {
       setSaving(false);
     }
@@ -393,7 +497,7 @@ export default function Inspiration() {
     if (!editingItem) return;
     const title = editItemTitle.trim();
     if (!title) {
-      alert("Tytuł nie może być pusty");
+      fail("Tytuł nie może być pusty.");
       return;
     }
 
@@ -407,27 +511,43 @@ export default function Inspiration() {
     try {
       setSaving(true);
       setError(null);
-      const updated = await api.updateInspirationItem(editingItem.id, payload);
+const updated = await api.updateInspirationItem(editingItem.id, payload);
       setItems((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
       setEditingItem(null);
+
+      toast({  tone: "success", title: "Sukces", message: "Inspiracja została zapisana." });
     } catch (err) {
       console.error("❌ Błąd edycji inspiracji:", err);
-      setError("Nie udało się zapisać zmian inspiracji");
+      fail("Nie udało się zapisać zmian inspiracji.");
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteItem = async (item: InspirationItem) => {
-    if (!window.confirm(`Na pewno chcesz usunąć inspirację "${item.title}"?`)) return;
+    const ok = await confirmAsync({
+      title: "Usunąć inspirację?",
+      message: `Inspiracja „${item.title}” zostanie usunięta.`,
+      confirmText: "Usuń",
+      cancelText: "Anuluj",
+      tone: "danger",
+    });
+    if (!ok) return;
 
     try {
       setSaving(true);
-      await api.deleteInspirationItem(item.id);
+      setError(null);
+if (!eventId) {
+  fail("Brak eventId — nie można usunąć inspiracji.");
+  return;
+}
+
+await api.deleteInspirationItem(item.id, { event_id: eventId });
       setItems((prev) => prev.filter((i) => i.id !== item.id));
+      toast({  tone: "success", title: "Sukces", message: "Inspiracja usunięta." });
     } catch (err) {
       console.error("❌ Błąd usuwania inspiracji:", err);
-      setError("Nie udało się usunąć inspiracji");
+      fail("Nie udało się usunąć inspiracji.");
     } finally {
       setSaving(false);
     }
@@ -435,26 +555,42 @@ export default function Inspiration() {
 
   const handleUploadImage = async (item: InspirationItem, file: File | null | undefined) => {
     if (!file) return;
+
+    const msg = validateFile(file);
+    if (msg) {
+      fail(msg);
+      return;
+    }
+
     try {
       setSaving(true);
       setError(null);
       const updated = await api.uploadInspirationImage(item.id, file);
       setItems((prev) => prev.map((i) => (i.id === item.id ? updated : i)));
+      toast({  tone: "success", title: "Sukces", message: "Plik został zapisany." });
     } catch (err) {
       console.error("❌ Błąd uploadu pliku inspiracji:", err);
-      setError("Nie udało się wgrać pliku");
+      fail("Nie udało się wgrać pliku.");
     } finally {
       setSaving(false);
     }
   };
-const [preview, setPreview] = useState<{ open: boolean; url: string; title?: string } | null>(null);
+
+  function clearNewFile() {
+    setNewFile(null);
+    setNewFileError(null);
+    if (newFileInputRef.current) newFileInputRef.current.value = "";
+  }
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 grid place-items-center" aria-hidden>
+          <div
+            className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 grid place-items-center"
+            aria-hidden
+          >
             <Sparkles className="w-5 h-5 text-[#d7b45a]" />
           </div>
           <div>
@@ -509,31 +645,69 @@ const [preview, setPreview] = useState<{ open: boolean; url: string; title?: str
                   if (e.key === "Enter" || e.key === " ") setSelectedBoardId(board.id);
                 }}
                 className={
-                  "relative cursor-pointer rounded-2xl border p-4 text-left transition select-none " +
+                  "cursor-pointer rounded-2xl border text-left transition select-none " +
+                  "min-h-[190px] p-4 overflow-hidden flex flex-col " +
                   (isActive
                     ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 shadow-[0_18px_50px_rgba(0,0,0,0.35)]"
                     : "border-white/10 bg-white/5 hover:bg-white/7")
                 }
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-lg">{board.emoji ?? "✨"}</span>
-                      <div className="font-semibold text-white truncate">{board.name}</div>
+                {/* TOP ROW: status w prawym górnym rogu (sztywne miejsce, nic nie skacze) */}
+                <div className="flex items-start justify-end">
+                  <div className="w-[110px] flex justify-end">
+                    <span
+                      className={
+                        "inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] border " +
+                        (isActive
+                          ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-[#d7b45a]"
+                          : "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-[#d7b45a] invisible")
+                      }
+                    >
+                      <span
+                        className={
+                          "h-1.5 w-1.5 rounded-full " +
+                          (isActive ? "bg-[#d7b45a]" : "bg-[#d7b45a]")
+                        }
+                      />
+                      Aktywna
+                    </span>
+                  </div>
+                </div>
+
+                {/* TITLE */}
+                <div className="mt-2">
+                  <div className="flex items-start gap-2">
+                    <span className="text-lg leading-none mt-[1px]">{board.emoji ?? "✨"}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[15px] font-semibold text-white leading-snug line-clamp-2 break-words">
+                        {board.name}
+                      </div>
                     </div>
-                    {board.description && (
-                      <div className="text-xs text-white/55 line-clamp-2">{board.description}</div>
+                  </div>
+                </div>
+
+                {/* CONTENT */}
+                <div className="mt-3 flex-1">
+                  <div className="text-sm text-white/60 leading-relaxed line-clamp-5 break-words">
+                    {board.description ? board.description : (
+                      <span className="text-white/35">Brak opisu</span>
                     )}
                   </div>
+                </div>
 
-                  <div className="flex items-center gap-1">
+                {/* FOOTER */}
+                <div className="pt-3 flex items-center justify-between">
+                  <span className="text-xs text-white/35">tablica</span>
+
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         openEditBoard(board);
                       }}
-                      className="inline-flex items-center gap-2 text-xs text-white/55 hover:text-white/85"
+                      className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center
+                                 text-white/70 hover:text-white hover:bg-white/10 transition"
                       title="Edytuj tablicę"
                     >
                       <Pencil className="w-4 h-4" />
@@ -545,19 +719,14 @@ const [preview, setPreview] = useState<{ open: boolean; url: string; title?: str
                         e.stopPropagation();
                         handleDeleteBoard(board);
                       }}
-                      className="inline-flex items-center gap-2 text-xs text-white/55 hover:text-red-200"
+                      className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center
+                                 text-white/70 hover:text-red-200 hover:bg-white/10 transition"
                       title="Usuń tablicę"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
-
-                {isActive && (
-                  <div className="mt-3">
-                    <span className="text-[11px] text-[#d7b45a]">Aktywna</span>
-                  </div>
-                )}
               </div>
             );
           })}
@@ -579,7 +748,12 @@ const [preview, setPreview] = useState<{ open: boolean; url: string; title?: str
                 onChange={(e) => setNewBoardDescription(e.target.value)}
                 className={textareaBase}
               />
-              <button type="button" onClick={handleCreateBoard} disabled={saving} className={btnGold + " w-full"}>
+              <button
+                type="button"
+                onClick={handleCreateBoard}
+                disabled={saving}
+                className={btnGold + " w-full"}
+              >
                 <Plus className="w-4 h-4" />
                 Dodaj tablicę
               </button>
@@ -640,7 +814,7 @@ const [preview, setPreview] = useState<{ open: boolean; url: string; title?: str
               <div>
                 <div className="text-white font-semibold">Dodaj inspirację</div>
                 <div className="text-xs text-white/55">
-                  Tytuł, kategoria, tagi + opis. Plik możesz dodać od razu.
+                  Tytuł, kategoria, tagi + opis. Plik dodasz od razu (JPG/PNG/PDF).
                 </div>
               </div>
             </div>
@@ -680,47 +854,96 @@ const [preview, setPreview] = useState<{ open: boolean; url: string; title?: str
               </div>
 
               <div className="space-y-3">
-                <div>
-                  <div className="text-[11px] uppercase tracking-wider text-white/55 mb-1">
-                    Plik (zdjęcie lub PDF)
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="text-[11px] uppercase tracking-wider text-white/55 mb-2">
+                    Plik (JPG/PNG/PDF)
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <label
                       className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold
                                 bg-white/5 text-white border border-white/10
                                 hover:bg-white/8 hover:border-white/15 cursor-pointer transition"
+                      title="Dodaj plik (JPG/PNG/PDF)"
                     >
+                      <Files className="w-4 h-4 text-[#d7b45a]" />
+                      Dodaj plik
                       <input
+                        ref={newFileInputRef}
                         type="file"
-                        accept="image/*,application/pdf"
+                        accept={FILE_ACCEPT}
                         className="hidden"
-                        onChange={(e) => setNewFile(e.target.files?.[0] ?? null)}
-                      />
-                      + Dodaj plik
-                    </label>
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] ?? null;
 
-                    <div className="text-sm text-white/70 truncate">
-                      {newFile ? (
-                        <span className="text-white/85">{newFile.name}</span>
-                      ) : (
-                        <span className="text-white/45">Nie wybrano pliku</span>
-                      )}
-                    </div>
+                          setNewFileError(null);
+
+                          if (!f) {
+                            setNewFile(null);
+                            return;
+                          }
+
+                          if (!isAllowedUpload(f)) {
+                            const msg = "Możesz dodać tylko pliki: JPG, PNG lub PDF.";
+                            setNewFile(null);
+                            setNewFileError(msg);
+                            fail(msg);
+                            e.currentTarget.value = "";
+                            return;
+                          }
+
+                          const vmsg = validateFile(f);
+                          if (vmsg) {
+                            setNewFile(null);
+                            setNewFileError(vmsg);
+                            fail(vmsg);
+                            e.currentTarget.value = "";
+                            return;
+                          }
+
+                          setNewFile(f);
+                        }}
+                      />
+                    </label>
 
                     {newFile ? (
                       <button
                         type="button"
-                        onClick={() => setNewFile(null)}
+                        onClick={clearNewFile}
                         className="text-xs text-white/55 hover:text-white/80 transition"
                       >
                         Wyczyść
                       </button>
                     ) : null}
                   </div>
+
+                  <div className="mt-3">
+                    {newFile ? (
+                      <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                        <div className="text-[11px] uppercase tracking-wider text-white/45">
+                          Wybrany plik
+                        </div>
+                        <div className="mt-1 text-sm text-white/85 truncate" title={newFile.name}>
+                          {newFile.name}
+                        </div>
+                        <div className="mt-1 text-xs text-white/45">
+                          Dozwolone: JPG, PNG, PDF
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-white/45">Nie wybrano pliku</div>
+                    )}
+
+                    {newFileError ? <div className="mt-2 text-xs text-red-200">{newFileError}</div> : null}
+                  </div>
                 </div>
 
-                <button type="button" onClick={handleCreateItem} disabled={saving} className={btnGold + " w-full"}>
+                <button
+                  type="button"
+                  onClick={handleCreateItem}
+                  disabled={saving}
+                  className={btnGold + " w-full"}
+                >
                   <Plus className="w-4 h-4" />
                   Dodaj inspirację
                 </button>
@@ -734,17 +957,28 @@ const [preview, setPreview] = useState<{ open: boolean; url: string; title?: str
               <div key={item.id} className={cardBase + " overflow-hidden"}>
                 <div className="relative">
                   {item.image_url ? (
-                    <img
-                      src={`${BASE_URL}${item.image_url}`}
-                      alt={item.title}
-                      className="w-full h-44 object-cover"
-                    />
-                    
+                    isPdfUrl(item.image_url) ? (
+                      <div className="w-full h-44 flex items-center justify-center bg-black/25 border-b border-white/10">
+                        <div className="flex flex-col items-center gap-2 text-white/75">
+                          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold">
+                            PDF
+                          </div>
+                          <div className="text-xs text-white/50">Kliknij “Podgląd”, aby otworzyć</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <img
+                        src={`${BASE_URL}${item.image_url}`}
+                        alt={item.title}
+                        className="w-full h-44 object-cover"
+                      />
+                    )
                   ) : (
                     <div className="w-full h-44 flex items-center justify-center bg-black/20 text-white/45 text-xs">
-                      Brak obrazka
+                      Brak pliku
                     </div>
                   )}
+
                   {item.image_url ? (
                     <button
                       type="button"
@@ -758,12 +992,13 @@ const [preview, setPreview] = useState<{ open: boolean; url: string; title?: str
                       Podgląd
                     </button>
                   ) : null}
+
                   <label className="absolute bottom-2 right-2 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 backdrop-blur px-3 py-1.5 cursor-pointer text-xs text-white hover:bg-black/45 transition">
                     <ImageIcon className="w-4 h-4 text-[#d7b45a]" />
                     <span>Dodaj / zmień</span>
                     <input
                       type="file"
-                      accept="image/*,application/pdf"
+                      accept={FILE_ACCEPT}
                       className="hidden"
                       onChange={(e) => handleUploadImage(item, e.target.files?.[0])}
                     />
@@ -811,16 +1046,12 @@ const [preview, setPreview] = useState<{ open: boolean; url: string; title?: str
           </div>
 
           {filteredItems.length === 0 && !loadingItems && (
-            <p className="mt-4 text-sm text-white/55">
-              Brak inspiracji na tej tablicy. Dodaj pierwszą powyżej.
-            </p>
+            <p className="mt-4 text-sm text-white/55">Brak inspiracji na tej tablicy. Dodaj pierwszą powyżej.</p>
           )}
         </div>
       ) : (
         <div className={`${cardBase} p-6 md:p-7`}>
-          <p className="text-sm text-white/60">
-            Brak wybranej tablicy. Dodaj tablicę powyżej, aby rozpocząć.
-          </p>
+          <p className="text-sm text-white/60">Brak wybranej tablicy. Dodaj tablicę powyżej, aby rozpocząć.</p>
         </div>
       )}
 
@@ -914,15 +1145,14 @@ const [preview, setPreview] = useState<{ open: boolean; url: string; title?: str
           </div>
         </Modal>
       ) : null}
+
       <PreviewModal
-  open={!!preview?.open}
-  onClose={() => setPreview(null)}
-  title={preview?.title}
-  url={preview?.url ?? ""}
-  baseUrl={BASE_URL}
-/>
+        open={!!preview?.open}
+        onClose={() => setPreview(null)}
+        title={preview?.title}
+        url={preview?.url ?? ""}
+        baseUrl={BASE_URL}
+      />
     </div>
-    
   );
-  
 }

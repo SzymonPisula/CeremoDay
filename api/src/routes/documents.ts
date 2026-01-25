@@ -2,6 +2,11 @@ import { Router, Response } from "express";
 import multer from "multer";
 
 import { authMiddleware, AuthRequest } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import { ApiError } from "../utils/apiError";
+import { documentCreateSchema, documentUpdateSchema, documentGenerateDefaultSchema } from "../validation";
+import { requireActiveMember } from "../middleware/requireActiveMember";
+import { requireActiveMemberForModel } from "../middleware/requireActiveMemberForModel";
 import { Document, type DocumentStatus } from "../models/Document";
 import { DocumentFile, StorageLocation } from "../models/DocumentFile";
 import { storageService } from "../services/storageService";
@@ -41,17 +46,12 @@ function normalizeDocumentType(raw: unknown): "civil" | "concordat" | "custom" {
 router.post(
   "/event/:eventId/generate-default",
   authMiddleware,
+  requireActiveMember("eventId"),
+  validateBody(documentGenerateDefaultSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       const { eventId } = req.params;
-      const { ceremony_type, include_extras } = req.body as {
-        ceremony_type: CeremonyType;
-        include_extras?: boolean;
-      };
-
-      if (ceremony_type !== "civil" && ceremony_type !== "concordat") {
-        return res.status(400).json({ message: "Nieprawidłowy typ ceremonii" });
-      }
+      const { ceremony_type, include_extras } = req.body as { ceremony_type: CeremonyType; include_extras?: boolean };
 
       // UWAGA: nie blokujemy generowania po samej nazwie,
       // bo część nazw jest wspólna dla civil i concordat.
@@ -111,7 +111,9 @@ router.post(
 router.get(
   "/event/:eventId",
   authMiddleware,
+  requireActiveMember("eventId"),
   async (req: AuthRequest, res: Response) => {
+
     try {
       const { eventId } = req.params;
 
@@ -140,28 +142,37 @@ router.get(
 router.post(
   "/event/:eventId",
   authMiddleware,
+  requireActiveMember("eventId"),
+  validateBody(documentCreateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       const { eventId } = req.params;
       const {
-        name,
-        description,
-        category,
-        holder,
-        due_date,
-        valid_until,
-        is_pinned,
-        type,
-      } = req.body as Record<string, unknown>;
+  name,
+  description,
+  category,
+  holder,
+  due_date,
+  valid_until,
+  is_pinned,
+  type,
+} = req.body as {
+  name: string;
+  description?: string;
+  category?: string;
+  holder?: string;
+  due_date?: string | null;
+  valid_until?: string | null;
+  is_pinned?: boolean;
+  type?: unknown;
+};
 
-      if (!name || typeof name !== "string" || !name.trim()) {
-        return res.status(400).json({ message: "Nazwa dokumentu jest wymagana" });
-      }
 
       // Typ dla dokumentu:
       // - civil / concordat / custom
       // (legacy "church" mapujemy na "concordat")
       const nextType = normalizeDocumentType(type);
+      const safeName = name.trim();
 
       const doc = await Document.create({
         event_id: eventId,
@@ -200,6 +211,8 @@ router.post(
 router.put(
   "/:documentId",
   authMiddleware,
+  requireActiveMemberForModel({ model: Document as any, idParam: "documentId", label: "dokument" }),
+  validateBody(documentUpdateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       const { documentId } = req.params;
@@ -263,9 +276,7 @@ router.put(
           if (next === "done") {
             const filesCount = await DocumentFile.count({ where: { document_id: documentId } });
             if (filesCount < 1) {
-              return res.status(400).json({
-                message: "Aby oznaczyć dokument jako ukończony, dodaj przynajmniej jeden plik.",
-              });
+              throw new ApiError(400, "VALIDATION_ERROR", "Popraw pola w formularzu.", { status: "Aby oznaczyć dokument jako ukończony, dodaj przynajmniej jeden plik." });
             }
           }
 
@@ -285,13 +296,14 @@ router.put(
 router.delete(
   "/:documentId",
   authMiddleware,
+  requireActiveMemberForModel({ model: Document as any, idParam: "documentId", label: "dokument" }),
   async (req: AuthRequest, res: Response) => {
     try {
       const { documentId } = req.params;
       const doc = await Document.findByPk(documentId);
 
       if (!doc) return res.status(404).json({ message: "Dokument nie znaleziony" });
-      if (doc.is_system) return res.status(400).json({ message: "Nie można usuwać dokumentów systemowych" });
+      if (doc.is_system) throw new ApiError(400, "VALIDATION_ERROR", "Popraw pola w formularzu.", { _global: "Nie można usuwać dokumentów systemowych" });
 
       await doc.destroy();
       return res.json({ success: true });
@@ -305,6 +317,7 @@ router.delete(
 router.get(
   "/:documentId/files",
   authMiddleware,
+  requireActiveMemberForModel({ model: Document as any, idParam: "documentId", label: "dokument" }),
   async (req: AuthRequest, res: Response) => {
     try {
       const { documentId } = req.params;
@@ -326,6 +339,7 @@ router.get(
 router.post(
   "/:documentId/files",
   authMiddleware,
+  requireActiveMemberForModel({ model: Document as any, idParam: "documentId", label: "dokument" }),
   upload.single("file"),
   async (req: AuthRequest, res: Response) => {
     try {
@@ -346,7 +360,7 @@ router.post(
         const size = Number(req.body?.size ?? 0);
 
         if (!original_name) {
-          return res.status(400).json({ message: "Brak original_name dla pliku lokalnego" });
+          throw new ApiError(400, "VALIDATION_ERROR", "Popraw pola w formularzu.", { original_name: "Brak original_name dla pliku lokalnego" });
         }
 
         const created = await DocumentFile.create({
@@ -366,7 +380,7 @@ router.post(
 
       // SERVER: multipart file required
       const file = req.file;
-      if (!file) return res.status(400).json({ message: "Brak pliku w żądaniu" });
+      if (!file) throw new ApiError(400, "VALIDATION_ERROR", "Popraw pola w formularzu.", { file: "Brak pliku w żądaniu" });
 
       const safeName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, "_");
       const storageKey = `events/${document.event_id}/documents/${documentId}/${Date.now()}-${safeName}`;
@@ -396,6 +410,7 @@ router.post(
 router.delete(
   "/files/:fileId",
   authMiddleware,
+  requireActiveMemberForModel({ model: DocumentFile as any, idParam: "fileId", label: "plik dokumentu" }),
   async (req: AuthRequest, res: Response) => {
     try {
       const { fileId } = req.params;
@@ -427,9 +442,7 @@ router.get(
       if (!file) return res.status(404).json({ message: "Plik nie znaleziony" });
 
       if (file.storage_location === "local") {
-        return res.status(400).json({
-          message: "Ten plik jest przechowywany tylko lokalnie na urządzeniu użytkownika",
-        });
+        throw new ApiError(400, "VALIDATION_ERROR", "Popraw pola w formularzu.", { _global: "Ten plik jest przechowywany tylko lokalnie na urządzeniu użytkownika" });
       }
 
       if (!file.storage_key) {

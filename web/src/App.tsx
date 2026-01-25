@@ -14,7 +14,7 @@ import Documents from "./pages/Documents";
 import Inspirations from "./pages/Inspiration";
 import Tasks from "./pages/Tasks";
 import Vendors from "./pages/Vendors";
-import Finance from "./pages/Finanse";
+import Finance from "./pages/Finance";
 import Reports from "./pages/Reports";
 import Notifications from "./pages/Notifications";
 import Schedule from "./pages/Schedule";
@@ -22,6 +22,8 @@ import WeddingDay from "./pages/WeddingDay";
 import Interview from "./pages/Interview";
 import InterviewWizard from "./pages/InterviewWizard";
 import RequireInterview from "./components/RequireInterview";
+import RequireAdmin from "./routes/RequireAdmin";
+import Admin from "./pages/Admin";
 
 import EventUsers from "./pages/EventUsers";
 import Profile from "./pages/Profile";
@@ -51,6 +53,10 @@ export default function App() {
             </AuthGuard>
           }
         >
+        <Route element={<RequireAdmin />}>
+          <Route path="/admin" element={<Admin />} />
+        </Route>
+
           <Route path="/dashboard" element={<Dashboard />} />
 
           {/* Profil użytkownika */}
@@ -167,14 +173,6 @@ export default function App() {
             }
           />
 
-          <Route
-            path="/event/:id/wedding-day"
-            element={
-              <RequireInterview>
-                <WeddingDay />
-              </RequireInterview>
-            }
-          />
         </Route>
 
         {/* Fallback */}

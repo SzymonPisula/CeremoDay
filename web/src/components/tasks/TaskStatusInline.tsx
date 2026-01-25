@@ -1,3 +1,4 @@
+// CeremoDay/web/src/components/tasks/TaskStatusInline.tsx
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Loader2 } from "lucide-react";
 import type { TaskStatus } from "../../types/task";
@@ -6,12 +7,6 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: "Do zrobienia",
   in_progress: "W trakcie",
   done: "Zrobione",
-};
-
-const NEXT_STATUS: Record<TaskStatus, TaskStatus | null> = {
-  pending: "in_progress",
-  in_progress: "done",
-  done: null,
 };
 
 const STATUS_HELP: Record<TaskStatus, string> = {
@@ -25,11 +20,25 @@ type Props = {
   onChange: (next: TaskStatus) => void;
   disabled?: boolean;
   isSaving?: boolean;
+  forwardOnly?: boolean;
 };
 
-export default function TaskStatusInline({ value, onChange, disabled, isSaving }: Props) {
+const ORDER: TaskStatus[] = ["pending", "in_progress", "done"];
+
+function getOptions(current: TaskStatus, forwardOnly?: boolean): TaskStatus[] {
+  if (!forwardOnly) return ORDER;
+  const idx = ORDER.indexOf(current);
+  return idx === -1 ? ORDER : ORDER.slice(idx);
+}
+
+export default function TaskStatusInline({
+  value,
+  onChange,
+  disabled,
+  isSaving,
+  forwardOnly,
+}: Props) {
   const [open, setOpen] = useState(false);
-  const next = NEXT_STATUS[value];
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -45,7 +54,10 @@ export default function TaskStatusInline({ value, onChange, disabled, isSaving }
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [open]);
 
-  const isEffectivelyDisabled = !!disabled || !!isSaving || !next;
+  const options = getOptions(value, forwardOnly);
+  const canChange = options.length > 1; // są statusy "do przodu"
+  const isEffectivelyDisabled = !!disabled || !!isSaving || !canChange;
+
   const tooltipText = STATUS_HELP[value];
 
   const cls =
@@ -62,13 +74,13 @@ export default function TaskStatusInline({ value, onChange, disabled, isSaving }
       <button
         type="button"
         disabled={isEffectivelyDisabled}
-        onClick={() => next && setOpen((v) => !v)}
+        onClick={() => canChange && setOpen((v) => !v)}
         className={cls}
-        title={next ? "Zmień status" : "To już koniec"}
+        title={canChange ? "Zmień status" : "To już koniec"}
       >
         {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
         {STATUS_LABELS[value]}
-        {next && <ChevronDown className="w-3 h-3 opacity-60" />}
+        {canChange && <ChevronDown className="w-3 h-3 opacity-60" />}
       </button>
 
       {/* Tooltip (jak w Dokumentach) */}
@@ -101,18 +113,23 @@ export default function TaskStatusInline({ value, onChange, disabled, isSaving }
         </div>
       )}
 
-      {open && next && !isEffectivelyDisabled && (
-        <div className="absolute right-0 z-20 mt-2 rounded-xl border border-white/10 bg-[#0b1b14] shadow-xl overflow-hidden min-w-[110px]">
-          <button
-            type="button"
-            onClick={() => {
-              onChange(next);
-              setOpen(false);
-            }}
-            className="block w-full px-4 py-2 text-xs text-left text-white/80 hover:bg-white/10"
-          >
-            → {STATUS_LABELS[next]}
-          </button>
+      {open && !isEffectivelyDisabled && (
+        <div className="absolute right-0 z-20 mt-2 rounded-xl border border-white/10 bg-[#0b1b14] shadow-xl overflow-hidden min-w-[160px]">
+          {options
+            .filter((s) => s !== value)
+            .map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => {
+                  onChange(s);
+                  setOpen(false);
+                }}
+                className="block w-full px-4 py-2 text-xs text-left text-white/80 hover:bg-white/10"
+              >
+                {STATUS_LABELS[s]}
+              </button>
+            ))}
         </div>
       )}
     </div>

@@ -1,232 +1,176 @@
 // CeremoDay/api/src/routes/vendors.ts
 import { Router, Response } from "express";
+
 import { AuthRequest, authMiddleware } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import {
+  requireActiveMemberFromBody,
+  requireActiveMemberFromQuery,
+} from "../middleware/requireActiveMember";
+import { requireActiveMemberForModel } from "../middleware/requireActiveMemberForModel";
+import { ApiError } from "../utils/apiError";
+
 import Vendor from "../models/Vendor";
+import { vendorCreateApiSchema, vendorUpdateApiSchema } from "../validation/vendor.schema";
 
 const router = Router();
 
 /**
  * GET /vendors?event_id=...
- * Zwraca listę usługodawców przypiętych do danego wydarzenia.
+ * Lista usługodawców przypiętych do wydarzenia.
  */
-router.get("/", authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const { event_id } = req.query as { event_id?: string };
+router.get(
+  "/",
+  authMiddleware,
+  requireActiveMemberFromQuery("event_id"),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { event_id } = req.query as { event_id?: string };
 
-    if (!event_id) {
-      return res.status(400).json({ message: "Brak parametru event_id" });
+      const vendors = await Vendor.findAll({
+        where: { event_id },
+        order: [["name", "ASC"]],
+      });
+
+      return res.json(vendors);
+    } catch (err) {
+      console.error("Error fetching vendors:", err);
+      throw new ApiError(500, "UNKNOWN_ERROR", "Błąd pobierania usługodawców");
     }
-
-    const vendors = await Vendor.findAll({
-      where: { event_id },
-      order: [["name", "ASC"]],
-    });
-
-    return res.json(vendors);
-  } catch (err) {
-    console.error("Error fetching vendors:", err);
-    return res.status(500).json({ message: "Błąd pobierania usługodawców" });
   }
-});
+);
 
 /**
  * POST /vendors
  * Tworzy nowego usługodawcę.
  */
-router.post("/", authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const {
-      event_id,
-      name,
-      type,
-      address,
-      phone,
-      email,
-      website,
-      google_maps_url,
-      notes,
+router.post(
+  "/",
+  authMiddleware,
+  validateBody(vendorCreateApiSchema),
+  requireActiveMemberFromBody("event_id"),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const body = req.body as any;
 
-      // ✅ snapshot
-      county,
-      max_participants,
-      equipment,
-      pricing,
-      rental_info,
-      commune_office,
-      rural_type,
-      usable_area,
+      const vendor = await Vendor.create({
+        event_id: body.event_id,
+        name: body.name,
+        type: body.type ?? null,
 
-      lat,
-      lng,
-    } = req.body as {
-      event_id?: string;
-      name?: string;
-      type?: string;
-      address?: string;
-      phone?: string;
-      email?: string;
-      website?: string;
-      google_maps_url?: string;
-      notes?: string;
+        address: body.address ?? null,
+        phone: body.phone ?? null,
+        email: body.email ?? null,
+        website: body.website ?? null,
+        google_maps_url: body.google_maps_url ?? null,
+        notes: body.notes ?? null,
 
-      county?: string | null;
-      max_participants?: number | null;
-      equipment?: string | null;
-      pricing?: string | null;
-      rental_info?: string | null;
-      commune_office?: string | null;
-      rural_type?: string | null;
-      usable_area?: number | null;
+        // snapshot (rural/google)
+        county: body.county ?? null,
+        max_participants: body.max_participants ?? null,
+        equipment: body.equipment ?? null,
+        pricing: body.pricing ?? null,
+        rental_info: body.rental_info ?? null,
+        commune_office: body.commune_office ?? null,
+        rural_type: body.rural_type ?? null,
+        usable_area: body.usable_area ?? null,
 
-
-      lat?: number | null;
-      lng?: number | null;
-    };
-
-    if (!event_id || !name) {
-      return res.status(400).json({
-        message: "event_id i name są wymagane do utworzenia usługodawcy",
+        lat: body.lat ?? null,
+        lng: body.lng ?? null,
       });
+
+      return res.status(201).json(vendor);
+    } catch (err) {
+      console.error("Error creating vendor:", err);
+      throw new ApiError(500, "UNKNOWN_ERROR", "Błąd tworzenia usługodawcy");
     }
-
-    const vendor = await Vendor.create({
-      event_id,
-      name,
-      type: type ?? null,
-      address: address ?? null,
-      phone: phone ?? null,
-      email: email ?? null,
-      website: website ?? null,
-      google_maps_url: google_maps_url ?? null,
-      notes: notes ?? null,
-
-      county: county ?? null,
-      max_participants: max_participants ?? null,
-      equipment: equipment ?? null,
-      pricing: pricing ?? null,
-      rental_info: rental_info ?? null,
-      commune_office: commune_office ?? null,
-      rural_type: rural_type ?? null,
-      usable_area: usable_area ?? null,
-
-      lat: lat ?? null,
-      lng: lng ?? null,
-    });
-
-    return res.status(201).json(vendor);
-  } catch (err) {
-    console.error("Error creating vendor:", err);
-    return res.status(500).json({ message: "Błąd tworzenia usługodawcy" });
   }
-});
+);
 
 /**
  * PUT /vendors/:id
  * Aktualizuje istniejącego usługodawcę.
  */
-router.put("/:id", authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-    const vendor = await Vendor.findByPk(id);
+router.put(
+  "/:id",
+  authMiddleware,
+  validateBody(vendorUpdateApiSchema),
+requireActiveMemberForModel({
+  model: Vendor as any,
+  idParam: "id",
+  label: "usługodawca",
+}),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+      const vendor = await Vendor.findByPk(id);
+      if (!vendor) {
+        throw new ApiError(404, "NOT_FOUND", "Usługodawca nie został znaleziony");
+      }
 
-    if (!vendor) {
-      return res.status(404).json({ message: "Usługodawca nie został znaleziony" });
+      const body = req.body as any;
+
+      await vendor.update({
+        // core
+        name: body.name ?? vendor.name,
+        type: body.type ?? vendor.type,
+        address: body.address ?? vendor.address,
+        phone: body.phone ?? vendor.phone,
+        email: body.email ?? vendor.email,
+        website: body.website ?? vendor.website,
+        google_maps_url: body.google_maps_url ?? vendor.google_maps_url,
+        notes: body.notes ?? vendor.notes,
+
+        // snapshot
+        county: body.county ?? vendor.county,
+        max_participants: body.max_participants ?? vendor.max_participants,
+        equipment: body.equipment ?? vendor.equipment,
+        pricing: body.pricing ?? vendor.pricing,
+        rental_info: body.rental_info ?? vendor.rental_info,
+        commune_office: body.commune_office ?? vendor.commune_office,
+        rural_type: body.rural_type ?? vendor.rural_type,
+        usable_area: body.usable_area ?? vendor.usable_area,
+        lat: body.lat ?? vendor.lat,
+        lng: body.lng ?? vendor.lng,
+      });
+
+      return res.json(vendor);
+    } catch (err) {
+      console.error("Error updating vendor:", err);
+      if (err instanceof ApiError) throw err;
+      throw new ApiError(500, "UNKNOWN_ERROR", "Błąd aktualizacji usługodawcy");
     }
-
-    const {
-      name,
-      type,
-      address,
-      phone,
-      email,
-      website,
-      google_maps_url,
-      notes,
-
-      county,
-      max_participants,
-      equipment,
-      pricing,
-      rental_info,
-      commune_office,
-      rural_type,
-      usable_area,
-
-      lat,
-      lng,
-    } = req.body as {
-      name?: string;
-      type?: string;
-      address?: string;
-      phone?: string;
-      email?: string;
-      website?: string;
-      google_maps_url?: string;
-      notes?: string;
-
-      county?: string | null;
-      max_participants?: number | null;
-      equipment?: string | null;
-      pricing?: string | null;
-      rental_info?: string | null;
-      commune_office?: string | null;
-      rural_type?: string | null;
-      usable_area?: number | null;
-
-
-      lat?: number | null;
-      lng?: number | null;
-    };
-
-    await vendor.update({
-      name: name ?? vendor.name,
-      type: type ?? vendor.type,
-      address: address ?? vendor.address,
-      phone: phone ?? vendor.phone,
-      email: email ?? vendor.email,
-      website: website ?? vendor.website,
-      google_maps_url: google_maps_url ?? vendor.google_maps_url,
-      notes: notes ?? vendor.notes,
-
-      county: county ?? vendor.county,
-      max_participants: max_participants ?? vendor.max_participants,
-      equipment: equipment ?? vendor.equipment,
-      pricing: pricing ?? vendor.pricing,
-      rental_info: rental_info ?? vendor.rental_info,
-      commune_office: commune_office ?? vendor.commune_office,
-      rural_type: rural_type ?? vendor.rural_type,
-      usable_area: usable_area ?? vendor.usable_area,
-
-      lat: lat ?? vendor.lat,
-      lng: lng ?? vendor.lng,
-    });
-
-    return res.json(vendor);
-  } catch (err) {
-    console.error("Error updating vendor:", err);
-    return res.status(500).json({ message: "Błąd aktualizacji usługodawcy" });
   }
-});
+);
 
 /**
  * DELETE /vendors/:id
  * Usuwa usługodawcę.
  */
-router.delete("/:id", authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-    const vendor = await Vendor.findByPk(id);
+router.delete(
+  "/:id",
+  authMiddleware,
+requireActiveMemberForModel({
+  model: Vendor as any,
+  idParam: "id",
+  label: "usługodawca",
+}),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+      const vendor = await Vendor.findByPk(id);
+      if (!vendor) {
+        throw new ApiError(404, "NOT_FOUND", "Usługodawca nie został znaleziony");
+      }
 
-    if (!vendor) {
-      return res.status(404).json({ message: "Usługodawca nie został znaleziony" });
+      await vendor.destroy();
+      return res.status(204).send();
+    } catch (err) {
+      console.error("Error deleting vendor:", err);
+      if (err instanceof ApiError) throw err;
+      throw new ApiError(500, "UNKNOWN_ERROR", "Błąd usuwania usługodawcy");
     }
-
-    await vendor.destroy();
-    return res.status(204).send();
-  } catch (err) {
-    console.error("Error deleting vendor:", err);
-    return res.status(500).json({ message: "Błąd usuwania usługodawcy" });
   }
-});
+);
 
 export default router;

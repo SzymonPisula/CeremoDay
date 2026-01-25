@@ -1,7 +1,7 @@
 // /CeremoDay/web/src/pages/Documents.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { FileText, Loader2, Plus, X } from "lucide-react";
+import { FileText, Loader2, Plus, Trash2, X, AlertTriangle } from "lucide-react";
 
 import { api } from "../lib/api";
 import type { Document, DocumentStatus, DocumentType } from "../types/document";
@@ -13,8 +13,6 @@ type Params = { id: string };
 type Tab = "main" | "extra";
 
 type CeremonyMode = "unknown" | "civil" | "concordat" | "reception";
-
-
 
 function resolveCeremonyMode(interview: unknown): CeremonyMode {
   if (!interview || typeof interview !== "object") return "unknown";
@@ -29,23 +27,25 @@ function resolveCeremonyMode(interview: unknown): CeremonyMode {
 
   const s = String(raw).toLowerCase();
 
-  // reception-only
-  if (s.includes("reception") || s.includes("party") || s.includes("przyjec")) {
-    return "reception";
-  }
-
-  // civil
-  if (s.includes("civil") || s.includes("cywil")) {
-    return "civil";
-  }
-
-  // church / concordat
-  if (s.includes("concordat") || s.includes("kosc") || s.includes("church")) {
-    return "concordat";
-  }
+  if (s.includes("reception") || s.includes("party") || s.includes("przyjec")) return "reception";
+  if (s.includes("civil") || s.includes("cywil")) return "civil";
+  if (s.includes("concordat") || s.includes("kosc") || s.includes("church")) return "concordat";
 
   return "unknown";
 }
+
+type UiDialog =
+  | { open: false }
+  | {
+      open: true;
+      kind: "confirm" | "info";
+      title: string;
+      message: string;
+      confirmText?: string;
+      cancelText?: string;
+      danger?: boolean;
+      onConfirm?: () => void | Promise<void>;
+    };
 
 export default function Documents() {
   const { id: eventId } = useParams<Params>();
@@ -60,6 +60,9 @@ export default function Documents() {
   const [interviewLoaded, setInterviewLoaded] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [dialog, setDialog] = useState<UiDialog>({ open: false });
+
   const generatedForRef = useRef<Set<CeremonyMode>>(new Set());
 
   const cardBase =
@@ -67,53 +70,61 @@ export default function Documents() {
   const chip =
     "inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/10 bg-white/5 text-white/80 text-xs";
 
+  const openInfo = (title: string, message: string) => {
+    setDialog({ open: true, kind: "info", title, message, confirmText: "OK" });
+  };
+
+  const openConfirm = (cfg: Omit<Extract<UiDialog, { open: true }>, "open">) => {
+    setDialog({ open: true, ...cfg });
+  };
+
+  const closeDialog = () => setDialog({ open: false });
+
+  // blokada scrolla tła gdy dialog otwarty (żeby zachowywał się jak ten od dokumentu)
+  useEffect(() => {
+    if (!dialog.open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [dialog.open]);
+
   const fetchAll = async (opts?: { allowGenerate?: boolean }) => {
     if (!eventId) return;
 
     setLoading(true);
     try {
-      // 1) interview -> ceremony mode
       const interview = await api.getInterview(eventId);
       const mode = resolveCeremonyMode(interview);
       setCeremony(mode);
       setInterviewLoaded(true);
 
-      // 2) documents list
       const docs = await api.getDocuments(eventId);
 
-      // 3) generate defaults only if:
-      // - mode is civil or concordat
-      // - list is empty
-      // - we are allowed to generate
-      // - we did not already try generating in this session
       const allowGenerate = opts?.allowGenerate ?? true;
 
-const ceremonyForApi = mode === "civil" ? "civil" : mode === "concordat" ? "concordat" : null;
+      const ceremonyForApi = mode === "civil" ? "civil" : mode === "concordat" ? "concordat" : null;
 
-const hasSystemForMode =
-  ceremonyForApi === "civil"
-    ? docs.some((d) => d.is_system && d.type === "civil")
-    : ceremonyForApi === "concordat"
-      ? docs.some((d) => d.is_system && d.type === "concordat")
-      : true; // reception/unknown -> nie generujemy
+      const hasSystemForMode =
+        ceremonyForApi === "civil"
+          ? docs.some((d) => d.is_system && d.type === "civil")
+          : ceremonyForApi === "concordat"
+            ? docs.some((d) => d.is_system && d.type === "concordat")
+            : true;
 
-if (
-  allowGenerate &&
-  ceremonyForApi &&
-  !generatedForRef.current.has(mode) &&
-  !hasSystemForMode
-) {
-  generatedForRef.current.add(mode);
-
-  await api.generateDefaultDocuments(eventId, ceremonyForApi, true);
-
-  const after = await api.getDocuments(eventId);
-  setDocuments(after);
-  return;
-}
-
+      if (allowGenerate && ceremonyForApi && !generatedForRef.current.has(mode) && !hasSystemForMode) {
+        generatedForRef.current.add(mode);
+        await api.generateDefaultDocuments(eventId, ceremonyForApi, true);
+        const after = await api.getDocuments(eventId);
+        setDocuments(after);
+        return;
+      }
 
       setDocuments(docs);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Nie udało się wczytać dokumentów.";
+      openInfo("Błąd", msg);
     } finally {
       setLoading(false);
     }
@@ -126,7 +137,6 @@ if (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
-  // Re-fetch when interview is saved elsewhere
   useEffect(() => {
     const onInterviewUpdated = (e: Event) => {
       const ce = e as CustomEvent<{ eventId?: string }>;
@@ -144,37 +154,14 @@ if (
   }, [eventId]);
 
   const visibleDocuments = useMemo(() => {
-  // Zasady widoczności (flow modułu):
-  // - Cywilny: pokazujemy cywilne systemowe + wszystkie własne (nie-systemowe)
-  // - Kościelny/konkordat: pokazujemy konkordatowe systemowe + wszystkie własne (nie-systemowe)
-  // - Samo przyjęcie: brak obowiązkowych → tylko własne
-  // - Unknown: pokazujemy wszystko (żeby user coś widział + debug)
-  if (ceremony === "civil") {
-    return documents.filter((d) => !d.is_system || d.type === "civil");
-  }
+    if (ceremony === "civil") return documents.filter((d) => !d.is_system || d.type === "civil");
+    if (ceremony === "concordat") return documents.filter((d) => !d.is_system || d.type === "concordat");
+    if (ceremony === "reception") return documents.filter((d) => !d.is_system);
+    return documents;
+  }, [documents, ceremony]);
 
-  if (ceremony === "concordat") {
-    return documents.filter((d) => !d.is_system || d.type === "concordat");
-  }
-
-  if (ceremony === "reception") {
-    return documents.filter((d) => !d.is_system);
-  }
-
-  return documents;
-}, [documents, ceremony]);
-
-
-  const mainDocs = useMemo(
-    () => visibleDocuments.filter((d) => d.is_pinned),
-    [visibleDocuments]
-  );
-
-  const extraDocs = useMemo(
-    () => visibleDocuments.filter((d) => !d.is_pinned),
-    [visibleDocuments]
-  );
-
+  const mainDocs = useMemo(() => visibleDocuments.filter((d) => d.is_pinned), [visibleDocuments]);
+  const extraDocs = useMemo(() => visibleDocuments.filter((d) => !d.is_pinned), [visibleDocuments]);
   const docsToShow = tab === "main" ? mainDocs : extraDocs;
 
   const handleStatusChange = async (doc: Document, next: DocumentStatus) => {
@@ -183,8 +170,8 @@ if (
       const updated = await api.changeDocumentStatus(doc.id, next);
       setDocuments((prev) => prev.map((d) => (d.id === doc.id ? updated : d)));
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Nie udało się zmienić statusu";
-      alert(msg);
+      const msg = e instanceof Error ? e.message : "Nie udało się zmienić statusu.";
+      openInfo("Zanim ukończysz dodaj co najmniej jeden plik", msg);
     } finally {
       setSavingId(null);
     }
@@ -195,98 +182,129 @@ if (
       setSavingId(doc.id);
       const updated = await api.setDocumentPinned(doc.id, toPinned);
       setDocuments((prev) => prev.map((d) => (d.id === doc.id ? updated : d)));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Nie udało się przenieść dokumentu.";
+      openInfo("Nie udało się zapisać", msg);
     } finally {
       setSavingId(null);
     }
   };
 
-  // -----------------------
-  // Create modal (simple, built-in)
-  // -----------------------
-  const [editOpen, setEditOpen] = useState(false);
-const [editId, setEditId] = useState<string | null>(null);
+  const handleDeleteDoc = (doc: Document) => {
+    if (doc.is_system) return;
 
-const [createName, setCreateName] = useState("");
-const [createDesc, setCreateDesc] = useState("");
-const [createType, setCreateType] = useState<DocumentType>("custom");
-
-const [editName, setEditName] = useState("");
-const [editDesc, setEditDesc] = useState("");
-const [editType, setEditType] = useState<DocumentType>("custom");
-
-const openEdit = (doc: Document) => {
-  setEditId(doc.id);
-  setEditName(doc.name ?? "");
-  setEditDesc(doc.description ?? "");
-  setEditType(doc.type ?? "custom");
-  setEditOpen(true);
-};
-
-const resetEdit = () => {
-  setEditId(null);
-  setEditName("");
-  setEditDesc("");
-  setEditType("custom");
-};
-
-const submitEdit = async () => {
-  if (!editId) return;
-  if (!editName.trim()) return;
-
-  try {
-    setSavingId("__edit__");
-    const updated = await api.updateDocument(editId, {
-      name: editName.trim(),
-      description: editDesc.trim() ? editDesc.trim() : null,
-      type: editType,
+    openConfirm({
+      kind: "confirm",
+      title: "Usunąć dokument?",
+      message: `Dokument "${doc.name}" zostanie trwale usunięty wraz z przypiętymi plikami.`,
+      confirmText: "Usuń dokument",
+      cancelText: "Anuluj",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          setSavingId(doc.id);
+          await api.deleteDocument(doc.id);
+          setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+          closeDialog();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "Nie udało się usunąć dokumentu.";
+          openInfo("Błąd", msg);
+        } finally {
+          setSavingId(null);
+        }
+      },
     });
+  };
 
-    setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
-    setEditOpen(false);
-    resetEdit();
-  } finally {
-    setSavingId(null);
-  }
-};
+  // -----------------------
+  // Create + Edit modal
+  // -----------------------
+  const [editId, setEditId] = useState<string | null>(null);
 
+  const [createName, setCreateName] = useState("");
+  const [createDesc, setCreateDesc] = useState("");
+  const [createType, setCreateType] = useState<DocumentType>("custom");
 
-useEffect(() => {
-  // domyślny typ dla nowego dokumentu:
-  // - reception -> Inny
-  // - civil -> Cywilny
-  // - concordat -> Kościelny
-  if (ceremony === "reception") setCreateType("custom");
-  else if (ceremony === "concordat") setCreateType("concordat");
-  else setCreateType("civil");
-}, [ceremony]);
+  const [editName, setEditName] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editType, setEditType] = useState<DocumentType>("custom");
 
+  const openEdit = (doc: Document) => {
+    setEditId(doc.id);
+    setEditName(doc.name ?? "");
+    setEditDesc(doc.description ?? "");
+    setEditType(doc.type ?? "custom");
+    setEditOpen(true);
+  };
+
+  const resetEdit = () => {
+    setEditId(null);
+    setEditName("");
+    setEditDesc("");
+    setEditType("custom");
+  };
+
+  const submitEdit = async () => {
+    if (!editId) return;
+    if (!editName.trim()) {
+      openInfo("Brak nazwy", "Wpisz nazwę dokumentu.");
+      return;
+    }
+
+    try {
+      setSavingId("__edit__");
+      const updated = await api.updateDocument(editId, {
+        name: editName.trim(),
+        description: editDesc.trim() ? editDesc.trim() : null,
+        type: editType,
+      });
+
+      setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+      setEditOpen(false);
+      resetEdit();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Nie udało się zapisać zmian.";
+      openInfo("Błąd", msg);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (ceremony === "reception") setCreateType("custom");
+    else if (ceremony === "concordat") setCreateType("concordat");
+    else setCreateType("civil");
+  }, [ceremony]);
 
   const resetCreate = () => {
-  setCreateName("");
-  setCreateDesc("");
-  setCreateType(ceremony === "reception" ? "custom" : ceremony === "concordat" ? "concordat" : "civil");
-};
-
+    setCreateName("");
+    setCreateDesc("");
+    setCreateType(ceremony === "reception" ? "custom" : ceremony === "concordat" ? "concordat" : "civil");
+  };
 
   const submitCreate = async () => {
     if (!eventId) return;
-    if (!createName.trim()) return;
+    if (!createName.trim()) {
+      openInfo("Brak nazwy", "Wpisz nazwę dokumentu.");
+      return;
+    }
 
     try {
       setSavingId("__create__");
 
       const created = await api.createDocument(eventId, {
-  name: createName.trim(),
-  description: createDesc.trim() ? createDesc.trim() : null,
-  type: createType,
-  is_pinned: true,
-});
-
-
+        name: createName.trim(),
+        description: createDesc.trim() ? createDesc.trim() : null,
+        type: createType,
+        is_pinned: true,
+      });
 
       setDocuments((prev) => [...prev, created]);
       setCreateOpen(false);
       resetCreate();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Nie udało się dodać dokumentu.";
+      openInfo("Błąd", msg);
     } finally {
       setSavingId(null);
     }
@@ -302,6 +320,68 @@ useEffect(() => {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
+      {/* Dialog (nasz, zamiast window.confirm/alert) */}
+      {dialog.open && (
+        <div className="fixed inset-0 z-[60]">
+          <div className="absolute inset-0 bg-black/60" onClick={closeDialog} />
+          <div className="absolute inset-0 grid place-items-center p-4">
+            <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0b1b14] shadow-[0_30px_120px_rgba(0,0,0,0.55)] overflow-hidden">
+              <div className="flex items-start justify-between gap-4 p-5 border-b border-white/10">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center">
+                    <AlertTriangle className={dialog.kind === "confirm" && dialog.danger ? "w-4 h-4 text-red-200" : "w-4 h-4 text-[#d7b45a]"} />
+                  </div>
+                  <div>
+                    <div className="text-white font-semibold">{dialog.title}</div>
+                    <div className="text-xs text-white/60 mt-1">{dialog.message}</div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closeDialog}
+                  className="h-9 w-9 rounded-lg border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white"
+                  aria-label="Zamknij"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 flex items-center justify-end gap-2">
+                {dialog.kind === "confirm" && (
+                  <button
+                    type="button"
+                    onClick={closeDialog}
+                    className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-white/70 hover:text-white"
+                  >
+                    {dialog.cancelText ?? "Anuluj"}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (dialog.kind === "info") {
+                      closeDialog();
+                      return;
+                    }
+                    if (dialog.onConfirm) await dialog.onConfirm();
+                  }}
+                  className={
+                    "px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-60 " +
+                    (dialog.kind === "confirm" && dialog.danger
+                      ? "border border-red-400/25 bg-red-500/10 text-red-100 hover:bg-red-500/15"
+                      : "bg-gradient-to-r from-[#d7b45a] to-[#b98b2f] text-[#0b1b14]")
+                  }
+                >
+                  {dialog.kind === "info" ? (dialog.confirmText ?? "OK") : (dialog.confirmText ?? "Potwierdź")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
@@ -317,9 +397,7 @@ useEffect(() => {
                 </span>
               )}
             </div>
-            <p className="text-sm text-white/60">
-              Wszystkie formalności i pliki w jednym miejscu
-            </p>
+            <p className="text-sm text-white/60">Wszystkie formalności i pliki w jednym miejscu</p>
           </div>
         </div>
 
@@ -345,8 +423,7 @@ useEffect(() => {
               : "bg-white/5 border-white/10 text-white/60 hover:text-white")
           }
         >
-          Główne
-          <span className="ml-2 text-xs opacity-70">({mainDocs.length})</span>
+          Główne <span className="ml-2 text-xs opacity-70">({mainDocs.length})</span>
         </button>
 
         <button
@@ -359,8 +436,7 @@ useEffect(() => {
               : "bg-white/5 border-white/10 text-white/60 hover:text-white")
           }
         >
-          Dodatkowe
-          <span className="ml-2 text-xs opacity-70">({extraDocs.length})</span>
+          Dodatkowe <span className="ml-2 text-xs opacity-70">({extraDocs.length})</span>
         </button>
       </div>
 
@@ -379,11 +455,7 @@ useEffect(() => {
           </div>
         )}
 
-        {docsToShow.length === 0 && !loading && (
-          <p className="text-sm text-white/60">
-            Brak dokumentów w tej sekcji.
-          </p>
-        )}
+        {docsToShow.length === 0 && !loading && <p className="text-sm text-white/60">Brak dokumentów w tej sekcji.</p>}
 
         <div className="space-y-3">
           {docsToShow.map((doc) => {
@@ -391,21 +463,18 @@ useEffect(() => {
             const canEditFields = !doc.is_system;
 
             return (
-              <div
-                key={doc.id}
-                className="rounded-2xl border border-white/10 bg-black/20 p-4"
-              >
+              <div key={doc.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                 <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       <span className="font-semibold text-white">{doc.name}</span>
                       {doc.category && <span className={chip}>{doc.category}</span>}
+
                       {doc.type === "concordat" && (
                         <span className="inline-flex items-center px-3 py-1 rounded-full border border-white/10 bg-white/5 text-white/70 text-xs">
                           Kościół
                         </span>
                       )}
-
                       {doc.type === "custom" && (
                         <span className="inline-flex items-center px-3 py-1 rounded-full border border-white/10 bg-white/5 text-white/70 text-xs">
                           Inny
@@ -416,6 +485,7 @@ useEffect(() => {
                           Domyślny
                         </span>
                       )}
+
                       {isSaving && (
                         <span className="text-xs text-white/40 flex items-center gap-1">
                           <Loader2 className="w-3 h-3 animate-spin" /> zapis…
@@ -423,9 +493,7 @@ useEffect(() => {
                       )}
                     </div>
 
-                    {doc.description && (
-                      <p className="text-sm text-white/60">{doc.description}</p>
-                    )}
+                    {doc.description && <p className="text-sm text-white/60">{doc.description}</p>}
 
                     {/* Files */}
                     <DocumentFilesList documentId={doc.id} />
@@ -438,11 +506,10 @@ useEffect(() => {
                       disabled={isSaving}
                     />
 
-                    {/* Better pin UX */}
                     <button
                       type="button"
                       disabled={isSaving}
-                      onClick={() => handleMoveDoc(doc, !doc.is_pinned)}
+                      onClick={() => void handleMoveDoc(doc, !doc.is_pinned)}
                       className={
                         "inline-flex items-center justify-center px-3 py-1 rounded-lg text-xs font-medium border transition " +
                         (doc.is_pinned
@@ -455,22 +522,32 @@ useEffect(() => {
                     </button>
 
                     {canEditFields && (
-                      <button
-                        type="button"
-                        disabled={isSaving}
-                        onClick={() => openEdit(doc)}
-                        className="inline-flex items-center justify-center px-3 py-1 rounded-lg text-xs font-medium border border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
-                        title="Edytuj dokument"
-                      >
-                        Edytuj
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => openEdit(doc)}
+                          className="inline-flex items-center justify-center px-3 py-1 rounded-lg text-xs font-medium border border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                          title="Edytuj dokument"
+                        >
+                          Edytuj
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => handleDeleteDoc(doc)}
+                          className="inline-flex items-center gap-2 justify-center px-3 py-1 rounded-lg text-xs font-medium border border-red-400/25 bg-red-500/10 text-red-100 hover:bg-red-500/15"
+                          title="Usuń dokument"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Usuń
+                        </button>
+                      </div>
                     )}
 
-
                     {!canEditFields && (
-                      <span className="text-[11px] text-white/40 w-28 text-right">
-                        Domyślny dokument nie podlega edycji
-                      </span>
+                      <span className="text-[11px] text-white/40 w-28 text-right">Domyślny dokument nie podlega edycji</span>
                     )}
                   </div>
                 </div>
@@ -483,18 +560,13 @@ useEffect(() => {
       {/* Create modal */}
       {createOpen && (
         <div className="fixed inset-0 z-50">
-          <div
-            className="absolute inset-0 bg-black/60"
-            onClick={() => setCreateOpen(false)}
-          />
+          <div className="absolute inset-0 bg-black/60" onClick={() => setCreateOpen(false)} />
           <div className="absolute inset-0 grid place-items-center p-4">
             <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#0b1b14] shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
               <div className="flex items-start justify-between p-5 border-b border-white/10">
                 <div>
                   <div className="text-white font-semibold">Dodaj dokument</div>
-                  <div className="text-xs text-white/60">
-                    Utwórz własny dokument dla wydarzenia.
-                  </div>
+                  <div className="text-xs text-white/60">Utwórz własny dokument dla wydarzenia.</div>
                 </div>
                 <button
                   type="button"
@@ -541,6 +613,7 @@ useEffect(() => {
                     >
                       Cywilny
                     </button>
+
                     <button
                       type="button"
                       onClick={() => setCreateType("concordat")}
@@ -581,6 +654,7 @@ useEffect(() => {
                 >
                   Anuluj
                 </button>
+
                 <button
                   type="button"
                   disabled={savingId === "__create__" || !createName.trim()}
@@ -594,114 +668,118 @@ useEffect(() => {
           </div>
         </div>
       )}
+
+      {/* Edit modal */}
       {editOpen && (
-  <div className="fixed inset-0 z-50">
-    <div className="absolute inset-0 bg-black/60" onClick={() => setEditOpen(false)} />
-    <div className="absolute inset-0 grid place-items-center p-4">
-      <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#0b1b14] shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
-        <div className="flex items-start justify-between p-5 border-b border-white/10">
-          <div>
-            <div className="text-white font-semibold">Edytuj dokument</div>
-            <div className="text-xs text-white/60">Zmień nazwę, opis i typ.</div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setEditOpen(false)}
-            className="h-9 w-9 rounded-lg border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setEditOpen(false)} />
+          <div className="absolute inset-0 grid place-items-center p-4">
+            <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#0b1b14] shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
+              <div className="flex items-start justify-between p-5 border-b border-white/10">
+                <div>
+                  <div className="text-white font-semibold">Edytuj dokument</div>
+                  <div className="text-xs text-white/60">Zmień nazwę, opis i typ.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditOpen(false)}
+                  className="h-9 w-9 rounded-lg border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
-        <div className="p-5 space-y-4">
-          <div>
-            <div className="text-xs text-white/70 mb-1">Nazwa</div>
-            <input
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
-              placeholder="np. Umowa z fotografem"
-            />
-          </div>
+              <div className="p-5 space-y-4">
+                <div>
+                  <div className="text-xs text-white/70 mb-1">Nazwa</div>
+                  <input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
+                    placeholder="np. Umowa z fotografem"
+                  />
+                </div>
 
-          <div>
-            <div className="text-xs text-white/70 mb-1">Opis</div>
-            <textarea
-              value={editDesc}
-              onChange={(e) => setEditDesc(e.target.value)}
-              className="w-full min-h-[90px] rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
-              placeholder="Krótka notatka…"
-            />
-          </div>
+                <div>
+                  <div className="text-xs text-white/70 mb-1">Opis</div>
+                  <textarea
+                    value={editDesc}
+                    onChange={(e) => setEditDesc(e.target.value)}
+                    className="w-full min-h-[90px] rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
+                    placeholder="Krótka notatka…"
+                  />
+                </div>
 
-          <div>
-            <div className="text-xs text-white/70 mb-1">Typ dokumentu</div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setEditType("civil")}
-                className={
-                  "px-4 py-2 rounded-full text-xs border transition " +
-                  (editType === "civil"
-                    ? "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white"
-                    : "bg-white/5 border-white/10 text-white/60 hover:text-white")
-                }
-              >
-                Cywilny
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditType("concordat")}
-                className={
-                  "px-4 py-2 rounded-full text-xs border transition " +
-                  (editType === "concordat"
-                    ? "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white"
-                    : "bg-white/5 border-white/10 text-white/60 hover:text-white")
-                }
-              >
-                Kościelny
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditType("custom")}
-                className={
-                  "px-4 py-2 rounded-full text-xs border transition " +
-                  (editType === "custom"
-                    ? "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white"
-                    : "bg-white/5 border-white/10 text-white/60 hover:text-white")
-                }
-              >
-                Inny
-              </button>
+                <div>
+                  <div className="text-xs text-white/70 mb-1">Typ dokumentu</div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditType("civil")}
+                      className={
+                        "px-4 py-2 rounded-full text-xs border transition " +
+                        (editType === "civil"
+                          ? "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white"
+                          : "bg-white/5 border-white/10 text-white/60 hover:text-white")
+                      }
+                    >
+                      Cywilny
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditType("concordat")}
+                      className={
+                        "px-4 py-2 rounded-full text-xs border transition " +
+                        (editType === "concordat"
+                          ? "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white"
+                          : "bg-white/5 border-white/10 text-white/60 hover:text-white")
+                      }
+                    >
+                      Kościelny
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditType("custom")}
+                      className={
+                        "px-4 py-2 rounded-full text-xs border transition " +
+                        (editType === "custom"
+                          ? "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white"
+                          : "bg-white/5 border-white/10 text-white/60 hover:text-white")
+                      }
+                    >
+                      Inny
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-5 border-t border-white/10 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditOpen(false);
+                    resetEdit();
+                  }}
+                  className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-white/70 hover:text-white"
+                >
+                  Anuluj
+                </button>
+
+                <button
+                  type="button"
+                  disabled={savingId === "__edit__" || !editName.trim()}
+                  onClick={() => void submitEdit()}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-[#d7b45a] to-[#b98b2f] text-[#0b1b14] disabled:opacity-60"
+                >
+                  {savingId === "__edit__" ? "Zapis..." : "Zapisz"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-
-        <div className="p-5 border-t border-white/10 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setEditOpen(false);
-              resetEdit();
-            }}
-            className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-white/70 hover:text-white"
-          >
-            Anuluj
-          </button>
-          <button
-            type="button"
-            disabled={savingId === "__edit__" || !editName.trim()}
-            onClick={() => void submitEdit()}
-            className="px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-[#d7b45a] to-[#b98b2f] text-[#0b1b14] disabled:opacity-60"
-          >
-            {savingId === "__edit__" ? "Zapis..." : "Zapisz"}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
-
+      )}
     </div>
   );
 }

@@ -1,26 +1,68 @@
-import type { VendorCategory } from "../../types/vendor";
+// CeremoDay/web/src/components/vendors/VendorFilters.tsx
+import type { VendorType } from "../../types/vendor";
 
 interface VendorFiltersProps {
-  selected: VendorCategory;
-  onSelect: (category: VendorCategory) => void;
+  selected: VendorType;
+  onSelect: (category: VendorType) => void;
 }
 
-const categories: VendorCategory[] = ["catering","dj","florist","photographer","venue","other"];
+/**
+ * VendorType w projekcie:
+ * "HALL" | "CATERING" | "DJ" | "BAND" | "PHOTO" | "VIDEO" | "DECOR" | "TRANSPORT" | "OTHER"
+ */
+const categories: VendorType[] = [
+  "HALL",
+  "CATERING",
+  "DJ",
+  "BAND",
+  "PHOTO",
+  "VIDEO",
+  "DECOR",
+  "TRANSPORT",
+  "OTHER",
+];
 
 export default function VendorFilters({ selected, onSelect }: VendorFiltersProps) {
   return (
-    <div className="flex flex-col gap-2 p-2 border-r border-gray-200">
-      {categories.map(cat => (
+    <div className="flex flex-col gap-2 p-2 border-r border-white/10">
+      {categories.map((cat) => (
         <button
           key={cat}
           onClick={() => onSelect(cat)}
-          className={`p-2 rounded ${
-            selected === cat ? "bg-blue-500 text-white" : "bg-gray-100"
+          className={`p-2 rounded-lg text-sm transition ${
+            selected === cat
+              ? "bg-amber-500/20 text-white"
+              : "bg-white/5 text-white/70 hover:bg-white/10"
           }`}
         >
-          {cat.charAt(0).toUpperCase() + cat.slice(1)}
+          {label(cat)}
         </button>
       ))}
     </div>
   );
+}
+
+function label(cat: VendorType) {
+  switch (cat) {
+    case "HALL":
+      return "Sala / miejsce";
+    case "CATERING":
+      return "Catering";
+    case "DJ":
+      return "DJ";
+    case "BAND":
+      return "Zespół";
+    case "PHOTO":
+      return "Fotograf";
+    case "VIDEO":
+      return "Kamerzysta";
+    case "DECOR":
+      return "Dekoracje / florystyka";
+    case "TRANSPORT":
+      return "Transport";
+    case "OTHER":
+      return "Inne";
+    default:
+      return String(cat);
+  }
 }

@@ -1,24 +1,54 @@
-import { Request, Response, NextFunction } from "express";
-import jwt, { Secret } from "jsonwebtoken";
+// /CeremoDay/api/src/middleware/auth.ts
+import type { NextFunction, Request, Response } from "express";
+import jwt from "jsonwebtoken";
+import { ApiError } from "../utils/apiError";
+
+// Jeśli masz swój typ payloadu JWT – podepnij go tutaj.
+// Poniżej jest bezpieczny minimalny kształt:
+type JwtPayloadLike = {
+  userId?: string;
+  id?: string;
+  sub?: string;
+  email?: string;
+  role?: string;
+};
+
+export type AuthUser = {
+  id: string;
+};
 
 export interface AuthRequest extends Request {
-  userId?: string;
+  userId?: string; // legacy / szybki dostęp
+  user?: AuthUser; // preferowane w nowych routach: req.user.id
 }
 
-type JwtPayload = { userId: string };
-
-export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ message: "Brak tokena" });
-
-  const token = authHeader.split(" ")[1];
-  if (!token) return res.status(401).json({ message: "Niepoprawny token" });
-
+export function authMiddleware(req: AuthRequest, _res: Response, next: NextFunction) {
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET || "dev-secret") as JwtPayload;
-    req.userId = payload.userId;
-    next();
-  } catch {
-    return res.status(401).json({ message: "Niepoprawny token" });
+    const auth = req.headers.authorization;
+    const token = auth?.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : null;
+
+    if (!token) {
+      return next(new ApiError(401, "UNAUTHORIZED", "Brak tokena uwierzytelniającego."));
+    }
+
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      return next(new ApiError(500, "SERVER_MISCONFIG", "Brak konfiguracji JWT_SECRET na serwerze."));
+    }
+
+    const decoded = jwt.verify(token, secret) as JwtPayloadLike;
+
+    const id = decoded.userId ?? decoded.id ?? decoded.sub;
+    if (!id) {
+      return next(new ApiError(401, "UNAUTHORIZED", "Nieprawidłowy token (brak identyfikatora użytkownika)."));
+    }
+
+    // ✅ ustawiamy oba — kompatybilnie i czytelnie
+    req.userId = id;
+    req.user = { id };
+
+    return next();
+  } catch (e) {
+    return next(new ApiError(401, "UNAUTHORIZED", "Nieprawidłowy lub wygasły token."));
   }
 }

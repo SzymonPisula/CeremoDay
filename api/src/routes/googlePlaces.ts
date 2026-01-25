@@ -21,17 +21,13 @@ router.get("/places", async (req, res) => {
     console.log("Fetching Google Places:", url);
 
     const response = await fetch(url);
-    const data = await response.json();
+const data: unknown = await res.json();
+const obj = (typeof data === "object" && data !== null) ? (data as Record<string, unknown>) : {};
+const results = Array.isArray(obj.results) ? obj.results : Array.isArray(obj.candidates) ? obj.candidates : [];
+return res.json(results);
 
-    // Log całej odpowiedzi od Google
-    console.log("Google API response:", JSON.stringify(data, null, 2));
 
-    if (data.status !== "OK") {
-      console.error("Google API error:", data.status, data.error_message || "");
-      return res.status(500).json({ message: `Google API error: ${data.status}` });
-    }
-
-    return res.json(data.results || []);
+    
   } catch (err) {
     console.error("Błąd fetch Google Places:", err);
     return res.status(500).json({ message: "Błąd serwera przy pobieraniu vendorów" });

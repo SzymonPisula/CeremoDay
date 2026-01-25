@@ -31,6 +31,8 @@ export interface InspirationBoardPayload {
 export interface InspirationItem {
   id: string;
   board_id: string;
+  event_id?: string | null;
+
 
   title: string;
   description?: string | null;

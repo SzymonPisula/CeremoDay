@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { X, Sparkles } from "lucide-react";
 
 import Select, { type SelectOption } from "../../ui/Select";
 import DatePicker from "../../ui/DatePicker";
-import Textarea from "../../ui/Textarea";
+import FieldError from "../../ui/FieldError";
+import ErrorMessage from "../../ui/ErrorMessage";
 
 import type { Task, TaskCategory, TaskPayload } from "../../types/task";
 
 type Props = {
   open: boolean;
   mode: "create" | "edit";
-  initialTask?: Task | null;
-
+  initialTask: Task | null;
   saving?: boolean;
-
+  fieldErrors?: Record<string, string>;
+  formError?: string | null;
   onClose: () => void;
   onSubmit: (payload: TaskPayload) => void;
 };
@@ -27,176 +28,229 @@ const CATEGORY_LABELS: Record<TaskCategory, string> = {
   DZIEN_SLUBU: "Dzień ślubu",
 };
 
-const CATEGORY_KEYS: readonly TaskCategory[] = [
-  "FORMALNOSCI",
-  "ORGANIZACJA",
-  "USLUGI",
-  "DEKORACJE",
-  "LOGISTYKA",
-  "DZIEN_SLUBU",
-] as const;
+const CATEGORY_OPTIONS: SelectOption<TaskCategory>[] = [
+  { value: "FORMALNOSCI", label: CATEGORY_LABELS.FORMALNOSCI },
+  { value: "ORGANIZACJA", label: CATEGORY_LABELS.ORGANIZACJA },
+  { value: "USLUGI", label: CATEGORY_LABELS.USLUGI },
+  { value: "DEKORACJE", label: CATEGORY_LABELS.DEKORACJE },
+  { value: "LOGISTYKA", label: CATEGORY_LABELS.LOGISTYKA },
+  { value: "DZIEN_SLUBU", label: CATEGORY_LABELS.DZIEN_SLUBU },
+];
+
+function normalizeISODate(v?: string | null) {
+  if (!v) return "";
+  // u Ciebie często leci ISO — w DatePicker trzymamy "YYYY-MM-DD"
+  // jeśli już jest "YYYY-MM-DD" to zostawiamy.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+const TEMPLATE = `CO I PO CO
+- ...
+
+JAK TO ZROBIC
+- ...
+
+KIEDY UZNAC ZA ZROBIONE
+- ...
+
+WSKAZOWKI
+- ...
+`;
 
 export default function TaskCreateEditModal({
   open,
   mode,
   initialTask,
   saving,
+  fieldErrors,
+  formError,
   onClose,
   onSubmit,
 }: Props) {
+  const isEdit = mode === "edit";
+
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState<TaskCategory>("FORMALNOSCI");
-  const [description, setDescription] = useState("");
-  const [dueDate, setDueDate] = useState<string>("");
+  const [category, setCategory] = useState<TaskCategory | "">("");
+  const [dueDate, setDueDate] = useState(""); // "YYYY-MM-DD" lub ""
+  const [description, setDescription] = useState<string>("");
 
   useEffect(() => {
     if (!open) return;
 
-    if (mode === "edit" && initialTask) {
-      setTitle(initialTask.title || "");
-      setCategory(initialTask.category || "FORMALNOSCI");
-      setDescription(initialTask.description || "");
-      setDueDate(initialTask.due_date || "");
-    } else {
-      setTitle("");
-      setCategory("FORMALNOSCI");
-      setDescription("");
-      setDueDate("");
-    }
-  }, [open, mode, initialTask]);
+    setTitle(initialTask?.title ?? "");
+    setCategory((initialTask?.category as TaskCategory | null) ?? "");
+    setDueDate(normalizeISODate(initialTask?.due_date ?? null));
+    setDescription((initialTask?.description ?? "") || "");
+  }, [open, initialTask]);
 
-  const titleText = mode === "create" ? "Dodaj zadanie" : "Edytuj zadanie";
+  const headerTitle = isEdit ? "Edytuj zadanie" : "Dodaj zadanie";
+  const headerSubtitle = isEdit
+    ? "Zmień tytuł, kategorię, termin oraz notatkę."
+    : "Uzupełnij dane zadania — tytuł, kategoria, termin oraz notatka (opcjonalnie).";
 
-  const categoryOptions: readonly SelectOption<TaskCategory>[] = useMemo(
-  () =>
-    CATEGORY_KEYS.map((k) => ({
-      value: k,
-      label: CATEGORY_LABELS[k],
-    })),
-  []
-);
+  const canSubmit = useMemo(() => {
+    const t = title.trim();
+    const tOk = t.length >= 3;
+    return tOk && !saving;
+  }, [title, saving]);
 
   if (!open) return null;
 
-  const inputBase =
-    "w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-white placeholder:text-white/35 " +
-    "outline-none focus:border-[#c8a04b]/50 focus:ring-2 focus:ring-[#c8a04b]/15 transition";
-
   const cardBase =
-    "rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md " +
-    "shadow-[0_24px_80px_rgba(0,0,0,0.55)]";
+    "rounded-2xl border border-white/10 bg-[#0b1f17]/95 shadow-2xl backdrop-blur-md";
 
-  const btnSecondary =
-    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium " +
-    "bg-white/5 text-white border border-white/10 " +
-    "hover:bg-white/10 hover:border-white/15 " +
-    "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/40 transition disabled:opacity-60";
+  const labelCls = "text-xs font-semibold text-white/80";
+  const hintCls = "mt-1 text-xs text-white/45";
+
+  const inputBase =
+    "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90 " +
+    "placeholder:text-white/35 outline-none transition " +
+    "focus:border-[#c8a04b]/35 focus:ring-2 focus:ring-[#c8a04b]/25";
+
+  const btnGhost =
+    "inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 " +
+    "px-3 py-2 text-sm text-white/80 hover:bg-white/10 transition disabled:opacity-60";
 
   const btnGold =
-    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " +
+    "inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold " +
     "bg-gradient-to-r from-[#d7b45a] to-[#b98b2f] text-[#0b1b14] " +
     "shadow-[0_10px_30px_-18px_rgba(215,180,90,0.9)] " +
-    "hover:brightness-105 active:translate-y-[1px] " +
-    "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/45 transition disabled:opacity-60";
-
-  const submit = () => {
-    if (!title.trim()) return;
-
-    const payload: TaskPayload = {
-      title: title.trim(),
-      category,
-      description: description ? description : undefined,
-      due_date: dueDate || undefined,
-      status: mode === "edit" && initialTask ? initialTask.status : "pending",
-    };
-
-    onSubmit(payload);
-  };
+    "hover:brightness-105 active:translate-y-[1px] transition disabled:opacity-60";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* overlay */}
-      <div
-        className="absolute inset-0 bg-black/55 backdrop-blur-sm"
-        onClick={onClose}
-      />
+    <div className="fixed inset-0 z-[90]">
+      {/* backdrop */}
+      <div className="absolute inset-0 bg-black/55" onClick={onClose} aria-hidden="true" />
 
       {/* modal */}
-      <div className="relative w-full max-w-2xl mx-auto px-4">
-        <div className={cardBase + " p-6 md:p-7"}>
-          <div className="flex items-start justify-between gap-3 mb-5">
-            <div>
-              <h3 className="text-white font-bold text-xl">{titleText}</h3>
-              <p className="text-sm text-white/60">
-                Uzupełnij dane zadania – tytuł, kategoria, termin i notatkę.
-              </p>
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div className={"w-full max-w-xl " + cardBase}>
+          {/* header */}
+          <div className="flex items-start justify-between gap-3 border-b border-white/10 p-4">
+            <div className="min-w-0">
+              <div className="text-lg font-semibold text-white">{headerTitle}</div>
+              <div className="mt-1 text-sm text-white/55">{headerSubtitle}</div>
             </div>
+
             <button
-              type="button"
               onClick={onClose}
-              className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white hover:bg-white/10 transition"
-              title="Zamknij"
+              className="shrink-0 rounded-xl border border-white/10 bg-white/5 p-2 text-white/80 hover:bg-white/10"
+              aria-label="Zamknij"
             >
-              <X className="w-4 h-4" />
+              <X size={18} />
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="md:col-span-2">
-              <div className="text-white font-semibold mb-2">Tytuł</div>
+          {/* body */}
+          <div className="p-4 space-y-4">
+            {formError ? <ErrorMessage>{formError}</ErrorMessage> : null}
+            {/* Title */}
+            <div>
+              <div className={labelCls}>Tytuł</div>
               <input
-                className={inputBase}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Np. Umowa z DJ-em"
+                className={inputBase}
+                placeholder='np. "Wybierz salę i podpisz umowę"'
               />
+              <FieldError message={fieldErrors?.title} />
+              <div className={hintCls}>Minimum 3 znaki. Najlepiej: „moduł: konkret”.</div>
             </div>
 
+            {/* Category + Date */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <div className={labelCls}>Kategoria</div>
+                <Select
+                  value={category ? String(category) : ""}
+                  onChange={(v) => setCategory((v as TaskCategory) || "")}
+                  options={[
+                    ...CATEGORY_OPTIONS,
+                  ]}
+                  placeholder="Wybierz kategorię"
+                />
+                <FieldError message={fieldErrors?.category} />
+                <div className={hintCls}>Ułatwia filtrowanie i raporty.</div>
+              </div>
+
+              <div>
+                <div className={labelCls}>Termin</div>
+                <DatePicker
+                  value={dueDate}
+                  onChange={(v) => setDueDate(v)}
+                  placeholder="Wybierz datę"
+                  allowClear
+                />
+                <FieldError message={fieldErrors?.due_date} />
+                <div className={hintCls}>Może być pusty — wtedy zadanie trafia do „bez terminu”.</div>
+              </div>
+            </div>
+
+            {/* Description */}
             <div>
-              <div className="text-white font-semibold mb-2">Kategoria</div>
-              <Select<TaskCategory>
-                value={category}
-                onChange={(v) => setCategory(v)}
-                options={categoryOptions}
-              />
-            </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className={labelCls}>Notatka / opis</div>
 
-            <div>
-              <div className="text-white font-semibold mb-2">Termin</div>
-              <DatePicker
-                value={dueDate}
-                onChange={setDueDate}
-                placeholder="Termin"
-                className="w-full"
-                buttonClassName="py-2 text-sm"
-              />
-            </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDescription((prev) => (prev?.trim() ? prev : TEMPLATE));
+                  }}
+                  className={
+                    "inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 " +
+                    "text-xs text-white/80 hover:bg-white/10 transition"
+                  }
+                  title="Wstaw sekcje pomocnicze"
+                >
+                  <Sparkles size={14} />
+                  Wstaw podpowiedzi
+                </button>
+              </div>
 
-            <div className="md:col-span-2">
-              <div className="text-white font-semibold mb-2">Notatka / opis</div>
-              <Textarea
+              <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Dodatkowe informacje, linki, ustalenia…"
+                className={
+                  inputBase +
+                  " min-h-[120px] resize-y leading-6"
+                }
+                placeholder={
+                  "Opcjonalnie. Możesz użyć sekcji:\n" +
+                  "CO I PO CO / JAK TO ZROBIC / KIEDY UZNAC ZA ZROBIONE / WSKAZOWKI"
+                }
               />
+              <FieldError message={fieldErrors?.description} />
+
+              <div className={hintCls}>
+                Tip: jeśli zaczynasz linię od „- ”, w podglądzie pojawi się lista punktowana.
+              </div>
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-5 mt-5 border-t border-white/10">
-            <button type="button" className={btnSecondary} onClick={onClose} disabled={saving}>
+          {/* footer */}
+          <div className="flex items-center justify-end gap-2 border-t border-white/10 p-4">
+            <button type="button" onClick={onClose} className={btnGhost} disabled={!!saving}>
               Anuluj
             </button>
-            <button type="button" className={btnGold} onClick={submit} disabled={saving}>
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Zapisywanie…
-                </>
-              ) : mode === "create" ? (
-                "Dodaj zadanie"
-              ) : (
-                "Zapisz zmiany"
-              )}
+
+            <button
+              type="button"
+              disabled={!canSubmit}
+              className={btnGold}
+              onClick={() => {
+                const payload: TaskPayload = {
+                  title: title.trim(),
+                  category: category ? (category as TaskCategory) : null,
+                  due_date: dueDate ? dueDate : null,
+                  description: description?.trim() ? description : null,
+                };
+                onSubmit(payload);
+              }}
+            >
+              {saving ? "Zapisywanie…" : isEdit ? "Zapisz zmiany" : "Dodaj zadanie"}
             </button>
           </div>
         </div>

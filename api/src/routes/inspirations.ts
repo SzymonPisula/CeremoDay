@@ -1,5 +1,5 @@
 // CeremoDay/api/src/routes/inspirations.ts
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import path from "path";
 import fs from "fs";
 import multer from "multer";
@@ -7,6 +7,16 @@ import multer from "multer";
 import InspirationBoard from "../models/InspirationBoard";
 import InspirationItem from "../models/InspirationItem";
 import { AuthRequest, authMiddleware } from "../middleware/auth";
+import { requireActiveMember } from "../middleware/requireActiveMember";
+import { requireActiveMemberForModel } from "../middleware/requireActiveMemberForModel";
+import { validateBody } from "../middleware/validate";
+
+import {
+  inspirationBoardCreateSchema,
+  inspirationBoardUpdateSchema,
+  inspirationItemCreateSchema,
+  inspirationItemUpdateSchema,
+} from "../validation";
 
 const router = Router();
 
@@ -17,10 +27,10 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (_req, _file, cb) => {
     cb(null, uploadsDir);
   },
-  filename: (req, file, cb) => {
+  filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname);
     const base = path
       .basename(file.originalname, ext)
@@ -38,6 +48,23 @@ const upload = multer({
   },
 });
 
+// ======================================================
+// Helpers: resolve event_id for InspirationItem via board
+// ======================================================
+async function resolveEventIdFromItem(it: any): Promise<string | null> {
+  // jeśli kiedyś dodasz event_id do itemu, to nadal zadziała
+  if (typeof it?.event_id === "string" && it.event_id.trim()) return it.event_id.trim();
+
+  const boardId = typeof it?.board_id === "string" ? it.board_id.trim() : "";
+  if (!boardId) return null;
+
+  const board = await InspirationBoard.findByPk(boardId);
+  const b: any = board as any;
+
+  if (typeof b?.event_id === "string" && b.event_id.trim()) return b.event_id.trim();
+  return null;
+}
+
 // =====================================
 // TABLICE INSPIRACJI
 // =====================================
@@ -49,6 +76,7 @@ const upload = multer({
 router.get(
   "/events/:eventId/boards",
   authMiddleware,
+  requireActiveMember("eventId"),
   async (req: AuthRequest, res: Response) => {
     try {
       const { eventId } = req.params;
@@ -61,9 +89,7 @@ router.get(
       return res.json(boards);
     } catch (err) {
       console.error("Error fetching inspiration boards:", err);
-      return res
-        .status(500)
-        .json({ message: "Błąd pobierania tablic inspiracji" });
+      return res.status(500).json({ message: "Błąd pobierania tablic inspiracji" });
     }
   }
 );
@@ -75,19 +101,17 @@ router.get(
 router.post(
   "/events/:eventId/boards",
   authMiddleware,
+  requireActiveMember("eventId"),
+  validateBody(inspirationBoardCreateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       const { eventId } = req.params;
       const { name, description, color, emoji } = req.body as {
-        name?: string;
+        name: string;
         description?: string;
         color?: string;
         emoji?: string;
       };
-
-      if (!name || typeof name !== "string") {
-        return res.status(400).json({ message: "Nazwa tablicy jest wymagana" });
-      }
 
       const board = await InspirationBoard.create({
         event_id: eventId,
@@ -100,9 +124,7 @@ router.post(
       return res.status(201).json(board);
     } catch (err) {
       console.error("Error creating inspiration board:", err);
-      return res
-        .status(500)
-        .json({ message: "Błąd tworzenia tablicy inspiracji" });
+      return res.status(500).json({ message: "Błąd tworzenia tablicy inspiracji" });
     }
   }
 );
@@ -114,6 +136,13 @@ router.post(
 router.put(
   "/boards/:boardId",
   authMiddleware,
+  // ✅ POPRAWKA: tu musi być InspirationBoard + boardId
+  requireActiveMemberForModel({
+    model: InspirationBoard as any,
+    idParam: "boardId",
+    label: "tablica inspiracji",
+  }),
+  validateBody(inspirationBoardUpdateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       const { boardId } = req.params;
@@ -126,9 +155,7 @@ router.put(
 
       const board = await InspirationBoard.findByPk(boardId);
       if (!board) {
-        return res
-          .status(404)
-          .json({ message: "Tablica inspiracji nie została znaleziona" });
+        return res.status(404).json({ message: "Tablica inspiracji nie została znaleziona" });
       }
 
       const b = board as any;
@@ -143,9 +170,7 @@ router.put(
       return res.json(board);
     } catch (err) {
       console.error("Error updating inspiration board:", err);
-      return res
-        .status(500)
-        .json({ message: "Błąd aktualizacji tablicy inspiracji" });
+      return res.status(500).json({ message: "Błąd aktualizacji tablicy inspiracji" });
     }
   }
 );
@@ -157,15 +182,18 @@ router.put(
 router.delete(
   "/boards/:boardId",
   authMiddleware,
+  requireActiveMemberForModel({
+    model: InspirationBoard as any,
+    idParam: "boardId",
+    label: "tablica inspiracji",
+  }),
   async (req: AuthRequest, res: Response) => {
     try {
       const { boardId } = req.params;
 
       const board = await InspirationBoard.findByPk(boardId);
       if (!board) {
-        return res
-          .status(404)
-          .json({ message: "Tablica inspiracji nie została znaleziona" });
+        return res.status(404).json({ message: "Tablica inspiracji nie została znaleziona" });
       }
 
       // usuwamy powiązane inspiracje
@@ -177,9 +205,7 @@ router.delete(
       return res.status(204).send();
     } catch (err) {
       console.error("Error deleting inspiration board:", err);
-      return res
-        .status(500)
-        .json({ message: "Błąd usuwania tablicy inspiracji" });
+      return res.status(500).json({ message: "Błąd usuwania tablicy inspiracji" });
     }
   }
 );
@@ -195,6 +221,11 @@ router.delete(
 router.get(
   "/boards/:boardId/items",
   authMiddleware,
+  requireActiveMemberForModel({
+    model: InspirationBoard as any,
+    idParam: "boardId",
+    label: "tablica inspiracji",
+  }),
   async (req: AuthRequest, res: Response) => {
     try {
       const { boardId } = req.params;
@@ -207,9 +238,7 @@ router.get(
       return res.json(items);
     } catch (err) {
       console.error("Error fetching inspiration items:", err);
-      return res
-        .status(500)
-        .json({ message: "Błąd pobierania inspiracji" });
+      return res.status(500).json({ message: "Błąd pobierania inspiracji" });
     }
   }
 );
@@ -221,33 +250,22 @@ router.get(
 router.post(
   "/boards/:boardId/items",
   authMiddleware,
+  requireActiveMemberForModel({
+    model: InspirationBoard as any,
+    idParam: "boardId",
+    label: "tablica inspiracji",
+  }),
+  validateBody(inspirationItemCreateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       const { boardId } = req.params;
-      const {
-        title,
-        description,
-        category,
-        tags,
-        source_url,
-      } = req.body as {
-        title?: string;
+      const { title, description, category, tags, source_url } = req.body as {
+        title: string;
         description?: string;
-        category?:
-          | "DEKORACJE"
-          | "KWIATY"
-          | "STROJE"
-          | "PAPETERIA"
-          | "INNE";
+        category?: "DEKORACJE" | "KWIATY" | "STROJE" | "PAPETERIA" | "INNE";
         tags?: string;
         source_url?: string;
       };
-
-      if (!title || typeof title !== "string") {
-        return res
-          .status(400)
-          .json({ message: "Tytuł inspiracji jest wymagany" });
-      }
 
       const item = await InspirationItem.create({
         board_id: boardId,
@@ -262,9 +280,7 @@ router.post(
       return res.status(201).json(item);
     } catch (err) {
       console.error("Error creating inspiration item:", err);
-      return res
-        .status(500)
-        .json({ message: "Błąd tworzenia inspiracji" });
+      return res.status(500).json({ message: "Błąd tworzenia inspiracji" });
     }
   }
 );
@@ -276,33 +292,28 @@ router.post(
 router.put(
   "/items/:itemId",
   authMiddleware,
+  // ✅ POPRAWKA: event_id wyciągamy przez board_id
+  requireActiveMemberForModel({
+    model: InspirationItem as any,
+    idParam: "itemId",
+    label: "inspiracja",
+    resolveEventId: resolveEventIdFromItem,
+  }),
+  validateBody(inspirationItemUpdateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       const { itemId } = req.params;
-      const {
-        title,
-        description,
-        category,
-        tags,
-        source_url,
-      } = req.body as {
+      const { title, description, category, tags, source_url } = req.body as {
         title?: string;
         description?: string;
-        category?:
-          | "DEKORACJE"
-          | "KWIATY"
-          | "STROJE"
-          | "PAPETERIA"
-          | "INNE";
+        category?: "DEKORACJE" | "KWIATY" | "STROJE" | "PAPETERIA" | "INNE";
         tags?: string;
         source_url?: string;
       };
 
       const item = await InspirationItem.findByPk(itemId);
       if (!item) {
-        return res
-          .status(404)
-          .json({ message: "Inspiracja nie została znaleziona" });
+        return res.status(404).json({ message: "Inspiracja nie została znaleziona" });
       }
 
       const i = item as any;
@@ -318,9 +329,7 @@ router.put(
       return res.json(item);
     } catch (err) {
       console.error("Error updating inspiration item:", err);
-      return res
-        .status(500)
-        .json({ message: "Błąd aktualizacji inspiracji" });
+      return res.status(500).json({ message: "Błąd aktualizacji inspiracji" });
     }
   }
 );
@@ -332,24 +341,27 @@ router.put(
 router.delete(
   "/items/:itemId",
   authMiddleware,
+  // ✅ POPRAWKA: event_id wyciągamy przez board_id
+  requireActiveMemberForModel({
+    model: InspirationItem as any,
+    idParam: "itemId",
+    label: "inspiracja",
+    resolveEventId: resolveEventIdFromItem,
+  }),
   async (req: AuthRequest, res: Response) => {
     try {
       const { itemId } = req.params;
 
       const item = await InspirationItem.findByPk(itemId);
       if (!item) {
-        return res
-          .status(404)
-          .json({ message: "Inspiracja nie została znaleziona" });
+        return res.status(404).json({ message: "Inspiracja nie została znaleziona" });
       }
 
       await item.destroy();
       return res.status(204).send();
     } catch (err) {
       console.error("Error deleting inspiration item:", err);
-      return res
-        .status(500)
-        .json({ message: "Błąd usuwania inspiracji" });
+      return res.status(500).json({ message: "Błąd usuwania inspiracji" });
     }
   }
 );
@@ -358,6 +370,48 @@ router.delete(
 // UPLOAD OBRAZKA DLA INSPIRACJI
 // =====================================
 
+// ✅ Middleware: wyciągamy eventId przez: item -> board -> event_id
+async function resolveEventFromItem(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { itemId } = req.params;
+
+    const item = await InspirationItem.findByPk(itemId);
+    if (!item) {
+      return res.status(404).json({ message: "Inspiracja nie została znaleziona" });
+    }
+
+    const i = item as any;
+    const boardId = i.board_id;
+
+    if (!boardId) {
+      return res.status(500).json({ message: "Błąd serwera: inspiracja nie ma poprawnego board_id." });
+    }
+
+    const board = await InspirationBoard.findByPk(boardId);
+    if (!board) {
+      return res.status(500).json({ message: "Błąd serwera: nie znaleziono tablicy inspiracji dla tej inspiracji." });
+    }
+
+    const b = board as any;
+    const eventId = b.event_id;
+
+    if (!eventId) {
+      return res.status(500).json({ message: "Błąd serwera: inspiracja nie ma poprawnego event_id." });
+    }
+
+    // ustawiamy eventId tak, żeby requireActiveMember("eventId") zadziałał
+    (req.params as any).eventId = eventId;
+
+    // wrzucamy item/board do locals żeby nie robić drugi raz query
+    (res.locals as any).inspirationItem = item;
+    (res.locals as any).inspirationBoard = board;
+
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
 /**
  * POST /inspirations/items/:itemId/upload
  * Upload pliku graficznego dla inspiracji
@@ -365,43 +419,28 @@ router.delete(
 router.post(
   "/items/:itemId/upload",
   authMiddleware,
+  // ✅ obejście: event_id bierzemy z boarda
+  resolveEventFromItem,
+  requireActiveMember("eventId"),
   upload.single("file"),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { itemId } = req.params;
-
-      const item = await InspirationItem.findByPk(itemId);
-      if (!item) {
-        // jeśli plik został zapisany, a inspiracji nie ma – można ewentualnie usunąć plik
-        if (req.file) {
-          fs.unlink(req.file.path, () => {});
-        }
-        return res
-          .status(404)
-          .json({ message: "Inspiracja nie została znaleziona" });
-      }
+      const item = (res.locals as any).inspirationItem as any;
 
       if (!req.file) {
-        return res
-          .status(400)
-          .json({ message: "Brak pliku w żądaniu" });
+        return res.status(400).json({ message: "Brak pliku w żądaniu" });
       }
 
       // Ścieżka jaką zwrócimy do frontu (pod warunkiem, że udostępniasz /uploads jako statyczne)
-      const relativePath = `/uploads/inspirations/${path.basename(
-        req.file.path
-      )}`;
+      const relativePath = `/uploads/inspirations/${path.basename(req.file.path)}`;
 
-      const i = item as any;
-      i.image_url = relativePath;
+      item.image_url = relativePath;
       await item.save();
 
       return res.json(item);
     } catch (err) {
       console.error("Error uploading inspiration image:", err);
-      return res
-        .status(500)
-        .json({ message: "Błąd uploadu pliku inspiracji" });
+      return res.status(500).json({ message: "Błąd uploadu pliku inspiracji" });
     }
   }
 );

@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
 import { api } from "../lib/api";
+import ToastHost from "../ui/ToastHost";
+import ConfirmModal from "../ui/ConfirmModal";
+import { useAuthStore } from "../store/auth";
 
 function getEventIdFromPath(pathname: string): string | null {
   const match = pathname.match(/^\/event\/([^/]+)(\/.*)?$/);
@@ -54,6 +57,7 @@ export default function AppLayout() {
   const topbarGapPx = 16;
   const shellMaxWidthPx = 1280;
   const shellPaddingClass = "px-4 lg:px-6";
+  const { isAuthenticated, me, setMe } = useAuthStore();
 
   // ✅ po zmianie routingu zamykamy panel
   useEffect(() => {
@@ -71,6 +75,31 @@ export default function AppLayout() {
       document.body.style.overflow = prev;
     };
   }, [sidebarOpen]);
+  
+  // ✅ Pobranie profilu (w tym roli) dla warunków UI (np. Admin w sidebar)
+useEffect(() => {
+  let alive = true;
+
+  async function loadMe() {
+    if (!isAuthenticated) return;
+    if (me) return;
+
+    try {
+      const data = await api.authMe(); // <- MeUser
+      if (!alive) return;
+      setMe(data);
+    } catch {
+      // ignore (api.ts i tak logoutuje na 401)
+    }
+  }
+
+  void loadMe();
+  return () => {
+    alive = false;
+  };
+}, [isAuthenticated, me, setMe]);
+
+
 
   // ===== pobieranie nazwy eventu (cache w sessionStorage) =====
   useEffect(() => {
@@ -204,6 +233,11 @@ export default function AppLayout() {
       </div>
 
       <div style={{ height: topbarGapPx + topbarHeightPx, display: "none" }} />
+      
+      <ToastHost />
+      <ConfirmModal />
+
     </div>
   );
+  
 }

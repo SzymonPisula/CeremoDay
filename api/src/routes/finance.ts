@@ -2,8 +2,12 @@
 import { Router, Response } from "express";
 import type { AuthRequest } from "../middleware/auth";
 import { authMiddleware } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import { budgetUpdateSchema, expenseCreateSchema, expenseUpdateSchema } from "../validation/schemas";
+import { requireActiveMember } from "../middleware/requireActiveMember";
 import Budget from "../models/Budget";
 import Expense from "../models/Expense";
+import { requireActiveMemberForModel } from "../middleware/requireActiveMemberForModel";
 import * as XLSX from "xlsx";
 
 const router = Router();
@@ -61,6 +65,7 @@ function normalizeBudget(row: any) {
 router.get(
   "/:eventId/budget",
   authMiddleware,
+  requireActiveMember("eventId"),
   async (req: AuthRequest, res: Response) => {
     try {
       const { eventId } = req.params;
@@ -81,6 +86,8 @@ router.get(
 router.post(
   "/:eventId/budget",
   authMiddleware,
+  requireActiveMember("eventId"),
+  validateBody(budgetUpdateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       const { eventId } = req.params;
@@ -122,6 +129,7 @@ router.post(
 router.get(
   "/:eventId/expenses/export-xlsx",
   authMiddleware,
+  requireActiveMember("eventId"),
   async (req: AuthRequest, res: Response) => {
     try {
       const { eventId } = req.params;
@@ -174,6 +182,7 @@ router.get(
 router.get(
   "/:eventId/expenses",
   authMiddleware,
+  requireActiveMember("eventId"),
   async (req: AuthRequest, res: Response) => {
     try {
       const { eventId } = req.params;
@@ -195,6 +204,8 @@ router.get(
 router.post(
   "/:eventId/expenses",
   authMiddleware,
+  requireActiveMember("eventId"),
+  validateBody(expenseCreateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       const { eventId } = req.params;
@@ -234,6 +245,8 @@ router.post(
 router.put(
   "/:eventId/expenses/:expenseId",
   authMiddleware,
+  requireActiveMember("eventId"),
+  validateBody(expenseUpdateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       const { eventId, expenseId } = req.params;
@@ -289,6 +302,7 @@ router.put(
 router.delete(
   "/:eventId/expenses/:expenseId",
   authMiddleware,
+  requireActiveMember("eventId"),
   async (req: AuthRequest, res: Response) => {
     try {
       const { eventId, expenseId } = req.params;
@@ -313,6 +327,8 @@ router.delete(
 router.delete(
   "/expenses/:id",
   authMiddleware,
+  // legacy endpoint (bez eventId w URL) — dopinamy kontrolę dostępu po encji
+  requireActiveMemberForModel({ model: Expense as any, idParam: "id", label: "wydatek" }),
   async (req: AuthRequest, res: Response) => {
     try {
       const { id } = req.params;
@@ -336,6 +352,7 @@ router.delete(
 router.get(
   "/:eventId/summary",
   authMiddleware,
+  requireActiveMember("eventId"),
   async (req: AuthRequest, res: Response) => {
     try {
       const { eventId } = req.params;

@@ -3,7 +3,18 @@ import bcrypt from "bcryptjs";
 import jwt, { SignOptions } from "jsonwebtoken";
 import { User } from "../models/User";
 
+import { rateLimit } from "../middleware/rateLimit";
+import { validateBody } from "../middleware/validate";
+import { authLoginSchema, authRegisterSchema } from "../validation/schemas";
+import { authMiddleware, AuthRequest } from "../middleware/auth";
+
 const router = Router();
+
+const loginLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 10,
+  message: "Za dużo prób logowania. Spróbuj ponownie za kilka minut.",
+});
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1h";
 
@@ -15,9 +26,10 @@ export function signToken(payload: object): string {
 }
 
 // --- Rejestracja ---
-router.post("/register", async (req: Request, res: Response) => {
+router.post("/register", validateBody(authRegisterSchema), async (req: Request, res: Response) => {
   try {
-    const { email, password, name, role } = req.body;
+    const { email, password, name } = req.body as { email: string; password: string; name: string };
+
     if (!email || !password || !name) {
       return res.status(400).json({ message: "email, password i name są wymagane" });
     }
@@ -26,7 +38,9 @@ router.post("/register", async (req: Request, res: Response) => {
     if (exists) return res.status(409).json({ message: "Użytkownik już istnieje" });
 
     const password_hash = await bcrypt.hash(password, 10);
-    const user = await User.create({ email, password_hash, name, role });
+
+    // ✅ NIE przyjmujemy roli z body
+    const user = await User.create({ email, password_hash, name });
 
     const token = signToken({ userId: user.id });
     return res.json({ success: true, token });
@@ -36,8 +50,9 @@ router.post("/register", async (req: Request, res: Response) => {
   }
 });
 
+
 // --- Logowanie ---
-router.post("/login", async (req: Request, res: Response) => {
+router.post("/login", loginLimiter, validateBody(authLoginSchema), async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -57,5 +72,23 @@ router.post("/login", async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Błąd serwera" });
   }
 });
+
+// --- Ja (profil + rola) ---
+router.get("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.userId) return res.status(401).json({ message: "Nieautoryzowany" });
+
+    const me = await User.findByPk(req.userId, {
+      attributes: ["id", "email", "name", "role", "created_at", "updated_at"],
+    });
+
+    if (!me) return res.status(401).json({ message: "Nieautoryzowany" });
+    return res.json(me);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Błąd serwera" });
+  }
+});
+
 
 export default router;

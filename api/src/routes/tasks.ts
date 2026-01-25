@@ -1,7 +1,12 @@
 // CeremoDay/api/src/routes/tasks.ts
 import { Router, Response } from "express";
+import { Op } from "sequelize";
 import Task from "../models/Task";
 import { AuthRequest, authMiddleware } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import { taskCreateSchema, taskUpdateSchema } from "../validation/schemas";
+import { requireActiveMember } from "../middleware/requireActiveMember";
+import { requireActiveMemberForModel } from "../middleware/requireActiveMemberForModel";
 
 const router = Router();
 
@@ -12,9 +17,26 @@ const router = Router();
 router.get(
   "/event/:eventId",
   authMiddleware,
+  requireActiveMember("eventId"),
   async (req: AuthRequest, res: Response) => {
     try {
       const { eventId } = req.params;
+
+      // --- UX/stabilność: zaległe zadania (due_date < dziś, a status != done)
+      // Jeśli user ma zadania ustawione wstecz względem daty ślubu albo „przegapił termin”,
+      // backend automatycznie przenosi je z pending -> in_progress.
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      await Task.update(
+        { status: "in_progress" } as any,
+        {
+          where: {
+            event_id: eventId,
+            status: "pending",
+            due_date: { [Op.ne]: null, [Op.lt]: today },
+          },
+        }
+      );
 
       const tasks = await Task.findAll({
         where: { event_id: eventId },
@@ -41,52 +63,52 @@ router.get(
 router.post(
   "/event/:eventId",
   authMiddleware,
+  requireActiveMember("eventId"),
+  validateBody(taskCreateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       const { eventId } = req.params;
-      const {
-        title,
-        description,
-        status,
-        category,
-        due_date,
-      } = req.body as {
-        title?: string;
-        description?: string;
-        status?: "pending" | "in_progress" | "done";
-        category?:
-          | "FORMALNOSCI"
-          | "ORGANIZACJA"
-          | "USLUGI"
-          | "DEKORACJE"
-          | "LOGISTYKA"
-          | "DZIEN_SLUBU";
-        due_date?: string | null;
+      const { title, description, status, category, due_date } = req.body as {
+        title: string;
+        description: string | null;
+        status: "pending" | "in_progress" | "done";
+        category: any;
+        due_date: string | null;
       };
 
-      if (!title || typeof title !== "string") {
-        return res
-          .status(400)
-          .json({ message: "Tytuł zadania jest wymagany" });
+      // ✅ Normalizacja opisu:
+      // - undefined -> null
+      // - null -> null
+      // - string -> trim, jeśli puste po trim => null
+      let normalizedDescription: string | null = null;
+      if (typeof description === "string") {
+        const trimmed = description.trim();
+        normalizedDescription = trimmed.length ? trimmed : null;
       }
+
+      // zaległe od razu idzie na in_progress
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const parsedDue = due_date ? new Date(due_date) : null;
+      const shouldAutoInProgress = !!parsedDue && parsedDue < today;
 
       const task = await Task.create({
         event_id: eventId,
         title: title.trim(),
-        description: description ?? null,
-        status: status ?? "pending",
+        description: normalizedDescription, // ✅
+        status: shouldAutoInProgress ? "in_progress" : (status ?? "pending"),
         category: category ?? null,
-        due_date: due_date ? new Date(due_date) : null,
+        due_date: parsedDue,
         auto_generated: false,
         generated_from: "manual",
+        source: "manual",            // ✅ MASZ to w modelu jako NOT NULL
+        linked_document_id: null,    // ✅ jw.
       } as any);
 
       return res.status(201).json(task);
     } catch (err) {
       console.error("Error creating task:", err);
-      return res
-        .status(500)
-        .json({ message: "Błąd tworzenia zadania" });
+      return res.status(500).json({ message: "Błąd tworzenia zadania" });
     }
   }
 );
@@ -98,6 +120,8 @@ router.post(
 router.put(
   "/:taskId",
   authMiddleware,
+  requireActiveMemberForModel({ model: Task as any, idParam: "taskId", label: "zadanie" }),
+  validateBody(taskUpdateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       const { taskId } = req.params;
@@ -131,12 +155,26 @@ router.put(
       const t = task as any;
 
       if (title !== undefined) t.title = title.trim();
-      if (description !== undefined) t.description = description;
+if (description !== undefined) {
+  if (description === null) {
+    t.description = null;
+  } else if (typeof description === "string") {
+    const trimmed = description.trim();
+    t.description = trimmed.length ? trimmed : null;
+  }
+}
       if (status !== undefined) t.status = status;
       if (category !== undefined) t.category = category ?? null;
 
       if (due_date !== undefined) {
         t.due_date = due_date ? new Date(due_date) : null;
+      }
+
+      // --- UX/stabilność: zaległy termin wymusza in_progress (o ile nie done) ---
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (t.status !== "done" && t.due_date && t.due_date < today) {
+        t.status = "in_progress";
       }
 
       await task.save();
@@ -157,6 +195,7 @@ router.put(
 router.delete(
   "/:taskId",
   authMiddleware,
+  requireActiveMemberForModel({ model: Task as any, idParam: "taskId", label: "zadanie" }),
   async (req: AuthRequest, res: Response) => {
     try {
       const { taskId } = req.params;

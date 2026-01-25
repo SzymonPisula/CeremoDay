@@ -6,6 +6,8 @@ import { useAuthStore } from "../store/auth";
 import Card from "../ui/Card";
 import Button from "../ui/Button";
 import Input from "../ui/Input";
+import FieldError from "../ui/FieldError";
+import { useApiError } from "../hooks/useApiError";
 
 /** ✅ jawny typ odpowiedzi z API */
 type LoginResponse = {
@@ -18,8 +20,9 @@ export default function Login() {
   const { login } = useAuthStore();
 
   const [form, setForm] = useState({ email: "", password: "" });
-  const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
+
+  const { fieldErrors, globalError, handleError, clearErrors } = useApiError();
 
   const redirectTo = useMemo(() => {
     const from = location.state?.from;
@@ -29,7 +32,7 @@ export default function Login() {
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setError("");
+    clearErrors();
     setLoading(true);
 
     try {
@@ -38,14 +41,14 @@ export default function Login() {
         password: form.password,
       })) as LoginResponse;
 
-      // ✅ poprawnie typowany token
+      // ✅ token do store
       login(res.token);
+      // ✅ legacy/pewność: token w localStorage (spójne z resztą appki)
       localStorage.setItem("token", res.token);
 
       navigate(redirectTo, { replace: true });
     } catch (err: unknown) {
-      if (err instanceof Error) setError(err.message);
-      else setError("Nieznany błąd");
+      handleError(err);
     } finally {
       setLoading(false);
     }
@@ -57,12 +60,11 @@ export default function Login() {
         {/* Brand */}
         <div className="mb-8 flex flex-col items-center text-center">
           <img
-  src="/logo.png"
-  alt="CeremoDay"
-  className="mb-15 h-67 w-67 object-contain"
-  draggable={false}
-/>
-
+            src="/logo.png"
+            alt="CeremoDay"
+            className="mb-15 h-67 w-67 object-contain"
+            draggable={false}
+          />
 
           <div className="-mt-15 text-sm text-[rgba(245,246,248,0.68)]">
             Zaloguj się, aby zarządzać swoim wydarzeniem
@@ -70,21 +72,22 @@ export default function Login() {
         </div>
 
         <Card className="w-full p-8">
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-5" noValidate>
             <div className="space-y-2">
               <label className="text-xs font-semibold tracking-[0.12em] text-[rgba(245,246,248,0.78)]">
                 EMAIL
               </label>
               <Input
-                type="email"
+                type="text"
+                inputMode="email"
                 value={form.email}
                 autoComplete="email"
                 placeholder="twoj@email.pl"
                 onChange={(e) =>
                   setForm((s) => ({ ...s, email: e.target.value }))
                 }
-                required
               />
+              <FieldError message={fieldErrors.email} />
             </div>
 
             <div className="space-y-2">
@@ -99,13 +102,13 @@ export default function Login() {
                 onChange={(e) =>
                   setForm((s) => ({ ...s, password: e.target.value }))
                 }
-                required
               />
+              <FieldError message={fieldErrors.password} />
             </div>
 
-            {error ? (
+            {globalError ? (
               <div className="rounded-[16px] border border-[rgba(255,120,120,0.26)] bg-[rgba(255,80,80,0.08)] px-4 py-3 text-sm">
-                {error}
+                {globalError}
               </div>
             ) : null}
 
