@@ -35,9 +35,13 @@ export type GuestsImportItem = {
 };
 
 export type GuestsImportResponse = {
-  success: boolean;
-  created: number;
-  errors?: string[];
+  ok: boolean;
+  createdGuests: number;
+  createdSubguests: number;
+  skippedGuests?: Array<{ first_name: string; last_name: string; reason: string }>;
+  skippedSubguests?: Array<{ first_name: string; last_name: string; parent_key: string | null; reason: string }>;
+  code?: string;
+  message?: string;
 };
 
 

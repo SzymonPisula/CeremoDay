@@ -6,6 +6,8 @@ export type ReportsSummary = {
 
   guests: {
     total: number;
+    main: number;
+    sub: number;
     rsvpCounts: Record<Rsvp, number>;
     rsvpPercent: Record<Rsvp, number>;
     sideCounts: Record<string, number>;
@@ -80,11 +82,11 @@ export type ReportsSummary = {
     pending: number;
   };
 
-  vendors: {
+    vendors: {
     total: number;
-    selected: number;
-    notSelected: number;
-    missingData: Array<{ id: string; name: string; missing: string[] }>;
+    byType: Record<string, number>;
+    bySource: Record<string, number>;
+    missingContact: Array<{ id: string; name: string; missing: string[] }>;
   };
 };
 

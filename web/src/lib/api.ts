@@ -56,6 +56,48 @@ const makeId = (): string => {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
+
+// -------------------------------------------------
+// Guests: budowa hierarchii (osoba kontaktowa -> współgoście)
+// Backend zwraca listę płaską z parent_guest_id.
+// UI Guests.tsx oczekuje, że top-level rekordy będą miały SubGuests[].
+// -------------------------------------------------
+function buildGuestsTree(flat: Guest[]): Guest[] {
+  const map = new Map<string, Guest>();
+  // 1) sklonuj, wyczyść SubGuests
+  for (const g of flat) {
+    if (!g?.id) continue;
+    map.set(String(g.id), { ...g, SubGuests: [] });
+  }
+
+  const roots: Guest[] = [];
+  // 2) podepnij dzieci pod rodziców
+  for (const g0 of map.values()) {
+    const parentId = g0.parent_guest_id ? String(g0.parent_guest_id) : "";
+    if (parentId && map.has(parentId)) {
+      const parent = map.get(parentId)!;
+      parent.SubGuests = [...(parent.SubGuests || []), g0];
+    } else {
+      roots.push(g0);
+    }
+  }
+
+  // 3) porządek: sort alfabetyczny + w subach też
+  const byName = (a: Guest, b: Guest) =>
+    `${a.last_name ?? ""} ${a.first_name ?? ""}`.localeCompare(
+      `${b.last_name ?? ""} ${b.first_name ?? ""}`,
+      "pl"
+    );
+
+  roots.sort(byName);
+  for (const r of roots) {
+    if (r.SubGuests && r.SubGuests.length) r.SubGuests.sort(byName);
+  }
+
+  return roots;
+}
+
+
 export const BASE_URL = "http://localhost:4000";
 
 // -------------------------------------------------
@@ -431,20 +473,15 @@ export const api = {
   removeEventUser: (eventId: string, userId: string) =>
     request<{ success: true }>(`/events/${eventId}/users/${userId}`, { method: "DELETE" }),
 
-  approveEventUser: (eventId: string, userId: string, role?: "guest" | "coorganizer") =>
+  approveEventUser: (eventId: string, userId: string) =>
     request<{ success: true }>(`/events/${eventId}/users/${userId}/approve`, {
       method: "POST",
-      body: JSON.stringify({ role }),
     }),
 
   rejectEventUser: (eventId: string, userId: string) =>
     request<{ success: true }>(`/events/${eventId}/users/${userId}/reject`, { method: "POST" }),
 
-  changeEventUserRole: (eventId: string, userId: string, role: "guest" | "coorganizer") =>
-    request(`/events/${eventId}/users/${userId}/role`, {
-      method: "PATCH",
-      body: JSON.stringify({ role }),
-    }),
+
 
   // -----------------------------
   // PROFILE
@@ -461,13 +498,15 @@ export const api = {
   // GUESTS
   // -----------------------------
 getGuests: (eventId: string): Promise<Guest[]> =>
-  request<{ guests?: Guest[] } | Guest[]>(`/guests/${eventId}`).then((data) => {
-    if (Array.isArray(data)) return data;
-    if (data && typeof data === "object" && Array.isArray((data as { guests?: Guest[] }).guests)) {
-      return (data as { guests: Guest[] }).guests;
-    }
-    return [];
-  }),
+    request<{ guests?: Guest[] } | Guest[]>(`/guests/${eventId}`).then((data) => {
+      const flat: Guest[] = Array.isArray(data)
+        ? data
+        : data && typeof data === "object" && Array.isArray((data as { guests?: Guest[] }).guests)
+          ? (data as { guests: Guest[] }).guests
+          : [];
+
+      return buildGuestsTree(flat);
+    }),
 
 createGuest: (body: GuestPayload) =>
   request<Guest>(`/guests`, { method: "POST", body: JSON.stringify(body) }),

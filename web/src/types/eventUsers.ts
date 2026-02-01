@@ -12,7 +12,7 @@
 
 import type { UserPublic } from "./user";
 
-export type EventRole = "owner" | "coorganizer" | "guest";
+export type EventRole = "owner" | "coorganizer";
 
 export type EventUserStatus = "pending" | "active" | "removed";
 

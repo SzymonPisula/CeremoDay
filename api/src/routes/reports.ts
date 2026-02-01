@@ -18,6 +18,7 @@ type Rsvp = "Potwierdzone" | "Odmowa" | "Nieznane";
 
 type GuestLite = {
   id: string;
+  parent_guest_id?: string | null;
   first_name: string;
   last_name: string;
   phone?: string | null;
@@ -40,6 +41,46 @@ type ExpenseLite = {
 };
 
 const router = Router();
+
+function normalizeRsvp(raw: unknown): Rsvp {
+  const v = String(raw ?? "").trim();
+  const u = v.toUpperCase();
+
+  // potwierdzone
+  if (
+    u === "POTWIERDZONE" ||
+    u === "CONFIRMED" ||
+    u === "CONFIRM" ||
+    u === "YES" ||
+    u === "TAK"
+  ) {
+    return "Potwierdzone";
+  }
+
+  // odmowa
+  if (
+    u === "ODMOWA" ||
+    u === "DECLINED" ||
+    u === "NO" ||
+    u === "NIE"
+  ) {
+    return "Odmowa";
+  }
+
+  // nieznane / brak
+  if (
+    !v ||
+    u === "NIEZNANE" ||
+    u === "UNKNOWN" ||
+    u === "PENDING" ||
+    u === "NONE"
+  ) {
+    return "Nieznane";
+  }
+
+  // fallback
+  return "Nieznane";
+}
 
 function toNumber(v: unknown): number {
   if (v == null) return 0;
@@ -95,6 +136,7 @@ router.get(
       // -------------------------
       const guestsLite: GuestLite[] = guests.map((g) => ({
         id: String((g as unknown as { id: string }).id),
+        parent_guest_id: (g as unknown as { parent_guest_id?: string | null }).parent_guest_id ?? null,
         first_name: String((g as unknown as { first_name: string }).first_name ?? ""),
         last_name: String((g as unknown as { last_name: string }).last_name ?? ""),
         phone: (g as unknown as { phone?: string | null }).phone ?? null,
@@ -106,6 +148,8 @@ router.get(
       }));
 
       const totalGuests = guestsLite.length;
+      const mainGuests = guestsLite.filter((g) => !g.parent_guest_id).length;
+      const subGuests = totalGuests - mainGuests;
 
       const rsvpCounts: Record<Rsvp, number> = {
         Potwierdzone: 0,
@@ -122,7 +166,7 @@ router.get(
       const toAskList: GuestLite[] = [];
 
       for (const g of guestsLite) {
-        const rsvp = (g.rsvp ?? "Nieznane") as Rsvp;
+        const rsvp = normalizeRsvp(g.rsvp);
         if (rsvpCounts[rsvp] == null) rsvpCounts.Nieznane += 1;
         else rsvpCounts[rsvp] += 1;
 
@@ -250,16 +294,16 @@ router.get(
         due_date: (t as unknown as { due_date?: string | null }).due_date ?? null,
       }));
 
-      const doneCount = tasksLite.filter((t) => t.is_done || (t.status ?? "").toLowerCase() === "done").length;
+      const doneCount = tasksLite.filter((t) => (t.status ?? "").toLowerCase() === "done").length;
       const openCount = tasksLite.length - doneCount;
 
       const overdueTasks = tasksLite
-        .filter((t) => !t.is_done && isDateString(t.due_date) && daysFromToday(t.due_date) < 0)
+        .filter((t) => (t.status ?? "").toLowerCase() !== "done" && isDateString(t.due_date) && daysFromToday(t.due_date) < 0)
         .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""))
         .slice(0, 20);
 
       const next7Tasks = tasksLite
-        .filter((t) => !t.is_done && isDateString(t.due_date))
+        .filter((t) => (t.status ?? "").toLowerCase() !== "done" && isDateString(t.due_date))
         .map((t) => ({ ...t, days: daysFromToday(t.due_date as string) }))
         .filter((t) => t.days >= 0 && t.days <= 7)
         .sort((a, b) => a.days - b.days)
@@ -275,7 +319,7 @@ router.get(
         is_done: Boolean((d as unknown as { is_done?: boolean }).is_done ?? false),
       }));
 
-      const docsDone = docsLite.filter((d) => d.is_done || (d.status ?? "").toLowerCase() === "done").length;
+      const docsDone = docsLite.filter((d) => (d.status ?? "").toLowerCase() === "done").length;
       const docsPending = docsLite.length - docsDone;
 
       // -------------------------
@@ -284,31 +328,43 @@ router.get(
       const vendorsLite = vendors.map((v) => ({
         id: String((v as unknown as { id: string }).id),
         name: String((v as unknown as { name?: string }).name ?? ""),
-        selected: Boolean((v as unknown as { selected?: boolean }).selected ?? false),
+        type: String((v as unknown as { type?: string | null }).type ?? "other"),
+        source: String((v as unknown as { source?: string | null }).source ?? "CUSTOM"),
+        address: String((v as unknown as { address?: string | null }).address ?? ""),
         phone: (v as unknown as { phone?: string | null }).phone ?? null,
         email: (v as unknown as { email?: string | null }).email ?? null,
-        contract: (v as unknown as { contract?: string | null }).contract ?? (v as unknown as { contract_url?: string | null }).contract_url ?? null,
+        website: (v as unknown as { website?: string | null }).website ?? null,
       }));
 
-      const vendorsSelected = vendorsLite.filter((v) => v.selected).length;
-      const vendorsNotSelected = vendorsLite.length - vendorsSelected;
+      const vendorsByType: Record<string, number> = {};
+      const vendorsBySource: Record<string, number> = {};
+      for (const v of vendorsLite) {
+        const t = v.type || "other";
+        const s = v.source || "CUSTOM";
+        vendorsByType[t] = (vendorsByType[t] ?? 0) + 1;
+        vendorsBySource[s] = (vendorsBySource[s] ?? 0) + 1;
+      }
 
-      const vendorsMissingData = vendorsLite
-        .filter((v) => v.selected && (!v.phone || !v.email || !v.contract))
+      const vendorsMissingContact = vendorsLite
+        .filter((v) => !v.phone || !v.email || !v.website || !v.address)
         .map((v) => ({
           id: v.id,
           name: v.name,
           missing: [
             !v.phone ? "phone" : null,
             !v.email ? "email" : null,
-            !v.contract ? "contract" : null,
+            !v.website ? "website" : null,
+            !v.address ? "address" : null,
           ].filter((x): x is string => x != null),
-        }));
+        }))
+        .slice(0, 50);
 
       return res.json({
         generatedAt: new Date().toISOString(),
         guests: {
           total: totalGuests,
+          main: mainGuests,
+          sub: subGuests,
           rsvpCounts,
           rsvpPercent: {
             Potwierdzone: totalGuests ? (rsvpCounts.Potwierdzone / totalGuests) * 100 : 0,
@@ -349,9 +405,9 @@ router.get(
         },
         vendors: {
           total: vendorsLite.length,
-          selected: vendorsSelected,
-          notSelected: vendorsNotSelected,
-          missingData: vendorsMissingData,
+          byType: vendorsByType,
+          bySource: vendorsBySource,
+          missingContact: vendorsMissingContact,
         },
       });
     } catch (err) {

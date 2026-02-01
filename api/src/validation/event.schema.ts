@@ -27,7 +27,7 @@ export const eventJoinSchema = z.object({
 });
 
 export const eventUserRoleUpdateSchema = z.object({
-  role: z.enum(["coorganizer", "guest"], {
+  role: z.enum(["coorganizer"], {
     message: "Nieprawidłowa rola użytkownika",
   }),
 });

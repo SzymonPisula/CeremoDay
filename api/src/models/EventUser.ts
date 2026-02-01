@@ -6,7 +6,7 @@ import { User } from "./User";
 export class EventUser extends Model {
   public event_id!: string;
   public user_id!: string;
-  public role!: "owner" | "coorganizer" | "guest";
+  public role!: "owner" | "coorganizer";
   public status!: "pending" | "active" | "removed";
 }
 
@@ -23,7 +23,7 @@ EventUser.init(
       references: { model: User, key: "id" },
     },
     role: {
-      type: DataTypes.ENUM("owner", "coorganizer", "guest"),
+      type: DataTypes.ENUM("owner", "coorganizer"),
       allowNull: false,
       defaultValue: "coorganizer", 
     },

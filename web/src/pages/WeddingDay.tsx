@@ -1,3 +1,4 @@
+// CeremoDay/web/src/pages/WeddingDay.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
@@ -10,6 +11,7 @@ import TimePickerWheel from "../ui/TimePickerWheel";
 import ModalPortal from "../ui/ModalPortal";
 
 import { api } from "../lib/api";
+import { useUiStore } from "../store/ui";
 
 import type { Vendor } from "../types/vendor";
 import type {
@@ -70,6 +72,18 @@ function normalizeEmail(v?: string | null) {
   return v.trim().toLowerCase();
 }
 
+function isValidEmail(v: string): boolean {
+  const s = v.trim();
+  if (!s) return true; // puste OK (opcjonalne)
+  // prosta, praktyczna walidacja (bez przesady): tekst@tekst.domena
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
+function sanitizePhone9(raw: string): string {
+  // tylko cyfry 0-9, max 9 znaków
+  return raw.replace(/\D+/g, "").slice(0, 9);
+}
+
 function makeVendorRole(v: Vendor): string {
   const t = (v as unknown as { type?: string }).type;
   if (t && String(t).trim()) return String(t).trim();
@@ -77,6 +91,12 @@ function makeVendorRole(v: Vendor): string {
 }
 
 export default function WeddingDay() {
+  // =========================================================
+  // TOAST / CONFIRM
+  // =========================================================
+  const confirmAsync = useUiStore((s) => s.confirmAsync);
+  const toast = useUiStore((s) => s.toast);
+
   // =========================================================
   // STATUS UI
   // =========================================================
@@ -100,6 +120,11 @@ export default function WeddingDay() {
         "bg-emerald-400/12 border border-emerald-400/22 text-emerald-100 hover:bg-emerald-400/20",
     },
   } as const;
+
+  function statusLabel(s: WeddingDayScheduleStatus): string {
+    const key = s.toUpperCase() as keyof typeof STATUS_META;
+    return STATUS_META[key]?.label ?? s;
+  }
 
   function StatusPill(props: {
     status: WeddingDayScheduleStatus;
@@ -168,7 +193,10 @@ export default function WeddingDay() {
   const [kPhone, setKPhone] = useState("");
   const [kEmail, setKEmail] = useState("");
 
-  // --- EDIT MODAL ---
+  const [kPhoneError, setKPhoneError] = useState<string | null>(null);
+  const [kEmailError, setKEmailError] = useState<string | null>(null);
+
+  // --- EDIT MODAL (punkt osi dnia) ---
   const [editOpen, setEditOpen] = useState(false);
   const [editItem, setEditItem] = useState<WeddingDayScheduleItem | null>(null);
   const [eTime, setETime] = useState("12:00");
@@ -179,11 +207,23 @@ export default function WeddingDay() {
   const [eStatus, setEStatus] = useState<WeddingDayScheduleStatus>("planned");
   const [savingEdit, setSavingEdit] = useState(false);
 
-  // ✅ stabilny lock
+  // --- EDIT MODAL (kontakt ręczny) ---
+  const [contactEditOpen, setContactEditOpen] = useState(false);
+  const [contactEditItem, setContactEditItem] = useState<WeddingDayContact | null>(null);
+  const [cName, setCName] = useState("");
+  const [cRole, setCRole] = useState("");
+  const [cPhone, setCPhone] = useState("");
+  const [cEmail, setCEmail] = useState("");
+  const [cPhoneError, setCPhoneError] = useState<string | null>(null);
+  const [cEmailError, setCEmailError] = useState<string | null>(null);
+  const [savingContactEdit, setSavingContactEdit] = useState(false);
+
+  // ✅ stabilny lock (dla obu modali)
   useEffect(() => {
-    if (editOpen) lockScroll(true);
+    const anyOpen = editOpen || contactEditOpen;
+    if (anyOpen) lockScroll(true);
     return () => lockScroll(false);
-  }, [editOpen]);
+  }, [editOpen, contactEditOpen]);
 
   function openEdit(it: WeddingDayScheduleItem) {
     setEditItem(it);
@@ -200,6 +240,24 @@ export default function WeddingDay() {
     setEditOpen(false);
     setEditItem(null);
     setSavingEdit(false);
+  }
+
+  function openContactEdit(c: WeddingDayContact) {
+    setContactEditItem(c);
+    setCName(c.name ?? "");
+    setCRole(c.role ?? "");
+    setCPhone(c.phone ?? "");
+    setCEmail(c.email ?? "");
+    setCPhoneError(null);
+    setCEmailError(null);
+    setSavingContactEdit(false);
+    setContactEditOpen(true);
+  }
+
+  function closeContactEdit() {
+    setContactEditOpen(false);
+    setContactEditItem(null);
+    setSavingContactEdit(false);
   }
 
   // =========================================================
@@ -296,73 +354,272 @@ export default function WeddingDay() {
   // ACTIONS
   // =========================================================
   async function addSchedule() {
-    if (!sTitle.trim()) return;
-    await api.addWeddingDaySchedule(eventId, {
-      time: sTime,
-      title: sTitle.trim(),
-      description: sDescription.trim() || null,
-      location: sLocation.trim() || null,
-      responsible: sResponsible.trim() || null,
-    });
+    if (!sTitle.trim()) {
+      toast({
+        tone: "danger",
+        title: "Brak tytułu",
+        message: "Uzupełnij tytuł punktu harmonogramu.",
+      });
+      return;
+    }
 
-    setSTitle("");
-    setSLocation("");
-    setSResponsible("");
-    setSDescription("");
-    await reload();
+    try {
+      await api.addWeddingDaySchedule(eventId, {
+        time: sTime,
+        title: sTitle.trim(),
+        description: sDescription.trim() || null,
+        location: sLocation.trim() || null,
+        responsible: sResponsible.trim() || null,
+      });
+
+      setSTitle("");
+      setSLocation("");
+      setSResponsible("");
+      setSDescription("");
+
+      toast({
+        tone: "success",
+        title: "Dodano punkt",
+        message: `Dodano „${sTitle.trim()}” o ${sTime}.`,
+      });
+
+      await reload();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Nie udało się dodać punktu harmonogramu.";
+      toast({ tone: "danger", title: "Błąd", message: msg });
+      setErr(msg);
+    }
   }
 
-  async function removeSchedule(itemId: string) {
-    await api.deleteWeddingDaySchedule(eventId, itemId);
-    await reload();
+  async function removeSchedule(itemId: string, titleForUi?: string) {
+    const ok = await confirmAsync({
+      title: "Usunąć punkt harmonogramu?",
+      message: "Czy na pewno chcesz usunąć ten punkt z osi dnia? Tej operacji nie da się cofnąć.",
+      confirmText: "Usuń",
+      cancelText: "Anuluj",
+      tone: "danger",
+    });
+    if (!ok) return;
+
+    try {
+      await api.deleteWeddingDaySchedule(eventId, itemId);
+
+      toast({
+        tone: "success",
+        title: "Usunięto punkt",
+        message: titleForUi ? `Usunięto „${titleForUi}”.` : "Punkt został usunięty.",
+      });
+
+      await reload();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Nie udało się usunąć punktu harmonogramu.";
+      toast({ tone: "danger", title: "Błąd", message: msg });
+      setErr(msg);
+    }
   }
 
   async function advanceScheduleStatus(it: WeddingDayScheduleItem) {
     const next: WeddingDayScheduleStatus =
       it.status === "planned" ? "in_progress" : it.status === "in_progress" ? "done" : "done";
 
-    await api.updateWeddingDaySchedule(eventId, it.id, { status: next });
-    await reload();
+    try {
+      await api.updateWeddingDaySchedule(eventId, it.id, { status: next });
+
+      toast({
+        tone: "success",
+        title: "Zmieniono status",
+        message: `„${it.title}” → ${statusLabel(next)}.`,
+      });
+
+      await reload();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Nie udało się zmienić statusu.";
+      toast({ tone: "danger", title: "Błąd", message: msg });
+      setErr(msg);
+    }
   }
 
   async function saveEdit() {
     if (!editItem) return;
+
+    if (!eTitle.trim()) {
+      toast({
+        tone: "danger",
+        title: "Brak tytułu",
+        message: "Tytuł punktu nie może być pusty.",
+      });
+      return;
+    }
+
     setSavingEdit(true);
     try {
       await api.updateWeddingDaySchedule(eventId, editItem.id, {
         time: eTime,
-        title: eTitle.trim() || editItem.title,
+        title: eTitle.trim(),
         description: eDescription.trim() || null,
         location: eLocation.trim() ? eLocation.trim() : null,
         responsible: eResponsible.trim() ? eResponsible.trim() : null,
         status: eStatus,
       });
 
+      toast({
+        tone: "success",
+        title: "Zapisano zmiany",
+        message: `Zaktualizowano „${eTitle.trim()}”.`,
+      });
+
       closeEdit();
       await reload();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Nie udało się zapisać zmian.";
+      toast({ tone: "danger", title: "Błąd", message: msg });
+      setErr(msg);
     } finally {
       setSavingEdit(false);
     }
   }
 
   async function addContact() {
-    if (!kName.trim()) return;
-    await api.addWeddingDayContact(eventId, {
-      name: kName.trim(),
-      role: kRole.trim() || null,
-      phone: kPhone.trim() || null,
-      email: kEmail.trim() || null,
-    });
-    setKName("");
-    setKRole("");
-    setKPhone("");
-    setKEmail("");
-    await reload();
+    if (!kName.trim()) {
+      toast({
+        tone: "danger",
+        title: "Brak nazwy",
+        message: "Uzupełnij imię/nazwę kontaktu.",
+      });
+      return;
+    }
+
+    const phoneSan = sanitizePhone9(kPhone);
+    if (kPhone.trim() && phoneSan.length !== 9) {
+      toast({
+        tone: "danger",
+        title: "Niepoprawny telefon",
+        message: "Telefon musi mieć dokładnie 9 cyfr (0–9), bez spacji i znaków.",
+      });
+      return;
+    }
+
+    if (kEmail.trim() && !isValidEmail(kEmail)) {
+      toast({
+        tone: "danger",
+        title: "Niepoprawny email",
+        message: "Wpisz email w formacie: nazwa@domena.pl (np. anna.kowalska@gmail.com).",
+      });
+      return;
+    }
+
+    try {
+      await api.addWeddingDayContact(eventId, {
+        name: kName.trim(),
+        role: kRole.trim() || null,
+        phone: sanitizePhone9(kPhone) || null,
+        email: kEmail.trim() ? normalizeEmail(kEmail) : null,
+      });
+
+      toast({
+        tone: "success",
+        title: "Dodano kontakt",
+        message: `Dodano „${kName.trim()}”.`,
+      });
+
+      setKName("");
+      setKRole("");
+      setKPhone("");
+      setKEmail("");
+      setKPhoneError(null);
+      setKEmailError(null);
+      await reload();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Nie udało się dodać kontaktu.";
+      toast({ tone: "danger", title: "Błąd", message: msg });
+      setErr(msg);
+    }
   }
 
-  async function removeContact(contactId: string) {
-    await api.deleteWeddingDayContact(eventId, contactId);
-    await reload();
+  async function saveContactEdit() {
+    if (!contactEditItem) return;
+
+    if (!cName.trim()) {
+      toast({
+        tone: "danger",
+        title: "Brak nazwy",
+        message: "Imię / nazwa kontaktu nie może być puste.",
+      });
+      return;
+    }
+
+    const phoneSan = sanitizePhone9(cPhone);
+    if (cPhone.trim() && phoneSan.length !== 9) {
+      toast({
+        tone: "danger",
+        title: "Niepoprawny telefon",
+        message: "Telefon musi mieć dokładnie 9 cyfr (0–9), bez spacji i znaków.",
+      });
+      return;
+    }
+
+    if (cEmail.trim() && !isValidEmail(cEmail)) {
+      toast({
+        tone: "danger",
+        title: "Niepoprawny email",
+        message: "Wpisz email w formacie: nazwa@domena.pl (np. anna.kowalska@gmail.com).",
+      });
+      return;
+    }
+
+    setSavingContactEdit(true);
+    try {
+      // Zakładamy analogiczne API jak dla harmonogramu:
+      // updateWeddingDayContact(eventId, contactId, payload)
+      await api.updateWeddingDayContact(eventId, contactEditItem.id, {
+        name: cName.trim(),
+        role: cRole.trim() || null,
+        phone: sanitizePhone9(cPhone) || null,
+        email: cEmail.trim() ? normalizeEmail(cEmail) : null,
+      });
+
+      toast({
+        tone: "success",
+        title: "Zapisano zmiany",
+        message: `Zaktualizowano „${cName.trim()}”.`,
+      });
+
+      closeContactEdit();
+      await reload();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Nie udało się zapisać zmian kontaktu.";
+      toast({ tone: "danger", title: "Błąd", message: msg });
+      setErr(msg);
+    } finally {
+      setSavingContactEdit(false);
+    }
+  }
+
+  async function removeContact(contactId: string, nameForUi?: string) {
+    const ok = await confirmAsync({
+      title: "Usunąć kontakt?",
+      message: "Czy na pewno chcesz usunąć ten kontakt?",
+      confirmText: "Usuń",
+      cancelText: "Anuluj",
+      tone: "danger",
+    });
+    if (!ok) return;
+
+    try {
+      await api.deleteWeddingDayContact(eventId, contactId);
+
+      toast({
+        tone: "success",
+        title: "Usunięto kontakt",
+        message: nameForUi ? `Usunięto „${nameForUi}”.` : "Kontakt został usunięty.",
+      });
+
+      await reload();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Nie udało się usunąć kontaktu.";
+      toast({ tone: "danger", title: "Błąd", message: msg });
+      setErr(msg);
+    }
   }
 
   // =========================================================
@@ -447,7 +704,11 @@ export default function WeddingDay() {
           </div>
 
           <div className="mt-3">
-            <Button variant="secondary" onClick={addSchedule} leftIcon={<Plus className="w-4 h-4" />}>
+            <Button
+              variant="secondary"
+              onClick={() => void addSchedule()}
+              leftIcon={<Plus className="w-4 h-4" />}
+            >
               Dodaj do osi dnia
             </Button>
           </div>
@@ -476,59 +737,50 @@ export default function WeddingDay() {
                     <div className="px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                       {/* LEFT */}
                       <div className="min-w-0 flex-1">
-  {/* ============================= */}
-  {/* LINIA 1: wszystko w jednej linii */}
-  {/* ============================= */}
-  <div className="flex items-center gap-4 flex-wrap text-[15px] text-white/80">
-    {/* godzina */}
-    <span className="inline-flex items-center gap-2 font-semibold text-white shrink-0">
-      <Clock3 className="w-4 h-4 text-white/70" />
-      {it.time}
-    </span>
+                        {/* LINIA 1 */}
+                        <div className="flex items-center gap-4 flex-wrap text-[15px] text-white/80">
+                          <span className="inline-flex items-center gap-2 font-semibold text-white shrink-0">
+                            <Clock3 className="w-4 h-4 text-white/70" />
+                            {it.time}
+                          </span>
 
-    {/* nazwa */}
-    <span className="font-semibold text-white truncate max-w-[260px]">
-      {it.title}
-    </span>
+                          <span className="font-semibold text-white truncate max-w-[260px]">
+                            {it.title}
+                          </span>
 
-    {/* miejsce */}
-    {it.location && (
-      <span className="inline-flex items-center gap-1 text-white/70">
-        <MapPin className="w-4 h-4" />
-        {it.location}
-      </span>
-    )}
+                          {it.location && (
+                            <span className="inline-flex items-center gap-1 text-white/70">
+                              <MapPin className="w-4 h-4" />
+                              {it.location}
+                            </span>
+                          )}
 
-    {/* odpowiedzialny */}
-    {it.responsible && (
-      <span className="text-white/60">
-        Odp.: {it.responsible}
-      </span>
-    )}
+                          {it.responsible && (
+                            <span className="text-white/60">Odp.: {it.responsible}</span>
+                          )}
 
-    {/* zadania */}
-    {linkedTasks.length > 0 && (
-      <span className="text-[13px] text-white/50">
-        • {doneCount}/{linkedTasks.length} zadań
-      </span>
-    )}
-  </div>
+                          {linkedTasks.length > 0 && (
+                            <span className="text-[13px] text-white/50">
+                              • {doneCount}/{linkedTasks.length} zadań
+                            </span>
+                          )}
+                        </div>
 
-  {/* ============================= */}
-  {/* LINIA 2: opis (tylko jeśli jest) */}
-  {/* ============================= */}
-  {it.description && (
-    <div className="mt-1 text-[14px] leading-5 text-white/65">
-      {it.description}
-    </div>
-  )}
-</div>
-
-
+                        {/* LINIA 2 */}
+                        {it.description && (
+                          <div className="mt-1 text-[14px] leading-5 text-white/65">
+                            {it.description}
+                          </div>
+                        )}
+                      </div>
 
                       {/* RIGHT */}
                       <div className="flex items-center gap-2 shrink-0 flex-nowrap">
-                        <StatusPill status={it.status} solid onClick={() => void advanceScheduleStatus(it)} />
+                        <StatusPill
+                          status={it.status}
+                          solid
+                          onClick={() => void advanceScheduleStatus(it)}
+                        />
 
                         <Button
                           variant="ghost"
@@ -540,7 +792,7 @@ export default function WeddingDay() {
 
                         <Button
                           variant="ghost"
-                          onClick={() => void removeSchedule(it.id)}
+                          onClick={() => void removeSchedule(it.id, it.title)}
                           leftIcon={<Trash2 className="w-4 h-4" />}
                         >
                           Usuń
@@ -556,13 +808,14 @@ export default function WeddingDay() {
       </Tile>
 
       {/* =========================================================
-          KONTAKTY (Auto + ręczne) — lekko większe
+          KONTAKTY (Auto + ręczne)
          ========================================================= */}
       <Tile>
         <div>
           <div className="text-[18px] font-semibold text-white">Szybkie kontakty</div>
           <div className="text-[13px] text-white/70 mt-1">
-            Najważniejsze osoby i usługi pod ręką (telefon/email). Na górze: automatycznie z usługodawców.
+            Najważniejsze osoby i usługi pod ręką (telefon/email). Na górze: automatycznie z
+            usługodawców.
           </div>
         </div>
 
@@ -630,19 +883,48 @@ export default function WeddingDay() {
             <Input
               label="Telefon"
               value={kPhone}
-              onChange={(e) => setKPhone(e.target.value)}
-              placeholder="opcjonalnie"
+              onChange={(e) => {
+                const next = sanitizePhone9(e.target.value);
+                setKPhone(next);
+                if (next && next.length !== 9) {
+                  setKPhoneError("Telefon musi mieć dokładnie 9 cyfr (0–9), bez spacji i znaków.");
+                } else {
+                  setKPhoneError(null);
+                }
+              }}
+              placeholder="9 cyfr, np. 501234567"
+              inputMode="numeric"
+              pattern="\d*"
+              maxLength={9}
+              error={kPhoneError ?? undefined}
+              hint={!kPhoneError ? "Tylko cyfry 0–9, maksymalnie 9 znaków." : undefined}
             />
             <Input
               label="Email"
               value={kEmail}
-              onChange={(e) => setKEmail(e.target.value)}
-              placeholder="opcjonalnie"
+              onChange={(e) => {
+                const next = e.target.value;
+                setKEmail(next);
+                if (next.trim() && !isValidEmail(next)) {
+                  setKEmailError(
+                    "Niepoprawny email. Wpisz w formacie: nazwa@domena.pl (np. anna.kowalska@gmail.com)."
+                  );
+                } else {
+                  setKEmailError(null);
+                }
+              }}
+              placeholder="np. anna.kowalska@gmail.com"
+              error={kEmailError ?? undefined}
+              hint={!kEmailError ? "Format: nazwa@domena.pl" : undefined}
             />
           </div>
 
           <div className="mt-3">
-            <Button variant="secondary" onClick={() => void addContact()} leftIcon={<Plus className="w-4 h-4" />}>
+            <Button
+              variant="secondary"
+              onClick={() => void addContact()}
+              leftIcon={<Plus className="w-4 h-4" />}
+            >
               Dodaj kontakt
             </Button>
           </div>
@@ -651,7 +933,10 @@ export default function WeddingDay() {
             {loading ? (
               <div className="text-sm text-white/70">Ładowanie…</div>
             ) : manualContacts.length === 0 ? (
-              <EmptyState title="Brak kontaktów ręcznych" description="Dodaj świadków, rodziców, osoby do pomocy, transport…" />
+              <EmptyState
+                title="Brak kontaktów ręcznych"
+                description="Dodaj świadków, rodziców, osoby do pomocy, transport…"
+              />
             ) : (
               <div className="space-y-2">
                 {manualContacts.map((c: WeddingDayContact) => (
@@ -676,7 +961,14 @@ export default function WeddingDay() {
                     <div className="flex items-center gap-2 md:justify-end">
                       <Button
                         variant="ghost"
-                        onClick={() => void removeContact(c.id)}
+                        onClick={() => openContactEdit(c)}
+                        leftIcon={<Pencil className="w-4 h-4" />}
+                      >
+                        Edytuj
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => void removeContact(c.id, c.name)}
                         leftIcon={<Trash2 className="w-4 h-4" />}
                       >
                         Usuń
@@ -749,14 +1041,16 @@ export default function WeddingDay() {
                   <div>
                     <label className="block text-xs text-white/70 mb-1">Status</label>
                     <div className="flex gap-2 flex-wrap">
-                      {(["planned", "in_progress", "done"] as WeddingDayScheduleStatus[]).map((s) => (
-                        <StatusPill
-                          key={s}
-                          status={s}
-                          active={eStatus === s}
-                          onClick={() => setEStatus(s)}
-                        />
-                      ))}
+                      {(["planned", "in_progress", "done"] as WeddingDayScheduleStatus[]).map(
+                        (s) => (
+                          <StatusPill
+                            key={s}
+                            status={s}
+                            active={eStatus === s}
+                            onClick={() => setEStatus(s)}
+                          />
+                        )
+                      )}
                     </div>
                   </div>
                 </div>
@@ -772,6 +1066,112 @@ export default function WeddingDay() {
                     leftIcon={<Sparkles className="w-4 h-4" />}
                   >
                     {savingEdit ? "Zapisywanie…" : "Zapisz zmiany"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      ) : null}
+
+      {/* =========================================================
+          MODAL EDYCJI KONTAKTU RĘCZNEGO
+         ========================================================= */}
+      {contactEditOpen && contactEditItem ? (
+        <ModalPortal>
+          <div
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            onWheelCapture={(e) => e.preventDefault()}
+            onTouchMoveCapture={(e) => e.preventDefault()}
+          >
+            <div
+              className="absolute inset-0 bg-black/55 backdrop-blur-md"
+              onClick={closeContactEdit}
+              aria-hidden="true"
+            />
+
+            <div className="relative w-full max-w-3xl">
+              <div className="rounded-2xl border border-white/10 bg-[#0b1b14]/90 backdrop-blur-xl shadow-[0_24px_80px_rgba(0,0,0,0.55)] p-5 md:p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-white text-lg font-semibold">Edytuj kontakt</div>
+                    <div className="text-sm text-white/60 mt-1">
+                      Aktualizujesz szybki numer (telefon/email) dla dnia ślubu.
+                    </div>
+                  </div>
+
+                  <Button variant="ghost" onClick={closeContactEdit}>
+                    Zamknij
+                  </Button>
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <Input
+                    label="Imię / nazwa"
+                    value={cName}
+                    onChange={(e) => setCName(e.target.value)}
+                    placeholder="np. Świadek Paweł"
+                  />
+                  <Input
+                    label="Rola"
+                    value={cRole}
+                    onChange={(e) => setCRole(e.target.value)}
+                    placeholder="np. Świadek / Mama / Kościół"
+                  />
+                  <Input
+                    label="Telefon"
+                    value={cPhone}
+                    onChange={(e) => {
+                      const next = sanitizePhone9(e.target.value);
+                      setCPhone(next);
+                      if (next && next.length !== 9) {
+                        setCPhoneError(
+                          "Telefon musi mieć dokładnie 9 cyfr (0–9), bez spacji i znaków."
+                        );
+                      } else {
+                        setCPhoneError(null);
+                      }
+                    }}
+                    placeholder="9 cyfr, np. 501234567"
+                    inputMode="numeric"
+                    pattern="\d*"
+                    maxLength={9}
+                    error={cPhoneError ?? undefined}
+                    hint={!cPhoneError ? "Tylko cyfry 0–9, maksymalnie 9 znaków." : undefined}
+                  />
+                  <Input
+                    label="Email"
+                    value={cEmail}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setCEmail(next);
+                      if (next.trim() && !isValidEmail(next)) {
+                        setCEmailError(
+                          "Niepoprawny email. Wpisz w formacie: nazwa@domena.pl (np. anna.kowalska@gmail.com)."
+                        );
+                      } else {
+                        setCEmailError(null);
+                      }
+                    }}
+                    placeholder="np. anna.kowalska@gmail.com"
+                    error={cEmailError ?? undefined}
+                    hint={!cEmailError ? "Format: nazwa@domena.pl" : undefined}
+                  />
+                </div>
+
+                <div className="mt-6 flex items-center justify-end gap-2">
+                  <Button variant="secondary" onClick={closeContactEdit} disabled={savingContactEdit}>
+                    Anuluj
+                  </Button>
+                  <Button
+                    variant="primary"
+                    onClick={() => void saveContactEdit()}
+                    disabled={savingContactEdit}
+                    leftIcon={<Sparkles className="w-4 h-4" />}
+                  >
+                    {savingContactEdit ? "Zapisywanie…" : "Zapisz zmiany"}
                   </Button>
                 </div>
               </div>

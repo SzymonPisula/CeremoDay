@@ -349,7 +349,9 @@ export default function GuestsImportModal({ open, onClose, onImport }: Props) {
           return;
         }
 
-        item.parent_key = parentDisplay;
+        // backend mapuje parent_key do osoby kontaktowej po "personKey" (lowercase + spacje)
+        // więc tu wysyłamy znormalizowany klucz, a nie surowy tekst z Excela.
+        item.parent_key = parentKey;
       }
 
       // duplikaty w pliku

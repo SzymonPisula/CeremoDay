@@ -28,6 +28,7 @@ import RuralVenuesMap from "../components/vendors/RuralVenuesMap";
 import Select, { type SelectOption } from "../ui/Select";
 import VendorEditModal from "../components/vendors/VendorEditModal";
 import ConfirmDialog from "../ui/ConfirmDialog";
+import { useUiStore } from "../store/ui";
 
 type Params = { id: string };
 
@@ -543,11 +544,14 @@ export default function Vendors() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [createFieldErrors, setCreateFieldErrors] = useState<FieldErrors>({});
 
-  // Toast
-  const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  // Toast (global, spójny w całej aplikacji)
+  const uiToast = useUiStore((s) => s.toast);
   const showToast = (type: "success" | "error", text: string) => {
-    setToast({ type, text });
-    window.setTimeout(() => setToast(null), 2800);
+    uiToast({
+      tone: type === "success" ? "success" : "danger",
+      title: type === "success" ? "Sukces" : "Błąd",
+      message: text,
+    });
   };
 
   // Confirm
@@ -1531,22 +1535,7 @@ const myTypeLabel = (t?: VendorType) => {
         />
       )}
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed z-[9999] bottom-6 right-6 max-w-[360px]">
-          <div
-            className={
-              "rounded-2xl border px-4 py-3 shadow-[0_18px_60px_rgba(0,0,0,0.45)] backdrop-blur-md " +
-              (toast.type === "success"
-                ? "border-[#c8a04b]/35 bg-[#0b1b14]/90 text-white"
-                : "border-red-400/25 bg-red-500/15 text-red-100")
-            }
-          >
-            <div className="text-sm font-semibold">{toast.type === "success" ? "Sukces!" : "Błąd"}</div>
-            <div className="text-xs opacity-80 mt-1">{toast.text}</div>
-          </div>
-        </div>
-      )}
+      {/* Toasty są globalne (ToastHost w AppLayout) */}
     </div>
   );
 }

@@ -186,21 +186,47 @@ router.post(
       });
     }
 
-    // Import w transakcji:
-    // 1) tworzymy guest
-    // 2) mapujemy "Imię Nazwisko" -> guest.id
-    // 3) tworzymy subguest (parent_guest_id)
+    // --------------------------------------------------
+    // Import w transakcji (z deduplikacją względem bazy):
+    // 1) mapujemy istniejących gości (osoba kontaktowa) -> id
+    // 2) tworzymy brakujących gości (Typ=Gość)
+    // 3) tworzymy brakujących współgości (Typ=Współgość) z parent_guest_id
+    // --------------------------------------------------
     try {
+      // istniejące rekordy (poza transakcją – do deduplikacji)
+      const existing = await Guest.findAll({ where: { event_id: eventId } });
+
+      const existingContactIdsByKey = new Map<string, string>();
+      const existingSubKeys = new Set<string>();
+
+      for (const g of existing) {
+        if (!g.parent_guest_id) {
+          existingContactIdsByKey.set(personKey(g.first_name, g.last_name), g.id);
+        } else {
+          const sk = `${g.parent_guest_id}::${personKey(g.first_name, g.last_name)}`;
+          existingSubKeys.add(sk);
+        }
+      }
+
       const result = await sequelize.transaction(async (t) => {
         const createdGuests: Guest[] = [];
         const createdSubs: Guest[] = [];
 
-        // klucz osoby kontaktowej -> id (tylko z importu, nie z bazy)
-        const guestIdByKey = new Map<string, string>();
+        const skippedGuests: Array<{ first_name: string; last_name: string; reason: string }> = [];
+        const skippedSubguests: Array<{ first_name: string; last_name: string; parent_key: string | null; reason: string }> = [];
 
-        // 1) Goście
+        // klucz osoby kontaktowej -> id (łączymy bazę + import)
+        const guestIdByKey = new Map<string, string>(existingContactIdsByKey);
+
+        // 1) Goście (Typ=Gość)
         for (const it of parsed) {
           if (it.type !== "guest") continue;
+
+          const key = personKey(it.first_name, it.last_name);
+          if (guestIdByKey.has(key)) {
+            skippedGuests.push({ first_name: it.first_name, last_name: it.last_name, reason: "DUPLICATE" });
+            continue;
+          }
 
           const g = await Guest.create(
             {
@@ -220,7 +246,7 @@ router.post(
           );
 
           createdGuests.push(g);
-          guestIdByKey.set(personKey(it.first_name, it.last_name), g.id);
+          guestIdByKey.set(key, g.id);
         }
 
         // sanity: musimy mieć jakichkolwiek gości, jeśli są subguest
@@ -229,7 +255,7 @@ router.post(
           throw new Error("Import zawiera współgości, ale nie zawiera żadnych gości (Typ=Gość).");
         }
 
-        // 2) Współgoście
+        // 2) Współgoście (Typ=Współgość)
         for (const it of parsed) {
           if (it.type !== "subguest") continue;
 
@@ -238,9 +264,24 @@ router.post(
 
           const parentId = guestIdByKey.get(pkKey);
           if (!parentId) {
-            throw new Error(
-              `Nie znaleziono osoby kontaktowej "${it.parent_key}". Upewnij się, że istnieje w imporcie jako Typ=Gość i ma identyczne Imię+Nazwisko.`
-            );
+            skippedSubguests.push({
+              first_name: it.first_name,
+              last_name: it.last_name,
+              parent_key: it.parent_key ?? null,
+              reason: "MISSING_PARENT",
+            });
+            continue;
+          }
+
+          const subKey = `${parentId}::${personKey(it.first_name, it.last_name)}`;
+          if (existingSubKeys.has(subKey)) {
+            skippedSubguests.push({
+              first_name: it.first_name,
+              last_name: it.last_name,
+              parent_key: it.parent_key ?? null,
+              reason: "DUPLICATE",
+            });
+            continue;
           }
 
           const sg = await Guest.create(
@@ -268,6 +309,8 @@ router.post(
           ok: true,
           createdGuests: createdGuests.length,
           createdSubguests: createdSubs.length,
+          skippedGuests,
+          skippedSubguests,
         };
       });
 

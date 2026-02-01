@@ -9,7 +9,7 @@ import Button from "../ui/Button";
 import Input from "../ui/Input";
 import StatCard from "../ui/StatCard";
 
-type EventRole = "owner" | "coorganizer" | "guest";
+type EventRole = "owner" | "coorganizer";
 type EventStatus = "pending" | "active" | "removed";
 
 interface Event {
@@ -68,11 +68,6 @@ function RoleBadge({ role }: { role: EventRole }) {
       className:
         "border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.06)] text-[rgba(245,246,248,0.86)]",
     },
-    guest: {
-      label: "Gość",
-      className:
-        "border-[rgba(18,120,84,0.40)] bg-[rgba(18,120,84,0.14)] text-[rgba(208,255,236,0.86)]",
-    },
   };
 
   const cfg = map[role];
@@ -109,31 +104,32 @@ export default function Dashboard() {
   }, [token, navigate]);
 
   // pobieranie wydarzeń
+  const refreshEvents = async () => {
+    if (!token) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = (await api.getEvents()) as Event[];
+      setEvents(data);
+    } catch (err: unknown) {
+      console.error(err);
+      const apiError = err as ApiErrorShape;
+      setError(apiError.message ?? "Nie udało się pobrać wydarzeń");
+
+      if (apiError.status === 401 || apiError.message === "Unauthorized") {
+        logout();
+        navigate("/login");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!token) return;
-
-    const fetchEvents = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = (await api.getEvents()) as Event[];
-        setEvents(data);
-      } catch (err: unknown) {
-        console.error(err);
-        const apiError = err as ApiErrorShape;
-        setError(apiError.message ?? "Nie udało się pobrać wydarzeń");
-
-        if (apiError.status === 401 || apiError.message === "Unauthorized") {
-          logout();
-          navigate("/login");
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchEvents();
-  }, [token, logout, navigate]);
+    refreshEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const myEvents = useMemo(() => events.filter((e) => e.created_by_me), [events]);
   const joinedEvents = useMemo(() => events.filter((e) => !e.created_by_me), [events]);
@@ -202,6 +198,9 @@ export default function Dashboard() {
         if (prev.some((ev) => ev.id === joined.id)) return prev;
         return [...prev, joined];
       });
+
+      // ✅ od razu dociągnij pełną listę z API (eliminuje "pusty ekran" po dołączeniu)
+      await refreshEvents();
 
       setJoinCode("");
       if (joined.status === "pending") {

@@ -1,6 +1,6 @@
 // CeremoDay/web/src/pages/Reports.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams, useLocation } from "react-router-dom";
 import {
   AlertTriangle,
   BarChart3,
@@ -15,47 +15,32 @@ import {
   Wallet,
 } from "lucide-react";
 
-import { jsPDF } from "jspdf";
-import html2canvas from "html2canvas";
 import Chart from "chart.js/auto";
+
+import { generateReportsPdf } from "../lib/reportsPdf";
+
 import Select, { type SelectOption } from "../ui/Select";
 import { api } from "../lib/api";
-import type { ReportsSummary, Rsvp } from "../types/reports";
-import { useSearchParams } from "react-router-dom";
-import { useLocation } from "react-router-dom";
+import type { ReportsSummary, Rsvp, ReportSectionKey } from "../types/reports";
 
 type Params = { id: string };
 
 // -------------------------
 // Helpers
 // -------------------------
-function fmt2(n: number | string | null | undefined): string {
-  const x = typeof n === "number" ? n : Number(n);
-  return Number.isFinite(x) ? x.toFixed(2) : "0.00";
+function toNumber(value: unknown, fallback = 0): number {
+  const x = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(x) ? x : fallback;
 }
 
-function safeInt(n: unknown): number {
-  const x = typeof n === "number" ? n : Number(n);
-  return Number.isFinite(x) ? x : 0;
+function fmt2(n: unknown): string {
+  return toNumber(n, 0).toFixed(2);
 }
 
 function clamp(n: number, a: number, b: number): number {
   return Math.max(a, Math.min(b, n));
 }
 
-function hasOklabLike(value: string): boolean {
-  const v = value.toLowerCase();
-  return v.includes("oklab") || v.includes("oklch") || v.includes("color-mix");
-}
-
-function safeCss(value: string, fallback: string): string {
-  return hasOklabLike(value) ? fallback : value;
-}
-
-function waitForFonts(): Promise<void> {
-  const d = document as Document & { fonts?: FontFaceSet };
-  return d.fonts?.ready ? d.fonts.ready.then(() => undefined) : Promise.resolve();
-}
 
 function nextFrame(): Promise<void> {
   return new Promise((r) => requestAnimationFrame(() => r()));
@@ -65,12 +50,13 @@ function topNWithOther(entries: Array<[string, number]>, n: number) {
   const sorted = [...entries].sort((a, b) => b[1] - a[1]);
   const head = sorted.slice(0, n);
   const tail = sorted.slice(n);
-  const otherSum = tail.reduce((acc, [, v]) => acc + safeInt(v), 0);
+  const otherSum = tail.reduce((acc, [, v]) => acc + toNumber(v, 0), 0);
   if (otherSum > 0) head.push(["Inne", otherSum]);
   return head;
 }
 
-function prettyTs(iso: string): string {
+function prettyTs(iso: string | null | undefined): string {
+  if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString("pl-PL", {
@@ -82,11 +68,15 @@ function prettyTs(iso: string): string {
   });
 }
 
-
 // -------------------------
 // Chart hook (Chart.js)
 // -------------------------
+type ArcLike = { x: number; y: number; tooltipPosition?: () => { x: number; y: number } };
+
 type ChartSpec = {
+  doughnutColors?: string[];
+  showDoughnutLabels?: boolean;
+
   type: "doughnut" | "bar" | "line";
   labels: string[];
   datasets: Array<{
@@ -103,7 +93,6 @@ function useChart(canvasId: string, spec: ChartSpec | null, deps: unknown[]): vo
   useEffect(() => {
     let raf = 0;
 
-    // ✅ copy ref map "na wejściu" efektu, żeby cleanup nie łapał zmiennej, która się zmieni
     const mapAtCreation = instancesRef.current;
 
     if (!spec) {
@@ -143,7 +132,7 @@ function useChart(canvasId: string, spec: ChartSpec | null, deps: unknown[]): vo
       const ds = spec.datasets.map((d, idx) => {
         const bg =
           spec.type === "doughnut"
-            ? [gold, greenSoft, redSoft, goldSoft, whiteSoft]
+            ? (spec.doughnutColors ?? [gold, greenSoft, redSoft, goldSoft, whiteSoft])
             : idx === 0
             ? goldSoft
             : idx === 1
@@ -151,9 +140,7 @@ function useChart(canvasId: string, spec: ChartSpec | null, deps: unknown[]): vo
             : greenSoft;
 
         const border =
-          spec.type === "doughnut"
-            ? "rgba(255,255,255,0.10)"
-            : "rgba(255,255,255,0.12)";
+          spec.type === "doughnut" ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.12)";
 
         return {
           ...d,
@@ -165,6 +152,39 @@ function useChart(canvasId: string, spec: ChartSpec | null, deps: unknown[]): vo
           pointRadius: spec.type === "line" ? 2 : undefined,
         };
       });
+
+      const doughnutLabelPlugin =
+        spec.type === "doughnut" && spec.showDoughnutLabels !== false
+          ? {
+              id: "ceremoday-doughnut-labels",
+              afterDatasetsDraw(chart: Chart) {
+                const ctx2 = chart.ctx;
+                const ds0 = chart.data.datasets?.[0];
+                const values = (ds0?.data ?? []) as Array<number | null | undefined>;
+                const total = values.reduce((acc: number, v) => acc + (Number(v) || 0), 0);
+                if (!total) return;
+
+                const meta = chart.getDatasetMeta(0);
+                ctx2.save();
+                ctx2.font = "600 12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+                ctx2.fillStyle = "rgba(255,255,255,0.92)";
+                ctx2.textAlign = "center";
+                ctx2.textBaseline = "middle";
+
+                meta.data.forEach((arc: unknown, i: number) => {
+                  const aArc = arc as ArcLike;
+                  const v = Number(values[i] ?? 0);
+                  if (!v) return;
+                  const p = Math.round((v / total) * 100);
+                  const pos = aArc.tooltipPosition ? aArc.tooltipPosition() : { x: aArc.x, y: aArc.y };
+                  const label = `${v} (${p}%)`;
+                  ctx2.fillText(label, pos.x, pos.y);
+                });
+
+                ctx2.restore();
+              },
+            }
+          : undefined;
 
       const chart = new Chart(el, {
         type: spec.type,
@@ -183,6 +203,7 @@ function useChart(canvasId: string, spec: ChartSpec | null, deps: unknown[]): vo
               },
             },
             tooltip: { enabled: true },
+              ...(doughnutLabelPlugin ? { "ceremoday-doughnut-labels": doughnutLabelPlugin } : {}),
           },
           scales:
             spec.type === "doughnut"
@@ -221,84 +242,11 @@ function useChart(canvasId: string, spec: ChartSpec | null, deps: unknown[]): vo
   }, deps);
 }
 
-
-
 // -------------------------
 // PDF export helpers
 // -------------------------
-function buildPdfHost(): HTMLDivElement {
-  const host = document.createElement("div");
-  host.style.position = "fixed";
-  host.style.left = "-10000px";
-  host.style.top = "0";
-  host.style.width = "980px";
-  host.style.padding = "24px";
-  host.style.background = "#07130f";
-  host.style.zIndex = "999999";
-  host.style.overflow = "visible";
 
-  const style = document.createElement("style");
-  style.innerHTML = `
-    * { box-sizing: border-box !important; }
-    html, body { margin: 0; padding: 0; }
-  `;
-  host.appendChild(style);
 
-  document.body.appendChild(host);
-  return host;
-}
-
-function sanitizeForHtml2Canvas(root: HTMLElement) {
-  const all = root.querySelectorAll<HTMLElement>("*");
-  all.forEach((el) => {
-    const cs = window.getComputedStyle(el);
-
-    el.style.backdropFilter = "none";
-    el.style.filter = "none";
-    el.style.transform = "none";
-    el.style.backgroundImage = "none";
-
-    el.style.color = safeCss(cs.color, "rgba(255,255,255,0.92)");
-    el.style.backgroundColor = safeCss(cs.backgroundColor, "rgba(255,255,255,0)");
-    el.style.borderTopColor = safeCss(cs.borderTopColor, "rgba(255,255,255,0.12)");
-    el.style.borderRightColor = safeCss(cs.borderRightColor, "rgba(255,255,255,0.12)");
-    el.style.borderBottomColor = safeCss(cs.borderBottomColor, "rgba(255,255,255,0.12)");
-    el.style.borderLeftColor = safeCss(cs.borderLeftColor, "rgba(255,255,255,0.12)");
-    el.style.outlineColor = safeCss(cs.outlineColor, "rgba(0,0,0,0)");
-    el.style.textDecorationColor = safeCss(cs.textDecorationColor, el.style.color);
-
-    el.style.boxShadow = safeCss(cs.boxShadow, "none");
-  });
-}
-
-async function renderNodeToPng(node: HTMLElement): Promise<{ dataUrl: string; w: number; h: number }> {
-  await waitForFonts();
-  await nextFrame();
-
-  sanitizeForHtml2Canvas(node);
-
-  const w = node.scrollWidth;
-  const h = node.scrollHeight;
-
-  const canvas = await html2canvas(node, {
-    backgroundColor: "#07130f",
-    scale: 2,
-    useCORS: true,
-    logging: false,
-    scrollX: 0,
-    scrollY: 0,
-    width: w,
-    height: h,
-    windowWidth: w,
-    windowHeight: h,
-  });
-
-  return { dataUrl: canvas.toDataURL("image/png", 1.0), w: canvas.width, h: canvas.height };
-}
-
-// -------------------------
-// Page
-// -------------------------
 export default function Reports() {
   const { id: eventId } = useParams<Params>();
 
@@ -306,8 +254,13 @@ export default function Reports() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+
+  // Autopdf flags
   const autoDoneRef = useRef(false);
+  const didAutoExportRef = useRef(false);
 
   // Filtry
   const [secSummary, setSecSummary] = useState(true);
@@ -321,13 +274,30 @@ export default function Reports() {
   const [includeLongLists, setIncludeLongLists] = useState(true);
   const [listLimit, setListLimit] = useState<10 | 20 | 50>(20);
 
-  const printRef = useRef<HTMLDivElement | null>(null);
+  
+
+  const selectedSections: ReportSectionKey[] = useMemo(() => {
+    const out: ReportSectionKey[] = [];
+    if (secSummary) out.push("summary");
+    if (secGuests) out.push("guests");
+    if (secFinance) out.push("finance");
+    if (secTasks) out.push("tasks");
+    if (secDocsVendors) out.push("docsVendors");
+    return out.length ? out : ["summary"];
+  }, [secSummary, secGuests, secFinance, secTasks, secDocsVendors]);
+const printRef = useRef<HTMLDivElement | null>(null);
+
   const limitOptions: SelectOption<string>[] = [
     { value: "10", label: "10" },
     { value: "20", label: "20" },
     { value: "50", label: "50" },
   ];
 
+  const LIST_LIMIT_MAP: Record<string, 10 | 20 | 50> = {
+    "10": 10,
+    "20": 20,
+    "50": 50,
+  };
 
   // UI helpers
   const cardBase =
@@ -338,13 +308,6 @@ export default function Reports() {
     "border border-white/10 bg-white/5 text-white/80 text-xs";
   const muted = "text-white/55";
   const divider = "border-white/10";
-
-  const LIST_LIMIT_MAP: Record<string, 10 | 20 | 50> = {
-  "10": 10,
-  "20": 20,
-  "50": 50,
-};
-
 
   const btnGold =
     "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " +
@@ -387,138 +350,158 @@ export default function Reports() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
-  // --- derived data (wszystko SAFE, bez early return!) ---
+  // --- SAFE derived data ---
   const currency = data?.finance?.budget?.currency || "PLN";
-  const plannedTotal = data?.finance?.totals?.planned ?? 0;
-  const actualTotal = data?.finance?.totals?.actual ?? 0;
+
+  const plannedTotal = toNumber(data?.finance?.totals?.planned, 0);
+  const actualTotal = toNumber(data?.finance?.totals?.actual, 0);
   const diffTotal = plannedTotal - actualTotal;
 
-  const budgetInitial = data?.finance?.budget?.initial_budget ?? null;
-  const budgetInitialNum = budgetInitial === null || budgetInitial === undefined ? null : Number(budgetInitial);
+  const budgetInitialRaw = data?.finance?.budget?.initial_budget;
+  const budgetInitialNum =
+    budgetInitialRaw === null || budgetInitialRaw === undefined ? null : toNumber(budgetInitialRaw, 0);
+
   const remainingTotal = budgetInitialNum === null ? null : budgetInitialNum - actualTotal;
 
-  const [searchParams] = useSearchParams();
+  // Guests RSVP (bezpiecznie, żeby nie było undefined/toFixed crash)
+  const totalGuests = toNumber(data?.guests?.total, 0);
+
+  const rsvpCounts: Record<Rsvp, number> = useMemo(() => {
+    const base: Record<Rsvp, number> = { Potwierdzone: 0, Odmowa: 0, Nieznane: 0 };
+    const incoming = data?.guests?.rsvpCounts;
+    if (!incoming) return base;
+    return {
+      Potwierdzone: toNumber(incoming.Potwierdzone, 0),
+      Odmowa: toNumber(incoming.Odmowa, 0),
+      Nieznane: toNumber(incoming.Nieznane, 0),
+    };
+  }, [data]);
+
+  const rsvpPercent = useMemo(() => {
+    const denom = totalGuests > 0 ? totalGuests : 1;
+    return {
+      Potwierdzone: (rsvpCounts.Potwierdzone / denom) * 100,
+      Odmowa: (rsvpCounts.Odmowa / denom) * 100,
+      Nieznane: (rsvpCounts.Nieznane / denom) * 100,
+    };
+  }, [rsvpCounts, totalGuests]);
+
+  const unknownShare = totalGuests > 0 ? rsvpCounts.Nieznane / totalGuests : 0;
+  const rsvpCoverage = totalGuests > 0 ? rsvpCounts.Potwierdzone / totalGuests : 0;
+
+  // Tasks
+  const overdueCount = toNumber(data?.tasks?.overdue?.length, 0);
+  const next7Count = toNumber(data?.tasks?.next7?.length, 0);
+
+  // Documents
+  const docsTotal = toNumber(data?.documents?.total, 0);
+  const docsDone = toNumber(data?.documents?.done, 0);
+  const docsPending = toNumber(data?.documents?.pending, 0);
+  const docsCompletion = docsTotal > 0 ? docsDone / docsTotal : 0;
+
+  // Vendors
+  const vendorsTotal = toNumber(data?.vendors?.total, 0);
+const vendorsMissing = toNumber(data?.vendors?.missingContact?.length, 0);
+  const vendorsComplete = Math.max(0, vendorsTotal - vendorsMissing);
+
+  // -------- Auto export flags --------
   const autoExport = searchParams.get("autoExport") === "1";
   const autoSections = (searchParams.get("sections") ?? "").split(",").filter(Boolean);
-  const didAutoExportRef = useRef(false);
 
   useEffect(() => {
-  if (!autoExport) return;
-  if (!data) return;
-  if (loading) return;
-  if (didAutoExportRef.current) return;
+    if (!autoExport) return;
+    if (!data) return;
+    if (loading) return;
+    if (didAutoExportRef.current) return;
 
-  // ustawiamy tylko te sekcje, które przyszły w query
-  const onlyFinance = autoSections.includes("finance");
+    const onlyFinance = autoSections.includes("finance");
 
-  if (onlyFinance) {
-    setSecSummary(false);
-    setSecGuests(false);
-    setSecTasks(false);
-    setSecDocsVendors(false);
-    setSecFinance(true);
-  }
-
-  // wykresy ON domyślnie
-  setIncludeCharts(true);
-
-  didAutoExportRef.current = true;
-
-  // mały tick żeby DOM zdążył przerysować po setState
-  setTimeout(() => {
-    void exportPdfFromPreview();
-  }, 250);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [autoExport, data, loading]);
-
-useEffect(() => {
-  if (!data) return;
-
-  const sp = new URLSearchParams(location.search);
-  const autopdf = sp.get("autopdf") === "1";
-  const scope = sp.get("scope"); // "finance" | null
-
-  if (!autopdf) return;
-  if (autoDoneRef.current) return;
-
-  autoDoneRef.current = true;
-
-  // scope=finance -> ustaw filtry tak, by PDF był finansowy
-  if (scope === "finance") {
-    setSecSummary(false);
-    setSecGuests(false);
-    setSecFinance(true);
-    setSecTasks(false);
-    setSecDocsVendors(false);
+    if (onlyFinance) {
+      setSecSummary(false);
+      setSecGuests(false);
+      setSecTasks(false);
+      setSecDocsVendors(false);
+      setSecFinance(true);
+    }
 
     setIncludeCharts(true);
-    setIncludeAlerts(true);
-    setIncludeLongLists(true);
-  }
 
-  // daj czas wykresom się narysować
-  (async () => {
-    await nextFrame();
-    await nextFrame();
-    await exportPdfFromPreview();
+    didAutoExportRef.current = true;
 
-if (window.parent && window.parent !== window) {
-  window.parent.postMessage({ type: "ceremoday:pdf-done" }, "*");
-} else {
-  // window.close(); // zostaw zakomentowane, bo Chrome często i tak blokuje
-}
+    setTimeout(() => {
+      void exportPdfFromPreview();
+    }, 250);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoExport, data, loading]);
 
-  })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [data, location.search]);
+  useEffect(() => {
+    if (!data) return;
 
+    const sp = new URLSearchParams(location.search);
+    const autopdf = sp.get("autopdf") === "1";
+    const scope = sp.get("scope"); // "finance" | null
 
+    if (!autopdf) return;
+    if (autoDoneRef.current) return;
 
+    autoDoneRef.current = true;
+
+    if (scope === "finance") {
+      setSecSummary(false);
+      setSecGuests(false);
+      setSecFinance(true);
+      setSecTasks(false);
+      setSecDocsVendors(false);
+
+      setIncludeCharts(true);
+      setIncludeAlerts(true);
+      setIncludeLongLists(true);
+    }
+
+    (async () => {
+      await nextFrame();
+      await nextFrame();
+      await exportPdfFromPreview();
+
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: "ceremoday:pdf-done" }, "*");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, location.search]);
+
+  // -------------------------
+  // Sorted lists
+  // -------------------------
   const relationsSorted = useMemo(() => {
     const obj = data?.guests?.relationCounts ?? {};
-    return Object.entries(obj).sort((a, b) => safeInt(b[1]) - safeInt(a[1]));
+    return Object.entries(obj).map(([k, v]) => [k, toNumber(v, 0)] as [string, number]).sort((a, b) => b[1] - a[1]);
   }, [data]);
 
   const sideSorted = useMemo(() => {
     const obj = data?.guests?.sideCounts ?? {};
-    return Object.entries(obj).sort((a, b) => safeInt(b[1]) - safeInt(a[1]));
+    return Object.entries(obj).map(([k, v]) => [k, toNumber(v, 0)] as [string, number]).sort((a, b) => b[1] - a[1]);
   }, [data]);
 
   const categoriesSorted = useMemo(() => {
     const obj = data?.finance?.byCategory ?? {};
-    return Object.entries(obj).sort((a, b) => {
-      const aSum = safeInt(a[1]?.actual) + safeInt(a[1]?.planned);
-      const bSum = safeInt(b[1]?.actual) + safeInt(b[1]?.planned);
-      return bSum - aSum;
-    });
+    return Object.entries(obj)
+      .map(([k, v]) => {
+        const vv = v as unknown as { planned?: unknown; actual?: unknown };
+        return [
+          k,
+          {
+            planned: toNumber(vv?.planned, 0),
+            actual: toNumber(vv?.actual, 0),
+          },
+        ] as [string, { planned: number; actual: number }];
+      })
+      .sort((a, b) => (b[1].actual + b[1].planned) - (a[1].actual + a[1].planned));
   }, [data]);
 
-  const rsvpCounts = useMemo(() => {
-    const base: Record<Rsvp, number> = {
-      Potwierdzone: 0,
-      Odmowa: 0,
-      Nieznane: 0,
-    };
-    const incoming = data?.guests?.rsvpCounts;
-    return incoming ? { ...base, ...incoming } : base;
-  }, [data]);
-
-  const totalGuests = data?.guests?.total ?? 0;
-  const unknownShare = totalGuests > 0 ? rsvpCounts.Nieznane / totalGuests : 0;
-  const rsvpCoverage = totalGuests > 0 ? rsvpCounts.Potwierdzone / totalGuests : 0;
-
-  const overdueCount = data?.tasks?.overdue?.length ?? 0;
-  const next7Count = data?.tasks?.next7?.length ?? 0;
-
-  const docsTotal = data?.documents?.total ?? 0;
-  const docsDone = data?.documents?.done ?? 0;
-  const docsPending = data?.documents?.pending ?? 0;
-  const docsCompletion = docsTotal > 0 ? docsDone / docsTotal : 0;
-
-  const vendorsTotal = data?.vendors?.total ?? 0;
-  const vendorsSelected = data?.vendors?.selected ?? 0;
-  const vendorsMissing = data?.vendors?.missingData?.length ?? 0;
-
+  // -------------------------
+  // Score + recommendations
+  // -------------------------
   const score = useMemo(() => {
     if (!data) return 0;
 
@@ -622,7 +605,9 @@ if (window.parent && window.parent !== window) {
     if (data.finance.unpaid.dueSoon14.length > 0) {
       rec.push({
         title: "Płatności w 14 dni",
-        detail: `Pozycji: ${data.finance.unpaid.dueSoon14.length}. Suma do zapłaty: ${fmt2(data.finance.unpaid.toPaySum)} ${currency}.`,
+        detail: `Pozycji: ${data.finance.unpaid.dueSoon14.length}. Suma do zapłaty: ${fmt2(
+          data.finance.unpaid.toPaySum
+        )} ${currency}.`,
         kind: "warn",
       });
     }
@@ -635,19 +620,33 @@ if (window.parent && window.parent !== window) {
       });
     }
 
-    if (vendorsSelected === 0 && vendorsTotal > 0) {
+    if (vendorsComplete === 0 && vendorsTotal > 0) {
       rec.push({
-        title: "Brak wybranych usługodawców",
-        detail: "Jeśli to nie test — wybierz kluczowe kategorie (sala/foto/muzyka/catering).",
+        title: "Brak usługodawców z kompletnymi danymi",
+        detail: "Uzupełnij przynajmniej telefon/e-mail/stronę/adres dla kluczowych usługodawców – potem łatwo je znaleźć w dniu ślubu.",
         kind: "info",
       });
     }
 
     return rec.slice(0, 8);
-  }, [data, unknownShare, overdueCount, next7Count, budgetInitialNum, actualTotal, currency, docsTotal, docsDone, docsCompletion, vendorsSelected, vendorsTotal, listLimit]);
+  }, [
+    data,
+    unknownShare,
+    overdueCount,
+    next7Count,
+    budgetInitialNum,
+    actualTotal,
+    currency,
+    docsTotal,
+    docsDone,
+    docsCompletion,
+    vendorsComplete,
+    vendorsTotal,
+    listLimit,
+  ]);
 
   // -------------------------
-  // Charts specs (useMemo zawsze wywołane)
+  // Charts specs
   // -------------------------
   const rsvpChartSpec: ChartSpec | null = useMemo(() => {
     if (!data || !includeCharts) return null;
@@ -655,6 +654,8 @@ if (window.parent && window.parent !== window) {
       type: "doughnut",
       labels: ["Potwierdzone", "Odmowa", "Nieznane"],
       datasets: [{ label: "RSVP", data: [rsvpCounts.Potwierdzone, rsvpCounts.Odmowa, rsvpCounts.Nieznane] }],
+      doughnutColors: ["rgba(60,180,120,0.85)","rgba(255,100,100,0.85)","rgba(215,180,90,0.85)"],
+      showDoughnutLabels: true,
     };
   }, [data, includeCharts, rsvpCounts]);
 
@@ -681,8 +682,8 @@ if (window.parent && window.parent !== window) {
       type: "bar",
       labels: top.map(([k]) => k),
       datasets: [
-        { label: "Plan", data: top.map(([, v]) => safeInt(v.planned)) },
-        { label: "Fakt", data: top.map(([, v]) => safeInt(v.actual)) },
+        { label: "Plan", data: top.map(([, v]) => v.planned) },
+        { label: "Fakt", data: top.map(([, v]) => v.actual) },
       ],
       stacked: false,
     };
@@ -692,237 +693,84 @@ if (window.parent && window.parent !== window) {
     if (!data || !includeCharts) return null;
     const arr = data.finance.cashflow ?? [];
     if (arr.length === 0) return null;
-    return { type: "line", labels: arr.map((x) => x.date), datasets: [{ label: "Plan (suma)", data: arr.map((x) => safeInt(x.plannedSum)) }] };
+
+    return {
+      type: "line",
+      labels: arr.map((x) => x.date),
+      datasets: [{ label: "Plan (suma)", data: arr.map((x) => toNumber(x.plannedSum, 0)) }],
+    };
   }, [data, includeCharts]);
 
   const tasksSpec: ChartSpec | null = useMemo(() => {
     if (!data || !includeCharts) return null;
-    const done = safeInt(data.tasks.done);
-    const open = safeInt(data.tasks.open);
-    const overdue = safeInt(data.tasks.overdue.length);
-    return { type: "doughnut", labels: ["Zrobione", "Otwarte", "Przeterminowane"], datasets: [{ label: "Zadania", data: [done, open, overdue] }] };
-  }, [data, includeCharts]);
 
-  const vendorsSpec: ChartSpec | null = useMemo(() => {
-    if (!data || !includeCharts) return null;
+    const done = toNumber(data.tasks.done, 0);
+    const open = toNumber(data.tasks.open, 0);
+    const overdue = toNumber(data.tasks.overdue.length, 0);
+
     return {
-      type: "bar",
-      labels: ["Wybrani", "Niewybrani"],
-      datasets: [{ label: "Usługodawcy", data: [data.vendors.selected, data.vendors.notSelected] }],
+      type: "doughnut",
+      labels: ["Zrobione", "Otwarte", "Przeterminowane"],
+      datasets: [{ label: "Zadania", data: [done, open, overdue] }],
+      doughnutColors: ["rgba(60,180,120,0.85)","rgba(215,180,90,0.85)","rgba(255,100,100,0.85)"],
+      showDoughnutLabels: true,
     };
   }, [data, includeCharts]);
 
-  // Bind charts (wywołania hooków ZAWSZE, bez warunków)
+  // Bind charts (hooki bez warunków)
   useChart("chart-rsvp", rsvpChartSpec, [rsvpChartSpec]);
   useChart("chart-sides", sideChartSpec, [sideChartSpec]);
   useChart("chart-relations", relationChartSpec, [relationChartSpec]);
   useChart("chart-fin-cat", financeCategorySpec, [financeCategorySpec]);
   useChart("chart-cashflow", cashflowSpec, [cashflowSpec]);
   useChart("chart-tasks", tasksSpec, [tasksSpec]);
-  useChart("chart-vendors", vendorsSpec, [vendorsSpec]);
 
   // -------------------------
   // Export PDF (sekcja po sekcji)
   // -------------------------
-  type ChartStaticWithGetChart = typeof Chart & {
-  getChart?: (key: string | HTMLCanvasElement) => Chart | undefined;
-};
+  const exportPdfFromPreview = async () => {
+    if (!data) return;
+    if (isExporting) return;
 
-  function canvasToImgMap(root: HTMLElement): Record<string, string> {
-  const map: Record<string, string> = {};
-  const canvases = Array.from(root.querySelectorAll<HTMLCanvasElement>("canvas[id]"));
+    setIsExporting(true);
+    setError(null);
 
-  for (const c of canvases) {
     try {
-      // ważne: dopchnij Chart.js żeby na pewno miał aktualny rysunek
-      const anyChart = Chart as ChartStaticWithGetChart;
-      const inst = anyChart.getChart?.(c);
-      if (inst) inst.update("none");
-
-
-      const url = c.toDataURL("image/png", 1.0);
-      if (url && url.startsWith("data:image/png")) {
-        map[c.id] = url;
-      }
-    } catch {
-      // ignore
+      await generateReportsPdf(data, {
+        sections: selectedSections,
+        includeCharts,
+        includeAlerts,
+        includeLongLists,
+        listLimit,
+      });
+    } catch (e) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : "Błąd eksportu PDF.");
+    } finally {
+      setIsExporting(false);
     }
-  }
-
-  return map;
-}
-
-function canDecodeImage(img: HTMLImageElement): img is HTMLImageElement & { decode: () => Promise<void> } {
-  return typeof (img as unknown as { decode?: unknown }).decode === "function";
-}
-
-async function waitForImgReady(img: HTMLImageElement): Promise<void> {
-  // jeśli już załadowany (często dataURL), kończymy
-  if (img.complete && img.naturalWidth > 0) return;
-
-  if (canDecodeImage(img)) {
-    try {
-      await img.decode();
-      return;
-    } catch {
-      // fallback poniżej
-    }
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    img.onload = () => resolve();
-    img.onerror = () => reject(new Error("img load failed"));
-  });
-}
-
-async function replaceCanvasesWithImages(clone: HTMLElement, imgMap: Record<string, string>): Promise<void> {
-  const canvases = Array.from(clone.querySelectorAll<HTMLCanvasElement>("canvas[id]"));
-  const imgs: HTMLImageElement[] = [];
-
-  for (const c of canvases) {
-    const url = imgMap[c.id];
-    if (!url) continue;
-
-    const img = document.createElement("img");
-    img.src = url;
-    img.alt = "chart";
-    img.decoding = "async";
-
-    // zachowujemy layout 1:1
-    img.style.width = "100%";
-    img.style.height = "100%";
-    img.style.display = "block";
-    img.style.objectFit = "contain";
-
-    imgs.push(img);
-    c.replaceWith(img);
-  }
-
-  // WAŻNE: czekamy na realne wczytanie obrazków (typy 100% OK -> nie ma "never")
-  for (const img of imgs) {
-    try {
-      await waitForImgReady(img);
-    } catch {
-      // ignorujemy - w praktyce dataURL i tak się rysuje, a jeśli nie, nie blokujemy całego PDF
-    }
-  }
-}
-
-
-
-const exportPdfFromPreview = async () => {
-  if (!printRef.current) return;
-  if (isExporting) return;
-
-  setIsExporting(true);
-  setError(null);
-
-  const srcRoot = printRef.current;
-  const host = buildPdfHost();
-
-  try {
-    // Daj czas wykresom się ustabilizować (Chart.js + layout)
-    await waitForFonts();
-    await nextFrame();
-    await nextFrame();
-    await new Promise((r) => setTimeout(r, 120));
-
-    // DEBUG (zostaw na chwilę)
-    // console.log("canvases in preview:", srcRoot.querySelectorAll("canvas").length);
-
-    // 1) snapshot canvasów z PODGLĄDU
-    const imgMap = canvasToImgMap(srcRoot);
-
-    // DEBUG
-    // console.log("imgMap keys:", Object.keys(imgMap));
-
-    const sections = Array.from(srcRoot.querySelectorAll<HTMLElement>("[data-pdf-section]"));
-
-    const pdf = new jsPDF({ unit: "pt", format: "a4", compress: true });
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-
-    const M = 28;
-    const GAP = 12;
-    const usableW = pageW - 2 * M;
-    const maxY = pageH - M;
-
-    let y = M;
-
-    for (const section of sections) {
-      while (host.childNodes.length > 1) host.removeChild(host.lastChild as ChildNode);
-
-      const clone = section.cloneNode(true) as HTMLElement;
-      clone.style.margin = "0";
-      clone.style.width = "100%";
-      clone.style.maxWidth = "none";
-
-      host.appendChild(clone);
-
-      // 2) canvas -> img w KLONIE
-      await replaceCanvasesWithImages(clone, imgMap);
-      await nextFrame();
-      await nextFrame();
-
-      await waitForFonts();
-      await nextFrame();
-      await nextFrame();
-
-
-      const snap = await renderNodeToPng(host);
-
-      const imgWpt = usableW;
-      const imgHpt = (snap.h * imgWpt) / snap.w;
-
-      if (y + imgHpt > maxY && y !== M) {
-        pdf.addPage();
-        y = M;
-      }
-
-      pdf.addImage(snap.dataUrl, "PNG", M, y, imgWpt, imgHpt, undefined, "FAST");
-      y += imgHpt + GAP;
-
-      if (y > maxY) {
-        pdf.addPage();
-        y = M;
-      }
-    }
-
-    pdf.save("ceremoday-raport.pdf");
-  } catch (e) {
-    console.error("PDF export failed:", e);
-    setError("Nie udało się wygenerować PDF. Zobacz konsolę (F12).");
-  } finally {
-    host.remove();
-    setIsExporting(false);
-  }
-};
-
-
-
-
+  };
 
   // -------------------------
   // Small UI components
   // -------------------------
   const ChartCard = (props: { title: string; subtitle?: string; canvasId: string; height?: number }) => {
-  const h = props.height ?? 220;
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div>
-          <div className="text-white/85 font-semibold">{props.title}</div>
-          {props.subtitle && <div className="text-xs text-white/45 mt-0.5">{props.subtitle}</div>}
+    const h = props.height ?? 220;
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <div className="text-white/85 font-semibold">{props.title}</div>
+            {props.subtitle && <div className="text-xs text-white/45 mt-0.5">{props.subtitle}</div>}
+          </div>
+        </div>
+
+        <div className="relative" style={{ height: `${h}px` }}>
+          <canvas id={props.canvasId} className="w-full h-full block" />
         </div>
       </div>
-
-      <div className="relative" style={{ height: `${h}px` }}>
-        <canvas id={props.canvasId} className="w-full h-full block" />
-      </div>
-    </div>
-  );
-};
-
+    );
+  };
 
   const Pill = (props: { kind: "warn" | "info" | "ok"; title: string; detail: string }) => {
     const base = "rounded-2xl border p-4";
@@ -949,7 +797,7 @@ const exportPdfFromPreview = async () => {
   };
 
   // -------------------------
-  // RENDER (bez early return!)
+  // Render
   // -------------------------
   const hasEventId = !!eventId;
 
@@ -1005,7 +853,6 @@ const exportPdfFromPreview = async () => {
           </div>
         </div>
       )}
-      
 
       {!loading && data && (
         <div className="grid gap-6 lg:grid-cols-12">
@@ -1125,13 +972,12 @@ const exportPdfFromPreview = async () => {
                       onChange={(v) => setListLimit(LIST_LIMIT_MAP[v] ?? 20)}
                       options={limitOptions}
                     />
-
-
                   </div>
                 </div>
 
                 <div className="mt-3 text-xs text-white/45">
-                  Eksport PDF składa dokument sekcja-po-sekcji i sam przerzuca blok na następną stronę, jeśli się nie mieści.
+                  Eksport PDF składa dokument sekcja-po-sekcji i sam przerzuca blok na następną stronę, jeśli się nie
+                  mieści.
                 </div>
               </div>
             </section>
@@ -1155,9 +1001,7 @@ const exportPdfFromPreview = async () => {
                     <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
                       <div className={`text-xs ${muted} mb-1`}>Score (0–100)</div>
                       <div className="text-white text-2xl font-bold">{score}</div>
-                      <div className="text-xs text-white/45 mt-1">
-                        RSVP + zadania + dokumenty + vendor + budżet
-                      </div>
+                      <div className="text-xs text-white/45 mt-1">RSVP + zadania + dokumenty + vendor + budżet</div>
                     </div>
 
                     <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
@@ -1195,43 +1039,38 @@ const exportPdfFromPreview = async () => {
                       <Users className="w-5 h-5 text-[#d7b45a]" />
                       Goście
                     </h2>
-                    <span className={chip}>Łącznie: {data.guests.total}</span>
+                    <span className={chip}>Łącznie: {totalGuests}</span>
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-4">
                     <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
                       <div className={`text-xs ${muted} mb-1`}>Potwierdzone</div>
                       <div className="text-white text-lg font-semibold">
-                        {data.guests.rsvpCounts.Potwierdzone}{" "}
-                        <span className="text-sm text-white/55">
-                          ({data.guests.rsvpPercent.Potwierdzone.toFixed(1)}%)
-                        </span>
+                        {rsvpCounts.Potwierdzone}{" "}
+                        <span className="text-sm text-white/55">({rsvpPercent.Potwierdzone.toFixed(1)}%)</span>
                       </div>
                     </div>
 
                     <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
                       <div className={`text-xs ${muted} mb-1`}>Odmowa</div>
                       <div className="text-white text-lg font-semibold">
-                        {data.guests.rsvpCounts.Odmowa}{" "}
-                        <span className="text-sm text-white/55">
-                          ({data.guests.rsvpPercent.Odmowa.toFixed(1)}%)
-                        </span>
+                        {rsvpCounts.Odmowa} <span className="text-sm text-white/55">({rsvpPercent.Odmowa.toFixed(1)}%)</span>
                       </div>
                     </div>
 
                     <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
                       <div className={`text-xs ${muted} mb-1`}>Nieznane</div>
                       <div className="text-white text-lg font-semibold">
-                        {data.guests.rsvpCounts.Nieznane}{" "}
-                        <span className="text-sm text-white/55">
-                          ({data.guests.rsvpPercent.Nieznane.toFixed(1)}%)
-                        </span>
+                        {rsvpCounts.Nieznane}{" "}
+                        <span className="text-sm text-white/55">({rsvpPercent.Nieznane.toFixed(1)}%)</span>
                       </div>
                     </div>
 
                     <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
                       <div className={`text-xs ${muted} mb-1`}>Alergeny</div>
-                      <div className="text-white text-lg font-semibold">{data.guests.allergens.guestsWithAllergensCount}</div>
+                      <div className="text-white text-lg font-semibold">
+                        {toNumber(data.guests.allergens.guestsWithAllergensCount, 0)}
+                      </div>
                       <div className="text-xs text-white/45 mt-1">osób z alergiami</div>
                     </div>
                   </div>
@@ -1252,10 +1091,7 @@ const exportPdfFromPreview = async () => {
                       ) : (
                         <ul className="text-sm space-y-2">
                           {sideSorted.map(([k, v]) => (
-                            <li
-                              key={k}
-                              className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}
-                            >
+                            <li key={k} className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}>
                               <span className="text-white/80">{k}</span>
                               <span className="text-white font-semibold">{v}</span>
                             </li>
@@ -1271,10 +1107,7 @@ const exportPdfFromPreview = async () => {
                       ) : (
                         <ul className="text-sm space-y-2">
                           {relationsSorted.slice(0, includeLongLists ? listLimit : 6).map(([k, v]) => (
-                            <li
-                              key={k}
-                              className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}
-                            >
+                            <li key={k} className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}>
                               <span className="text-white/80">{k}</span>
                               <span className="text-white font-semibold">{v}</span>
                             </li>
@@ -1291,12 +1124,9 @@ const exportPdfFromPreview = async () => {
                         {data.guests.allergens.top.length > 0 ? (
                           <ul className="text-sm space-y-2">
                             {data.guests.allergens.top.slice(0, 10).map((a) => (
-                              <li
-                                key={a.name}
-                                className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}
-                              >
+                              <li key={a.name} className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}>
                                 <span className="text-white/80">{a.name}</span>
-                                <span className="text-white font-semibold">{a.count}</span>
+                                <span className="text-white font-semibold">{toNumber(a.count, 0)}</span>
                               </li>
                             ))}
                           </ul>
@@ -1312,16 +1142,11 @@ const exportPdfFromPreview = async () => {
                         ) : (
                           <ul className="text-sm space-y-2">
                             {data.guests.toAsk.slice(0, listLimit).map((g) => (
-                              <li
-                                key={g.id}
-                                className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}
-                              >
+                              <li key={g.id} className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}>
                                 <span className="truncate text-white/85">
                                   {g.first_name} {g.last_name}
                                 </span>
-                                <span className="text-white/55 whitespace-nowrap">
-                                  {g.phone ?? g.email ?? "—"}
-                                </span>
+                                <span className="text-white/55 whitespace-nowrap">{g.phone ?? g.email ?? "—"}</span>
                               </li>
                             ))}
                           </ul>
@@ -1402,18 +1227,8 @@ const exportPdfFromPreview = async () => {
 
                   {includeCharts && (
                     <div className="grid gap-4 md:grid-cols-2">
-                      <ChartCard
-                        title="Plan vs Fakt (kategorie)"
-                        subtitle="Top 8 kategorii"
-                        canvasId="chart-fin-cat"
-                        height={260}
-                      />
-                      <ChartCard
-                        title="Cashflow (plan)"
-                        subtitle="Suma planowana w czasie"
-                        canvasId="chart-cashflow"
-                        height={260}
-                      />
+                      <ChartCard title="Plan vs Fakt (kategorie)" subtitle="Top 8 kategorii" canvasId="chart-fin-cat" height={260} />
+                      <ChartCard title="Cashflow (plan)" subtitle="Suma planowana w czasie" canvasId="chart-cashflow" height={260} />
                     </div>
                   )}
 
@@ -1425,10 +1240,7 @@ const exportPdfFromPreview = async () => {
                       ) : (
                         <div className="space-y-2 text-sm">
                           {categoriesSorted.slice(0, includeLongLists ? listLimit : 6).map(([cat, v]) => (
-                            <div
-                              key={cat}
-                              className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}
-                            >
+                            <div key={cat} className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}>
                               <span className="text-white/80">{cat}</span>
                               <span className="text-white font-semibold whitespace-nowrap">
                                 {fmt2(v.planned)} / {fmt2(v.actual)} {currency}
@@ -1446,15 +1258,12 @@ const exportPdfFromPreview = async () => {
                       ) : (
                         <ol className="text-sm space-y-2 list-decimal pl-5">
                           {data.finance.top10Costs.slice(0, includeLongLists ? 10 : 6).map((e) => (
-                            <li
-                              key={e.id}
-                              className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}
-                            >
+                            <li key={e.id} className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}>
                               <span className="truncate text-white/85">
                                 {e.name} <span className="text-white/45">({e.category})</span>
                               </span>
                               <span className="text-white font-semibold whitespace-nowrap">
-                                {fmt2((e.actual ?? e.planned) as number)} {currency}
+                                {fmt2((e.actual ?? e.planned) as unknown)} {currency}
                               </span>
                             </li>
                           ))}
@@ -1480,16 +1289,13 @@ const exportPdfFromPreview = async () => {
                       ) : (
                         <ul className="text-sm space-y-2 mt-3">
                           {data.finance.unpaid.dueSoon14.slice(0, listLimit).map((e) => (
-                            <li
-                              key={e.id}
-                              className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}
-                            >
+                            <li key={e.id} className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}>
                               <span className="truncate text-white/85">
                                 {e.name} <span className="text-white/45">({e.category})</span>{" "}
                                 {e.vendor_name ? <span className="text-white/45">• {e.vendor_name}</span> : null}
                               </span>
                               <span className="text-white font-semibold whitespace-nowrap">
-                                {e.due_date ?? "—"} <span className="text-white/45">({e.days}d)</span>
+                                {e.due_date ?? "—"} <span className="text-white/45">({toNumber(e.days, 0)}d)</span>
                               </span>
                             </li>
                           ))}
@@ -1508,25 +1314,25 @@ const exportPdfFromPreview = async () => {
                       <ListChecks className="w-5 h-5 text-[#d7b45a]" />
                       Zadania
                     </h2>
-                    <span className={chip}>Łącznie: {data.tasks.total}</span>
+                    <span className={chip}>Łącznie: {toNumber(data.tasks.total, 0)}</span>
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-4">
                     <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
                       <div className={`text-xs ${muted} mb-1`}>Zrobione</div>
-                      <div className="text-white text-lg font-semibold">{data.tasks.done}</div>
+                      <div className="text-white text-lg font-semibold">{toNumber(data.tasks.done, 0)}</div>
                     </div>
                     <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
                       <div className={`text-xs ${muted} mb-1`}>Otwarte</div>
-                      <div className="text-white text-lg font-semibold">{data.tasks.open}</div>
+                      <div className="text-white text-lg font-semibold">{toNumber(data.tasks.open, 0)}</div>
                     </div>
                     <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
                       <div className={`text-xs ${muted} mb-1`}>Przeterminowane</div>
-                      <div className="text-white text-lg font-semibold">{data.tasks.overdue.length}</div>
+                      <div className="text-white text-lg font-semibold">{toNumber(data.tasks.overdue.length, 0)}</div>
                     </div>
                     <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
                       <div className={`text-xs ${muted} mb-1`}>Najbliższe 7 dni</div>
-                      <div className="text-white text-lg font-semibold">{data.tasks.next7.length}</div>
+                      <div className="text-white text-lg font-semibold">{toNumber(data.tasks.next7.length, 0)}</div>
                     </div>
                   </div>
 
@@ -1553,10 +1359,7 @@ const exportPdfFromPreview = async () => {
                         ) : (
                           <ul className="text-sm space-y-2">
                             {data.tasks.overdue.slice(0, listLimit).map((t) => (
-                              <li
-                                key={t.id}
-                                className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}
-                              >
+                              <li key={t.id} className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}>
                                 <span className="truncate text-white/85">{t.title}</span>
                                 <span className="text-white/55 whitespace-nowrap">{t.due_date ?? "—"}</span>
                               </li>
@@ -1572,13 +1375,10 @@ const exportPdfFromPreview = async () => {
                         ) : (
                           <ul className="text-sm space-y-2">
                             {data.tasks.next7.slice(0, listLimit).map((t) => (
-                              <li
-                                key={t.id}
-                                className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}
-                              >
+                              <li key={t.id} className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}>
                                 <span className="truncate text-white/85">{t.title}</span>
                                 <span className="text-white font-semibold whitespace-nowrap">
-                                  {t.due_date ?? "—"} <span className="text-white/45">({t.days}d)</span>
+                                  {t.due_date ?? "—"} <span className="text-white/45">({toNumber(t.days, 0)}d)</span>
                                 </span>
                               </li>
                             ))}
@@ -1608,7 +1408,7 @@ const exportPdfFromPreview = async () => {
                     <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
                       <div className={`text-xs ${muted} mb-1`}>Dokumenty</div>
                       <div className="text-white text-lg font-semibold">
-                        {data.documents.done} / {data.documents.pending}
+                        {docsDone} / {docsPending}
                       </div>
                       <div className="text-xs text-white/45 mt-1">done / pending</div>
                       <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
@@ -1627,22 +1427,21 @@ const exportPdfFromPreview = async () => {
                     <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
                       <div className={`text-xs ${muted} mb-1`}>Usługodawcy</div>
                       <div className="text-white text-lg font-semibold">
-                        {data.vendors.selected} / {data.vendors.total}
+                        {vendorsComplete} / {vendorsTotal}
                       </div>
-                      <div className="text-xs text-white/45 mt-1">wybrani / wszyscy</div>
+                      <div className="text-xs text-white/45 mt-1">komplet danych / wszyscy</div>
                     </div>
 
                     <div className="rounded-2xl border border-white/10 bg-white/4 p-4 md:col-span-2">
                       <div className={`text-xs ${muted} mb-1`}>Wybrani z brakami danych</div>
-                      <div className="text-white text-lg font-semibold">{data.vendors.missingData.length}</div>
+                      <div className="text-white text-lg font-semibold">{vendorsMissing}</div>
                       <div className="text-xs text-white/45 mt-1">umowa/oferta — ryzyko braków</div>
                     </div>
                   </div>
 
                   {includeCharts && (
                     <div className="grid gap-4 md:grid-cols-2">
-                      <ChartCard title="Usługodawcy: wybrani vs niewybrani" subtitle="Szybki podgląd" canvasId="chart-vendors" height={240} />
-                      <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
+                                            <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
                         <div className="text-white/85 font-semibold">Co warto uzupełnić</div>
                         <ul className="text-sm text-white/75 mt-2 space-y-2 list-disc pl-5">
                           <li>Umowa/oferta dla kluczowych usług: sala, foto, muzyka, catering.</li>
@@ -1653,15 +1452,12 @@ const exportPdfFromPreview = async () => {
                     </div>
                   )}
 
-                  {includeLongLists && data.vendors.missingData.length > 0 && (
+                  {includeLongLists && data.vendors.missingContact.length > 0 && (
                     <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
-                      <div className="text-white/80 font-semibold mb-3">Braki danych (wybrani)</div>
+                      <div className="text-white/80 font-semibold mb-3">Braki danych kontaktowych</div>
                       <ul className="text-sm space-y-2">
-                        {data.vendors.missingData.slice(0, listLimit).map((v) => (
-                          <li
-                            key={v.id}
-                            className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}
-                          >
+                        {data.vendors.missingContact.slice(0, listLimit).map((v) => (
+                          <li key={v.id} className={`flex justify-between gap-3 border-b ${divider} pb-2 last:border-0 last:pb-0`}>
                             <span className="truncate text-white/85">{v.name}</span>
                             <span className="text-white/55">{v.missing.join(", ")}</span>
                           </li>
@@ -1682,9 +1478,6 @@ const exportPdfFromPreview = async () => {
           </main>
         </div>
       )}
-
-      
     </div>
-    
   );
 }

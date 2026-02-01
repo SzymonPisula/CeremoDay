@@ -1,5 +1,5 @@
-import { useMemo, useState, type FormEvent } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/auth";
@@ -16,7 +16,6 @@ type LoginResponse = {
 
 export default function Login() {
   const navigate = useNavigate();
-  const location = useLocation() as { state?: { from?: string } };
   const { login } = useAuthStore();
 
   const [form, setForm] = useState({ email: "", password: "" });
@@ -24,11 +23,9 @@ export default function Login() {
 
   const { fieldErrors, globalError, handleError, clearErrors } = useApiError();
 
-  const redirectTo = useMemo(() => {
-    const from = location.state?.from;
-    if (from && typeof from === "string" && from.startsWith("/")) return from;
-    return "/dashboard";
-  }, [location.state]);
+  // ✅ zawsze wracamy do /dashboard po zalogowaniu
+  // (nie przenosimy usera z powrotem do modułu, który mógł być niedostępny)
+  const redirectTo = "/dashboard";
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();

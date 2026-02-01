@@ -96,7 +96,7 @@ router.post("/", authMiddleware, validateBody(eventCreateSchema), async (req: Au
  * Pobranie wszystkich wydarzeń użytkownika (stworzone + dołączone)
  * Zwraca:
  * - created_by_me: boolean
- * - role: "owner" | "coorganizer" | "guest" (rola użytkownika w danym evencie)
+ * - role: "owner" | "coorganizer" (rola użytkownika w danym evencie)
  */
 router.get("/", authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
@@ -151,7 +151,7 @@ router.get("/", authMiddleware, async (req: AuthRequest, res: Response) => {
       ...myEvents.map((e: any) => {
         const plain = e.toJSON();
         const roleFromThrough =
-          plain.users?.[0]?.EventUser?.role ?? ("owner" as "owner" | "coorganizer" | "guest");
+          plain.users?.[0]?.EventUser?.role ?? ("owner" as "owner" | "coorganizer");
         const statusFromThrough =
           plain.users?.[0]?.EventUser?.status ?? ("active" as "pending" | "active" | "removed");
 
@@ -165,7 +165,7 @@ router.get("/", authMiddleware, async (req: AuthRequest, res: Response) => {
       ...joinedEvents.map((e: any) => {
         const plain = e.toJSON();
         const roleFromThrough =
-          plain.users?.[0]?.EventUser?.role ?? ("coorganizer" as "owner" | "coorganizer" | "guest");
+          plain.users?.[0]?.EventUser?.role ?? ("coorganizer" as "owner" | "coorganizer");
         const statusFromThrough =
           plain.users?.[0]?.EventUser?.status ?? ("active" as "pending" | "active" | "removed");
 
@@ -189,7 +189,7 @@ router.get("/", authMiddleware, async (req: AuthRequest, res: Response) => {
  * POST /events/join
  * Dołączenie do wydarzenia po access_code
  * - tworzy zgłoszenie dołączenia (status: "pending")
- * - rola domyślna: "guest" (owner może potem zatwierdzić i ewentualnie zmienić rolę)
+ * - rola domyślna: "coorganizer" (MVP: ograniczamy role do owner/coorganizer)
  */
 router.post("/join", authMiddleware, validateBody(eventJoinSchema), async (req: AuthRequest, res: Response) => {
   try {
@@ -223,7 +223,7 @@ router.post("/join", authMiddleware, validateBody(eventJoinSchema), async (req: 
     await EventUser.create({
       event_id: event.id,
       user_id: req.userId,
-      role: "guest",
+      role: "coorganizer",
       status: "pending",
     });
 
@@ -286,19 +286,17 @@ router.get("/:id/users", authMiddleware, async (req: AuthRequest, res: Response)
 /**
  * POST /events/:id/users/:userId/approve
  * Owner akceptuje użytkownika (pending -> active).
- * Opcjonalnie można ustawić rolę (guest/coorganizer), domyślnie guest.
+ * MVP: rola zawsze "coorganizer" (ograniczamy role do owner/coorganizer).
  */
 router.post(
   "/:id/users/:userId/approve",
   authMiddleware,
-  validateBody(eventUserRoleUpdateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       if (!req.userId) return res.status(401).json({ message: "Nieautoryzowany" });
 
       const event_id = req.params.id;
       const targetUserId = req.params.userId;
-      const role = (req.body?.role as "guest" | "coorganizer" | undefined) ?? "guest";
 
       const meRel = await EventUser.findOne({ where: { event_id, user_id: req.userId } });
       if (!meRel) return res.status(403).json({ message: "Brak dostępu do tego wydarzenia" });
@@ -317,7 +315,7 @@ router.post(
       }
 
       rel.status = "active";
-      rel.role = role;
+      rel.role = "coorganizer";
       await rel.save();
 
       return res.json({ success: true });
@@ -429,11 +427,11 @@ router.patch(
   async (req: AuthRequest, res: Response) => {
     const eventId = req.params.id;
     const targetUserId = req.params.userId;
-    const { role } = req.body as { role: "guest" | "coorganizer" };
+    const { role } = req.body as { role: "coorganizer" };
 
     if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
 
-    if (!["guest", "coorganizer"].includes(role)) {
+    if (role !== "coorganizer") {
       return res.status(400).json({ message: "Invalid role" });
     }
 

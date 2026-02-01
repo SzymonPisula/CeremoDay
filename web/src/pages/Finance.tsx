@@ -145,6 +145,26 @@ function normalizeExpense(e: Expense): Expense & { status: ExpenseStatus } {
   };
 }
 
+// Backend w niektórych wariantach może nie zwracać pola `status`.
+// Żeby UI zawsze od razu pokazywał zmianę (bez refresh), wymuszamy status
+// na podstawie payloadu, a resztę bierzemy z odpowiedzi API.
+function mergeExpenseWithPayload(
+  apiExpense: Expense,
+  payload: Partial<ExpenseCreatePayload>
+): Expense {
+  return {
+    ...apiExpense,
+    // wymuszenia (jeśli payload coś podaje)
+    status: payload.status ?? apiExpense.status,
+    planned_amount: payload.planned_amount ?? apiExpense.planned_amount,
+    actual_amount: payload.actual_amount ?? apiExpense.actual_amount,
+    due_date: payload.due_date ?? apiExpense.due_date,
+    paid_date: payload.paid_date ?? apiExpense.paid_date,
+    vendor_name: payload.vendor_name ?? apiExpense.vendor_name,
+    notes: payload.notes ?? apiExpense.notes,
+  };
+}
+
 function parseMoneyInput(v: string): number | null {
   if (!v.trim()) return null;
   const n = Number(v.replace(",", "."));
@@ -212,12 +232,12 @@ const Finance: React.FC = () => {
   const [scError, setScError] = useState<string | null>(null);
   const [isSavingStatus, setIsSavingStatus] = useState(false);
 
+  // ✅ Od teraz: przycisk "Pobierz PDF" tylko przenosi do panelu Raportów.
+  // (Raporty są jedynym miejscem generowania PDF.)
   const handleExportFinancePdf = () => {
-  if (!eventId) return;
-
-  const url = `/event/${eventId}/reports?autopdf=1&scope=finance`;
-  window.open(url, "_blank", "noopener,noreferrer,width=1200,height=900");
-};
+    if (!eventId) return;
+    navigate(`/event/${eventId}/reports?scope=finance`);
+  };
 
 
 
@@ -501,11 +521,29 @@ const Finance: React.FC = () => {
       };
 
       if (editing) {
-        const updated = (await api.updateFinanceExpense(eventId, editing.id, payload as ExpenseUpdatePayload)) as Expense;
+        const updatedRaw = (await api.updateFinanceExpense(
+          eventId,
+          editing.id,
+          payload as ExpenseUpdatePayload
+        )) as Expense;
+        const updated = mergeExpenseWithPayload(updatedRaw, payload);
         setExpenses((prev) => prev.map((x) => (x.id === updated.id ? normalizeExpense(updated) : x)));
+
+        toast({
+          tone: "success",
+          title: "Zapisano",
+          message: `Wydatek „${payload.name}” został zaktualizowany.`,
+        });
       } else {
-        const created = (await api.createFinanceExpense(eventId, payload)) as Expense;
+        const createdRaw = (await api.createFinanceExpense(eventId, payload)) as Expense;
+        const created = mergeExpenseWithPayload(createdRaw, payload);
         setExpenses((prev) => [...prev, normalizeExpense(created)]);
+
+        toast({
+          tone: "success",
+          title: "Dodano",
+          message: `Wydatek „${payload.name}” został dodany.`,
+        });
       }
 
       const newSummary = (await api.getFinanceSummary(eventId)) as FinanceSummary;
@@ -514,7 +552,9 @@ const Finance: React.FC = () => {
       closeModal();
     } catch (err) {
       console.error(err);
-      setError(err instanceof Error ? err.message : "Nie udało się zapisać wydatku.");
+      const msg = err instanceof Error ? err.message : "Nie udało się zapisać wydatku.";
+      setError(msg);
+      toast({ tone: "danger", title: "Błąd", message: msg });
     } finally {
       setIsSavingExpense(false);
     }
@@ -683,16 +723,28 @@ const Finance: React.FC = () => {
         notes: statusEditing.notes ? statusEditing.notes : scNotes.trim() || null,
       };
 
-      const updated = (await api.updateFinanceExpense(eventId, statusEditing.id, payload)) as Expense;
+      const updatedRaw = (await api.updateFinanceExpense(eventId, statusEditing.id, payload)) as Expense;
+
+      // 🔥 Wymuszamy status z payloadu (backend może nie zwracać pola `status`)
+      const updated = mergeExpenseWithPayload(updatedRaw, payload);
+
       setExpenses((prev) => prev.map((x) => (x.id === updated.id ? normalizeExpense(updated) : x)));
 
       const newSummary = (await api.getFinanceSummary(eventId)) as FinanceSummary;
       setSummary(newSummary);
 
+      toast({
+        tone: "success",
+        title: "Status zmieniony",
+        message: `Wydatek „${updated.name}” ma nowy status.`,
+      });
+
       closeStatusModal();
     } catch (err) {
       console.error(err);
-      setError(err instanceof Error ? err.message : "Nie udało się zmienić statusu.");
+      const msg = err instanceof Error ? err.message : "Nie udało się zmienić statusu.";
+      setError(msg);
+      toast({ tone: "danger", title: "Błąd", message: msg });
       setIsSavingStatus(false);
     }
   };

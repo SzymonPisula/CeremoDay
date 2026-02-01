@@ -11,6 +11,7 @@ import GuestsImportModal from "../components/guests/GuestsImportModal";
 import { useFormErrors } from "../ui/useFormErrors";
 import FieldError from "../ui/FieldError";
 import ErrorMessage from "../ui/ErrorMessage";
+import { useUiStore } from "../store/ui";
 
 type ApiErrorLike = {
   status?: number;
@@ -198,6 +199,7 @@ const Guests: React.FC = () => {
   const [editingSubGuest, setEditingSubGuest] = useState<{ parentId: string; sub: Guest } | null>(null);
 
   const [showImportModal, setShowImportModal] = useState(false);
+  const toast = useUiStore((s) => s.toast);
   const [showAddGuestModal, setShowAddGuestModal] = useState(false);
   const [showAddSubGuestModal, setShowAddSubGuestModal] = useState<{ open: boolean; parentId?: string }>({
     open: false,
@@ -503,8 +505,20 @@ const Guests: React.FC = () => {
       });
 
       setShowAddGuestModal(false);
+
+      toast({
+        tone: "success",
+        title: "Dodano gościa",
+        message: `${payload.first_name} ${payload.last_name}`,
+      });
     } catch (err: unknown) {
       guestModalForm.setFromApiError(err, "Nie udało się dodać gościa.");
+
+      toast({
+        tone: "danger",
+        title: "Nie udało się dodać gościa",
+        message: buildFriendlyError(err, "Spróbuj ponownie."),
+      });
     }
   };
 
@@ -571,8 +585,20 @@ const Guests: React.FC = () => {
       });
 
       setShowAddSubGuestModal({ open: false });
+
+      toast({
+        tone: "success",
+        title: "Dodano współgościa",
+        message: `${payload.first_name} ${payload.last_name}`,
+      });
     } catch (err: unknown) {
       subGuestModalForm.setFromApiError(err, buildFriendlyError(err, "Nie udało się zapisać współgościa."));
+
+      toast({
+        tone: "danger",
+        title: "Nie udało się dodać współgościa",
+        message: buildFriendlyError(err, "Spróbuj ponownie."),
+      });
     }
   };
 
@@ -618,8 +644,20 @@ const Guests: React.FC = () => {
         // 2) usuń rekord główny (osoba kontaktowa lub top-level jeśli backend tak zwraca)
         return removedFromSubs.filter((p) => p.id !== id);
       });
+
+      toast({
+        tone: "success",
+        title: "Usunięto gościa",
+        message: cascadeRequired ? "Usunięto osobę kontaktową wraz ze współgośćmi." : "Usunięto rekord.",
+      });
     } catch (err: unknown) {
       console.error(buildFriendlyError(err, "Nie udało się usunąć gościa."));
+
+      toast({
+        tone: "danger",
+        title: "Nie udało się usunąć",
+        message: buildFriendlyError(err, "Spróbuj ponownie."),
+      });
     } finally {
       setConfirmModal({ open: false, message: "" });
       setConfirmCascadeChecked(false);
@@ -669,8 +707,20 @@ const Guests: React.FC = () => {
       setGuests((prev) => prev.map((g) => (g.id === fullUpdated.id ? { ...fullUpdated, SubGuests: g.SubGuests } : g)));
 
       setEditingGuest(null);
+
+      toast({
+        tone: "success",
+        title: "Zapisano zmiany",
+        message: `${payload.first_name} ${payload.last_name}`,
+      });
     } catch (err: unknown) {
       guestModalForm.setFromApiError(err, buildFriendlyError(err, "Nie udało się zapisać zmian."));
+
+      toast({
+        tone: "danger",
+        title: "Nie udało się zapisać",
+        message: buildFriendlyError(err, "Spróbuj ponownie."),
+      });
     }
   };
 
@@ -740,8 +790,20 @@ const Guests: React.FC = () => {
       );
 
       setEditingSubGuest(null);
+
+      toast({
+        tone: "success",
+        title: "Zapisano współgościa",
+        message: `${payload.first_name} ${payload.last_name}`,
+      });
     } catch (e: unknown) {
       subGuestModalForm.setFromApiError(e, buildFriendlyError(e, "Nie udało się zapisać współgościa."));
+
+      toast({
+        tone: "danger",
+        title: "Nie udało się zapisać współgościa",
+        message: buildFriendlyError(e, "Spróbuj ponownie."),
+      });
     }
   };
 
@@ -1528,7 +1590,18 @@ const Guests: React.FC = () => {
         onClose={() => setShowImportModal(false)}
         onImport={async (items) => {
           if (!eventId) return;
-          await api.importGuests(eventId, items);
+          const res = await api.importGuests(eventId, items);
+
+          const skippedGuests = res?.skippedGuests?.length ?? 0;
+          const skippedSubs = res?.skippedSubguests?.length ?? 0;
+
+          toast({
+            tone: "success",
+            title: "Import zakończony",
+            message:
+              `Dodano: ${res.createdGuests} gości, ${res.createdSubguests} współgości.` +
+              (skippedGuests || skippedSubs ? ` Pominięto: ${skippedGuests} duplikatów gości, ${skippedSubs} współgości.` : ""),
+          });
 
           const data = await api.getGuests(eventId);
           setGuests(data);

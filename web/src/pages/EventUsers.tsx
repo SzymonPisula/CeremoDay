@@ -6,22 +6,23 @@ import Tile from "../ui/Tile";
 import Button from "../ui/Button";
 import EmptyState from "../ui/EmptyState";
 import { api } from "../lib/api";
+import { useUiStore } from "../store/ui";
 
 import type { EventUserRow, EventUsersResponse, EventRole, EventUserStatus } from "../types/eventUsers";
-import { UserMinus, LogOut, Crown, Shield, User } from "lucide-react";
+import { UserMinus, LogOut, Crown, Shield } from "lucide-react";
 
 type Params = { id: string };
 
 const roleLabel = (r: EventRole): string => {
   if (r === "owner") return "Właściciel";
   if (r === "coorganizer") return "Współorganizator";
-  return "Gość";
+  return "Współorganizator";
 };
 
 const roleIcon = (r: EventRole) => {
   if (r === "owner") return <Crown className="w-4 h-4 text-[rgba(246,226,122,0.95)]" />;
   if (r === "coorganizer") return <Shield className="w-4 h-4 text-[rgba(246,226,122,0.95)]" />;
-  return <User className="w-4 h-4 text-[rgba(246,226,122,0.95)]" />;
+  return <Shield className="w-4 h-4 text-[rgba(246,226,122,0.95)]" />;
 };
 
 export default function EventUsers() {
@@ -30,6 +31,10 @@ export default function EventUsers() {
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+
+  // ✅ globalne toasty i potwierdzenia (jak w pozostałych modułach)
+  const toast = useUiStore((s) => s.toast);
+  const confirmAsync = useUiStore((s) => s.confirmAsync);
   const [data, setData] = useState<EventUsersResponse | null>(null);
   const [view, setView] = useState<"active" | "pending">("active");
 
@@ -76,47 +81,62 @@ export default function EventUsers() {
 
   async function onRemove(userId: string) {
     if (!eventId) return;
+
+    const ok = await confirmAsync({
+      tone: "danger",
+      title: "Usunąć użytkownika z wydarzenia?",
+      message: "Użytkownik straci dostęp do modułów w tym wydarzeniu.",
+      confirmText: "Usuń",
+      cancelText: "Anuluj",
+    });
+    if (!ok) return;
+
     try {
       await api.removeEventUser(eventId, userId);
       await reload();
+      toast({ tone: "success", title: "Usunięto użytkownika" });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Nie udało się usunąć użytkownika");
+      const msg = e instanceof Error ? e.message : "Nie udało się usunąć użytkownika";
+      setErr(msg);
+      toast({ tone: "danger", title: "Błąd", message: msg });
     }
   }
 
-  async function onApprove(userId: string, role: "guest" | "coorganizer") {
+  async function onApprove(userId: string) {
     if (!eventId) return;
     try {
-      await api.approveEventUser(eventId, userId, role);
+      await api.approveEventUser(eventId, userId);
       await reload();
+      toast({ tone: "success", title: "Zaakceptowano użytkownika" });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Nie udało się zaakceptować użytkownika");
+      const msg = e instanceof Error ? e.message : "Nie udało się zaakceptować użytkownika";
+      setErr(msg);
+      toast({ tone: "danger", title: "Błąd", message: msg });
     }
   }
 
   async function onReject(userId: string) {
     if (!eventId) return;
+
+    const ok = await confirmAsync({
+      tone: "warning",
+      title: "Odrzucić zgłoszenie?",
+      message: "Użytkownik nie zostanie dopuszczony do wydarzenia.",
+      confirmText: "Odrzuć",
+      cancelText: "Anuluj",
+    });
+    if (!ok) return;
+
     try {
       await api.rejectEventUser(eventId, userId);
       await reload();
+      toast({ tone: "success", title: "Odrzucono zgłoszenie" });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Nie udało się odrzucić zgłoszenia");
+      const msg = e instanceof Error ? e.message : "Nie udało się odrzucić zgłoszenia";
+      setErr(msg);
+      toast({ tone: "danger", title: "Błąd", message: msg });
     }
   }
-
-  async function onToggleRole(userId: string, currentRole: EventRole) {
-  if (!eventId) return;
-  if (!canManage) return;
-
-  const nextRole: "guest" | "coorganizer" = currentRole === "guest" ? "coorganizer" : "guest";
-
-  try {
-    await api.changeEventUserRole(eventId, userId, nextRole);
-    await reload();
-  } catch (e) {
-    setErr(e instanceof Error ? e.message : "Nie udało się zmienić roli");
-  }
-}
 
 
   async function onLeave() {
@@ -260,22 +280,17 @@ export default function EventUsers() {
                     <div className="flex items-center gap-2 md:justify-end">
                       {canManage && isPending ? (
                         <>
-                          <Button variant="secondary" onClick={() => onApprove(row.user_id, "guest")}>Akceptuj</Button>
-                          <Button variant="ghost" onClick={() => onApprove(row.user_id, "coorganizer")}>Akceptuj jako współorganizator</Button>
-                          <Button variant="ghost" onClick={() => onReject(row.user_id)} leftIcon={<UserMinus className="w-4 h-4" />}>
+                          <Button variant="secondary" onClick={() => onApprove(row.user_id)}>
+                            Akceptuj
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            onClick={() => onReject(row.user_id)}
+                            leftIcon={<UserMinus className="w-4 h-4" />}
+                          >
                             Odrzuć
                           </Button>
                         </>
-                      ) : null}
-
-
-                      {canManage && !isPending && row.role !== "owner" ? (
-                        <Button
-                          variant="secondary"
-                          onClick={() => onToggleRole(row.user_id, row.role)}
-                        >
-                          {row.role === "guest" ? "Zrób współorganizatorem" : "Zrób gościem"}
-                        </Button>
                       ) : null}
 
                       {canRemoveRow && !isPending ? (
