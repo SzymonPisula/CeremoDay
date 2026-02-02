@@ -1,3 +1,5 @@
+// CeremoDay/web/src/types/user.ts
+
 export type UserPublic = {
   id: string;
   name?: string | null;

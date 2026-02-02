@@ -1,15 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import {
-  Calendar,
-  Clock,
-  ListChecks,
-  Loader2,
-  Trash2,
-  Pencil,
-  Plus,
-  Info,
-} from "lucide-react";
+import { Calendar, Clock, ListChecks, Loader2, Trash2, Pencil, Plus, Info } from "lucide-react";
 
 import { api } from "../lib/api";
 import { useUiStore } from "../store/ui";
@@ -23,7 +14,6 @@ import { useSearchParams } from "react-router-dom";
 
 type Params = { id: string };
 type ViewMode = "list" | "timeline" | "calendar";
-
 
 const CATEGORY_LABELS: Record<TaskCategory, string> = {
   FORMALNOSCI: "Formalności",
@@ -70,7 +60,6 @@ function formatDisplayDate(dateStr?: string | null): string {
   });
 }
 
-
 export default function Tasks() {
   const { id: eventId } = useParams<Params>();
   const confirmAsync = useUiStore((s) => s.confirmAsync);
@@ -88,26 +77,25 @@ export default function Tasks() {
 
   const [statusFilter, setStatusFilter] = useState<Set<TaskStatus>>(new Set());
   const [categoryFilter, setCategoryFilter] = useState<Set<TaskCategory>>(new Set());
-const [detailsOpen, setDetailsOpen] = useState(false);
-const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
-const [searchParams] = useSearchParams();
-const focusTaskId = searchParams.get("task");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
-// mapka refów do scrolla
-const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [searchParams] = useSearchParams();
+  const focusTaskId = searchParams.get("task");
 
-function openDetails(task: Task) {
-  setSelectedTask({ ...task, description: task.description ?? null });
-  setDetailsOpen(true);
-}
+  // mapka refów do scrolla
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-function closeDetails() {
-  setDetailsOpen(false);
-  setSelectedTask(null);
-}
+  function openDetails(task: Task) {
+    setSelectedTask({ ...task, description: task.description ?? null });
+    setDetailsOpen(true);
+  }
 
-
+  function closeDetails() {
+    setDetailsOpen(false);
+    setSelectedTask(null);
+  }
 
   // modal create/edit
   const [modalOpen, setModalOpen] = useState(false);
@@ -155,30 +143,27 @@ function closeDetails() {
     "focus:outline-none focus:ring-2 focus:ring-[#c8a04b]/45 " +
     "transition disabled:opacity-60";
 
-useEffect(() => {
-  if (!focusTaskId) return;
-  if (!tasks || tasks.length === 0) return;
+  useEffect(() => {
+    if (!focusTaskId) return;
+    if (!tasks || tasks.length === 0) return;
 
-  const t = tasks.find((x) => x.id === focusTaskId);
-  if (!t) return;
+    const t = tasks.find((x) => x.id === focusTaskId);
+    if (!t) return;
 
-  // 1) przewiń do wiersza (jeśli ref jest ustawiony)
-  const el = rowRefs.current[focusTaskId];
-  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    // 1) przewiń do wiersza (jeśli ref jest ustawiony)
+    const el = rowRefs.current[focusTaskId];
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
 
-  // 2) otwórz modal szczegółów
-  openDetails(t);
+    // 2) otwórz modal szczegółów
+    openDetails(t);
 
-  // 3) opcjonalnie usuń query param, żeby nie odpalało ponownie po refresh
-  // setSearchParams((prev) => {
-  //   const next = new URLSearchParams(prev);
-  //   next.delete("task");
-  //   return next;
-  // }, { replace: true });
-
-}, [focusTaskId, tasks]);
-
-
+    // 3) opcjonalnie usuń query param, żeby nie odpalało ponownie po refresh
+    // setSearchParams((prev) => {
+    //   const next = new URLSearchParams(prev);
+    //   next.delete("task");
+    //   return next;
+    // }, { replace: true });
+  }, [focusTaskId, tasks]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -191,14 +176,16 @@ useEffect(() => {
         setTasks(data);
       } catch (err) {
         console.error("❌ Błąd pobierania zadań:", err);
-        setError("Nie udało się pobrać zadań");
+        const msg = "Nie udało się pobrać zadań";
+        setError(msg);
+        toast({ tone: "danger", title: "Błąd", message: msg });
       } finally {
         setLoading(false);
       }
     };
 
     fetchTasks();
-  }, [eventId]);
+  }, [eventId, toast]);
 
   const openCreate = () => {
     modalForm.clear();
@@ -228,11 +215,21 @@ useEffect(() => {
           const arr = Array.isArray(created) ? created : [created];
           return arr.length === 1 ? [...prev, arr[0]] : [...prev, ...arr];
         });
+
+        toast({
+          tone: "info",
+          title: "Dodano zadanie",
+          message: payload.title ? `„${payload.title}”` : "Zadanie zostało dodane.",
+        });
       } else if (modalMode === "edit" && editingTask) {
         const updated = await api.updateTask(editingTask.id, payload);
-        setTasks((prev) =>
-          prev.map((t) => (t.id === editingTask.id ? (updated as Task) : t))
-        );
+        setTasks((prev) => prev.map((t) => (t.id === editingTask.id ? (updated as Task) : t)));
+
+        toast({
+          tone: "info",
+          title: "Zapisano zmiany",
+          message: payload.title ? `„${payload.title}”` : `„${editingTask.title}”`,
+        });
       }
 
       setModalOpen(false);
@@ -260,71 +257,79 @@ useEffect(() => {
       setError(null);
       const updated = await api.updateTask(task.id, { status: nextStatus });
       setTasks((prev) => prev.map((t) => (t.id === task.id ? (updated as Task) : t)));
+
+      toast({
+        tone: "info",
+        title: "Zmieniono status",
+        message: `„${task.title}” → ${STATUS_LABELS[nextStatus]}`,
+      });
     } catch (err) {
       console.error("❌ Błąd zmiany statusu zadania:", err);
-      setError("Nie udało się zmienić statusu");
+      const msg = "Nie udało się zmienić statusu";
+      setError(msg);
+      toast({ tone: "danger", title: "Błąd", message: msg });
     } finally {
       setSavingId(null);
     }
   };
 
   const handleDeleteTask = async (task: Task) => {
-  const ok = await confirmAsync({
-    title: "Usunąć zadanie?",
-    message:
-      "To działanie jest nieodwracalne. Zadanie zostanie trwale usunięte z tego wydarzenia.",
-    confirmText: "Usuń",
-    cancelText: "Anuluj",
-    tone: "danger",
-  });
-
-  if (!ok) return;
-
-  try {
-    setSavingId(task.id);
-    setError(null);
-
-    await api.deleteTask(task.id);
-    setTasks((prev) => prev.filter((t) => t.id !== task.id));
-
-    toast({
-      tone: "info",
-      title: "Usunięto zadanie",
-      message: `„${task.title}”`,
-    });
-  } catch (err: unknown) {
-    console.error("❌ Błąd usuwania zadania:", err);
-
-    const msg = err instanceof Error ? err.message : "Nie udało się usunąć zadania";
-    setError(msg);
-
-    toast({
+    const ok = await confirmAsync({
+      title: "Usunąć zadanie?",
+      message: "To działanie jest nieodwracalne. Zadanie zostanie trwale usunięte z tego wydarzenia.",
+      confirmText: "Usuń",
+      cancelText: "Anuluj",
       tone: "danger",
-      title: "Błąd",
-      message: msg,
     });
-  } finally {
-    setSavingId(null);
-  }
-};
 
+    if (!ok) {
+      toast({ tone: "info", title: "Anulowano", message: "Usuwanie zadania zostało anulowane." });
+      return;
+    }
 
+    try {
+      setSavingId(task.id);
+      setError(null);
+
+      await api.deleteTask(task.id);
+      setTasks((prev) => prev.filter((t) => t.id !== task.id));
+
+      toast({
+        tone: "info",
+        title: "Usunięto zadanie",
+        message: `„${task.title}”`,
+      });
+    } catch (err: unknown) {
+      console.error("❌ Błąd usuwania zadania:", err);
+
+      const msg = err instanceof Error ? err.message : "Nie udało się usunąć zadania";
+      setError(msg);
+
+      toast({
+        tone: "danger",
+        title: "Błąd",
+        message: msg,
+      });
+    } finally {
+      setSavingId(null);
+    }
+  };
 
   // filtrowanie
   const filteredTasks = useMemo(() => {
-  return tasks.filter((t) => {
-    // Status: jeśli set pusty => wszystkie
-    if (statusFilter.size > 0 && !statusFilter.has(t.status)) return false;
+    return tasks.filter((t) => {
+      // Status: jeśli set pusty => wszystkie
+      if (statusFilter.size > 0 && !statusFilter.has(t.status)) return false;
 
-    // Kategoria: jeśli set pusty => wszystkie
-    if (categoryFilter.size > 0) {
-      if (!t.category) return false;
-      if (!categoryFilter.has(t.category)) return false;
-    }
+      // Kategoria: jeśli set pusty => wszystkie
+      if (categoryFilter.size > 0) {
+        if (!t.category) return false;
+        if (!categoryFilter.has(t.category)) return false;
+      }
 
-    return true;
-  });
-}, [tasks, statusFilter, categoryFilter]);
+      return true;
+    });
+  }, [tasks, statusFilter, categoryFilter]);
 
   // LISTA: UX
   // - Zadania "Zrobione" na koniec
@@ -370,7 +375,6 @@ useEffect(() => {
 
     return arr;
   }, [filteredTasks]);
-
 
   // timeline: grupowanie po miesiącu due_date
   const timelineGroups = useMemo(() => {
@@ -439,14 +443,14 @@ useEffect(() => {
   };
 
   const statusOptions: TaskStatus[] = ["pending", "in_progress", "done"];
-const categoryOptions: TaskCategory[] = [
-  "FORMALNOSCI",
-  "ORGANIZACJA",
-  "USLUGI",
-  "DEKORACJE",
-  "LOGISTYKA",
-  "DZIEN_SLUBU",
-];
+  const categoryOptions: TaskCategory[] = [
+    "FORMALNOSCI",
+    "ORGANIZACJA",
+    "USLUGI",
+    "DEKORACJE",
+    "LOGISTYKA",
+    "DZIEN_SLUBU",
+  ];
 
   const weekDayLabels = ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"];
 
@@ -472,91 +476,89 @@ const categoryOptions: TaskCategory[] = [
 
       {/* Statusy */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-  {/* Wszystkie = reset */}
-  <button
-    type="button"
-    onClick={() => setStatusFilter(new Set())}
-    className={
-      "px-3 py-1 rounded-full border text-xs transition " +
-      (statusFilter.size === 0
-        ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
-        : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
-    }
-  >
-    Wszystkie
-  </button>
+        {/* Wszystkie = reset */}
+        <button
+          type="button"
+          onClick={() => setStatusFilter(new Set())}
+          className={
+            "px-3 py-1 rounded-full border text-xs transition " +
+            (statusFilter.size === 0
+              ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
+              : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
+          }
+        >
+          Wszystkie
+        </button>
 
-  {statusOptions.map((s) => {
-    const active = statusFilter.has(s);
-    return (
-      <button
-        key={s}
-        type="button"
-        onClick={() => {
-          setStatusFilter((prev) => {
-            const next = new Set(prev);
-            if (next.has(s)) next.delete(s);
-            else next.add(s);
-            return next;
-          });
-        }}
-        className={
-          "px-3 py-1 rounded-full border text-xs transition " +
-          (active
-            ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
-            : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
-        }
-      >
-        {STATUS_LABELS[s]}
-      </button>
-    );
-  })}
-</div>
-
+        {statusOptions.map((s) => {
+          const active = statusFilter.has(s);
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                setStatusFilter((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(s)) next.delete(s);
+                  else next.add(s);
+                  return next;
+                });
+              }}
+              className={
+                "px-3 py-1 rounded-full border text-xs transition " +
+                (active
+                  ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
+                  : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
+              }
+            >
+              {STATUS_LABELS[s]}
+            </button>
+          );
+        })}
+      </div>
 
       {/* Kategorie */}
       <div className="mt-2 flex flex-wrap items-center gap-2">
-  {/* Wszystkie = reset */}
-  <button
-    type="button"
-    onClick={() => setCategoryFilter(new Set())}
-    className={
-      "px-3 py-1 rounded-full border text-xs transition " +
-      (categoryFilter.size === 0
-        ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
-        : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
-    }
-  >
-    Wszystkie
-  </button>
+        {/* Wszystkie = reset */}
+        <button
+          type="button"
+          onClick={() => setCategoryFilter(new Set())}
+          className={
+            "px-3 py-1 rounded-full border text-xs transition " +
+            (categoryFilter.size === 0
+              ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
+              : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
+          }
+        >
+          Wszystkie
+        </button>
 
-  {categoryOptions.map((c) => {
-    const active = categoryFilter.has(c);
-    return (
-      <button
-        key={c}
-        type="button"
-        onClick={() => {
-          setCategoryFilter((prev) => {
-            const next = new Set(prev);
-            if (next.has(c)) next.delete(c);
-            else next.add(c);
-            return next;
-          });
-        }}
-        className={
-          "px-3 py-1 rounded-full border text-xs transition " +
-          (active
-            ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
-            : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
-        }
-      >
-        {CATEGORY_LABELS[c]}
-      </button>
-    );
-  })}
-</div>
-
+        {categoryOptions.map((c) => {
+          const active = categoryFilter.has(c);
+          return (
+            <button
+              key={c}
+              type="button"
+              onClick={() => {
+                setCategoryFilter((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(c)) next.delete(c);
+                  else next.add(c);
+                  return next;
+                });
+              }}
+              className={
+                "px-3 py-1 rounded-full border text-xs transition " +
+                (active
+                  ? "border-[#c8a04b]/40 bg-[#c8a04b]/10 text-white"
+                  : "border-white/10 bg-white/5 text-white/70 hover:bg-white/8")
+              }
+            >
+              {CATEGORY_LABELS[c]}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 
@@ -570,9 +572,7 @@ const categoryOptions: TaskCategory[] = [
           </div>
           <div>
             <h2 className="text-2xl font-bold text-white">Zadania</h2>
-            <p className="text-sm text-white/60">
-              Zaplanuj wszystkie kroki – od formalności po dzień ślubu.
-            </p>
+            <p className="text-sm text-white/60">Zaplanuj wszystkie kroki – od formalności po dzień ślubu.</p>
           </div>
         </div>
 
@@ -632,114 +632,98 @@ const categoryOptions: TaskCategory[] = [
           </div>
 
           {listTasks.length === 0 && !loading && (
-            <p className="text-sm text-white/55 mt-4">
-              Brak zadań spełniających filtry. Dodaj zadanie lub zmień filtry.
-            </p>
+            <p className="text-sm text-white/55 mt-4">Brak zadań spełniających filtry. Dodaj zadanie lub zmień filtry.</p>
           )}
 
           <div className="space-y-2 mt-3">
             {listTasks.map((task) => {
               const overdue = isTaskOverdue(task);
               return (
-<div
-  key={task.id}
-  ref={(node) => {
-    rowRefs.current[task.id] = node;
-  }}
-  className={
-    "rounded-2xl border p-3 transition " +
-    (overdue
-      ? "border-red-500/30 bg-red-500/10"
-      : "") +
-    (task.id === focusTaskId
-      ? "border-[#d7b45a]/40 bg-[#d7b45a]/10"
-      : "border-white/10 bg-white/4")
-  }
->
-                <div className="grid grid-cols-1 lg:grid-cols-[180px_140px_220px_1fr_170px_140px] gap-3 items-start">
-                  {/* Status */}
-                  <div className="flex items-center">
-                    <TaskStatusInline
-                      value={task.status}
-                      isSaving={savingId === task.id}
-                      forwardOnly={true}
-                      onChange={(next) => handleChangeStatus(task, next)}
-                    />
+                <div
+                  key={task.id}
+                  ref={(node) => {
+                    rowRefs.current[task.id] = node;
+                  }}
+                  className={
+                    "rounded-2xl border p-3 transition " +
+                    (overdue ? "border-red-500/30 bg-red-500/10" : "") +
+                    (task.id === focusTaskId ? "border-[#d7b45a]/40 bg-[#d7b45a]/10" : "border-white/10 bg-white/4")
+                  }
+                >
+                  <div className="grid grid-cols-1 lg:grid-cols-[180px_140px_220px_1fr_170px_140px] gap-3 items-start">
+                    {/* Status */}
+                    <div className="flex items-center">
+                      <TaskStatusInline
+                        value={task.status}
+                        isSaving={savingId === task.id}
+                        forwardOnly={true}
+                        onChange={(next) => handleChangeStatus(task, next)}
+                      />
+                    </div>
+
+                    {/* Termin */}
+                    <div className={"text-sm " + (overdue ? "text-red-200 font-semibold" : "text-white/80")}>
+                      {overdue ? "Uzupełnij!" : task.due_date ? formatDisplayDate(task.due_date) : "—"}
+                    </div>
+
+                    {/* Tytuł */}
+                    <div className="text-sm text-white font-semibold break-words">{task.title}</div>
+
+                    {/* Szczegóły (zamiast opisu) */}
+                    <div className="flex items-center">
+                      <button
+                        type="button"
+                        onClick={() => openDetails(task)}
+                        className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/80 hover:bg-white/10"
+                        title="Szczegóły zadania"
+                      >
+                        <Info size={14} />
+                        Szczegóły
+                      </button>
+                    </div>
+
+                    {/* Kategoria */}
+                    <div className="text-sm text-white/80">{task.category ? CATEGORY_LABELS[task.category] : "—"}</div>
+
+                    {/* Akcje */}
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(task)}
+                        className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white hover:bg-white/10 transition"
+                        title="Edytuj"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTask(task)}
+                        className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-red-200 hover:bg-white/10 transition"
+                        title="Usuń"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Termin */}
-                  <div className={"text-sm " + (overdue ? "text-red-200 font-semibold" : "text-white/80")}>
-                    {overdue ? "Uzupełnij!" : task.due_date ? formatDisplayDate(task.due_date) : "—"}
-                  </div>
-
-                  {/* Tytuł */}
-                  <div className="text-sm text-white font-semibold break-words">
-                    {task.title}
-                  </div>
-
-                  {/* Opis */}
-{/* Szczegóły (zamiast opisu) */}
-<div className="flex items-center">
-  <button
-    type="button"
-    onClick={() => openDetails(task)}
-    className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/80 hover:bg-white/10"
-    title="Szczegóły zadania"
-  >
-    <Info size={14} />
-    Szczegóły
-  </button>
-</div>
-
-
-
-                  {/* Kategoria */}
-                  <div className="text-sm text-white/80">
-                    {task.category ? CATEGORY_LABELS[task.category] : "—"}
-                  </div>
-
-                  {/* Akcje */}
-                  <div className="flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(task)}
-                      className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white hover:bg-white/10 transition"
-                      title="Edytuj"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteTask(task)}
-                      className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-red-200 hover:bg-white/10 transition"
-                      title="Usuń"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  {/* mobile info */}
+                  <div className="lg:hidden mt-3 pt-3 border-t border-white/10 text-xs text-white/60 flex flex-wrap gap-3">
+                    <span>
+                      Termin:{" "}
+                      <span className="text-white/80">
+                        {overdue ? "Uzupełnij!" : task.due_date ? formatDisplayDate(task.due_date) : "—"}
+                      </span>
+                    </span>
+                    <span>
+                      Kategoria:{" "}
+                      <span className="text-white/80">{task.category ? CATEGORY_LABELS[task.category] : "—"}</span>
+                    </span>
+                    <span>
+                      Status: <span className="text-white/80">{STATUS_LABELS[task.status]}</span>
+                    </span>
                   </div>
                 </div>
-
-                {/* mobile info */}
-                <div className="lg:hidden mt-3 pt-3 border-t border-white/10 text-xs text-white/60 flex flex-wrap gap-3">
-                  <span>
-                    Termin:{" "}
-                    <span className="text-white/80">
-                      {overdue ? "Uzupełnij!" : task.due_date ? formatDisplayDate(task.due_date) : "—"}
-                    </span>
-                  </span>
-                  <span>
-                    Kategoria:{" "}
-                    <span className="text-white/80">
-                      {task.category ? CATEGORY_LABELS[task.category] : "—"}
-                    </span>
-                  </span>
-                  <span>
-                    Status:{" "}
-                    <span className="text-white/80">{STATUS_LABELS[task.status]}</span>
-                  </span>
-              </div>
-              </div>
-            );
+              );
             })}
           </div>
         </div>
@@ -751,9 +735,7 @@ const categoryOptions: TaskCategory[] = [
           <FiltersHeader />
 
           {timelineGroups.keys.length === 0 && timelineGroups.noDate.length === 0 && (
-            <p className="text-sm text-white/55">
-              Brak zadań z datami. Ustaw terminy w widoku listy, aby zobaczyć oś czasu.
-            </p>
+            <p className="text-sm text-white/55">Brak zadań z datami. Ustaw terminy w widoku listy, aby zobaczyć oś czasu.</p>
           )}
 
           <div className="space-y-5">
@@ -775,55 +757,49 @@ const categoryOptions: TaskCategory[] = [
                   </div>
 
                   <div className="space-y-2">
-                {tasksInGroup
-                  .slice()
-                  .sort(
-                    (a, b) =>
-                      (parseDate(a.due_date)?.getTime() ?? 0) - (parseDate(b.due_date)?.getTime() ?? 0)
-                  )
-                  .map((task) => (
-                    <div
-                      key={task.id}
-                      className="rounded-2xl border border-white/10 bg-black/20 p-4 flex items-start justify-between gap-3"
-                    >
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <TaskStatusInline
-                            value={task.status}
-                            isSaving={savingId === task.id}
-                            forwardOnly={true}
-                            onChange={(next) => handleChangeStatus(task, next)}
-                          />
-                          <span className="font-semibold text-white">{task.title}</span>
-                          {task.category && <span className={chip}>{CATEGORY_LABELS[task.category]}</span>}
+                    {tasksInGroup
+                      .slice()
+                      .sort((a, b) => (parseDate(a.due_date)?.getTime() ?? 0) - (parseDate(b.due_date)?.getTime() ?? 0))
+                      .map((task) => (
+                        <div
+                          key={task.id}
+                          className="rounded-2xl border border-white/10 bg-black/20 p-4 flex items-start justify-between gap-3"
+                        >
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <TaskStatusInline
+                                value={task.status}
+                                isSaving={savingId === task.id}
+                                forwardOnly={true}
+                                onChange={(next) => handleChangeStatus(task, next)}
+                              />
+                              <span className="font-semibold text-white">{task.title}</span>
+                              {task.category && <span className={chip}>{CATEGORY_LABELS[task.category]}</span>}
+                            </div>
+                            {task.description && <p className="text-sm text-white/60 mt-2 break-words">{task.description}</p>}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openEdit(task)}
+                              className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white hover:bg-white/10 transition"
+                              title="Edytuj"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTask(task)}
+                              className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-red-200 hover:bg-white/10 transition"
+                              title="Usuń"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
-                        {task.description && (
-                          <p className="text-sm text-white/60 mt-2 break-words">{task.description}</p>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(task)}
-                          className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white hover:bg-white/10 transition"
-                          title="Edytuj"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteTask(task)}
-                          className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-red-200 hover:bg-white/10 transition"
-                          title="Usuń"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-
-              </div>
+                      ))}
+                  </div>
                 </div>
               );
             })}
@@ -853,9 +829,7 @@ const categoryOptions: TaskCategory[] = [
                           {task.category && <span className={chip}>{CATEGORY_LABELS[task.category]}</span>}
                           <span className="text-xs text-white/55">Brak terminu</span>
                         </div>
-                        {task.description && (
-                          <p className="text-sm text-white/60 mt-2 break-words">{task.description}</p>
-                        )}
+                        {task.description && <p className="text-sm text-white/60 mt-2 break-words">{task.description}</p>}
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -923,12 +897,7 @@ const categoryOptions: TaskCategory[] = [
                     <tr key={weekIndex} className="h-[96px]">
                       {week.map((cell, idx) => {
                         if (!cell.date) {
-                          return (
-                            <td
-                              key={`empty-${weekIndex}-${idx}`}
-                              className="align-top border border-white/5 bg-white/2"
-                            />
-                          );
+                          return <td key={`empty-${weekIndex}-${idx}`} className="align-top border border-white/5 bg-white/2" />;
                         }
 
                         const day = cell.date.getDate();
@@ -945,8 +914,8 @@ const categoryOptions: TaskCategory[] = [
                               (isSelected
                                 ? "bg-[#c8a04b]/12 border-[#c8a04b]/25"
                                 : hasTasks
-                                ? "bg-white/4"
-                                : "bg-transparent") +
+                                  ? "bg-white/4"
+                                  : "bg-transparent") +
                               " hover:bg-[#c8a04b]/10"
                             }
                           >
@@ -965,11 +934,7 @@ const categoryOptions: TaskCategory[] = [
                                   {task.title}
                                 </div>
                               ))}
-                              {cell.tasks.length > 2 && (
-                                <div className="text-[11px] text-white/55">
-                                  +{cell.tasks.length - 2} więcej
-                                </div>
-                              )}
+                              {cell.tasks.length > 2 && <div className="text-[11px] text-white/55">+{cell.tasks.length - 2} więcej</div>}
                             </div>
                           </td>
                         );
@@ -995,11 +960,7 @@ const categoryOptions: TaskCategory[] = [
                     })}
                   </span>
                 </h4>
-                <button
-                  type="button"
-                  onClick={() => setSelectedDateKey(null)}
-                  className="text-xs text-white/55 hover:text-white"
-                >
+                <button type="button" onClick={() => setSelectedDateKey(null)} className="text-xs text-white/55 hover:text-white">
                   Wyczyść
                 </button>
               </div>
@@ -1027,9 +988,7 @@ const categoryOptions: TaskCategory[] = [
                           <span className="font-semibold text-white">{task.title}</span>
                           {task.category && <span className={chip}>{CATEGORY_LABELS[task.category]}</span>}
                         </div>
-                        {task.description && (
-                          <p className="text-sm text-white/60 mt-2 break-words">{task.description}</p>
-                        )}
+                        {task.description && <p className="text-sm text-white/60 mt-2 break-words">{task.description}</p>}
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -1057,9 +1016,7 @@ const categoryOptions: TaskCategory[] = [
                   const d = parseDate(t.due_date);
                   if (!d) return false;
                   return d.toISOString().slice(0, 10) === selectedDateKey;
-                }).length === 0 && (
-                  <p className="text-sm text-white/55">Brak zadań przypisanych do tego dnia.</p>
-                )}
+                }).length === 0 && <p className="text-sm text-white/55">Brak zadań przypisanych do tego dnia.</p>}
               </div>
             </div>
           )}
@@ -1081,22 +1038,20 @@ const categoryOptions: TaskCategory[] = [
         }}
         onSubmit={handleSubmitModal}
       />
+
       <TaskDetailsModal
-  open={detailsOpen}
-  task={selectedTask}
-  onClose={closeDetails}
-  onEdit={(t) => {
-    closeDetails();
-    openEdit(t as Task);
-  }}
-  onDelete={(t) => {
-    closeDetails();
-    handleDeleteTask(t as Task);
-  }}
-/>
-
-
-
+        open={detailsOpen}
+        task={selectedTask}
+        onClose={closeDetails}
+        onEdit={(t) => {
+          closeDetails();
+          openEdit(t as Task);
+        }}
+        onDelete={(t) => {
+          closeDetails();
+          handleDeleteTask(t as Task);
+        }}
+      />
     </div>
   );
 }

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+// CeremoDay/web/src/components/tasks/TaskCreateEditModal.tsx
+import { useEffect, useMemo, useRef, useState } from "react";
 import { X, Sparkles } from "lucide-react";
 
 import Select, { type SelectOption } from "../../ui/Select";
@@ -39,8 +40,6 @@ const CATEGORY_OPTIONS: SelectOption<TaskCategory>[] = [
 
 function normalizeISODate(v?: string | null) {
   if (!v) return "";
-  // u Ciebie często leci ISO — w DatePicker trzymamy "YYYY-MM-DD"
-  // jeśli już jest "YYYY-MM-DD" to zostawiamy.
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return "";
@@ -77,6 +76,35 @@ export default function TaskCreateEditModal({
   const [dueDate, setDueDate] = useState(""); // "YYYY-MM-DD" lub ""
   const [description, setDescription] = useState<string>("");
 
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  // Scroll-lock tła + ESC (jak w dokumentach / dialogach)
+  useEffect(() => {
+    if (!open) return;
+
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (saving) return;
+        onClose();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+
+    // focus na kartę (żeby ESC / tab działały sensownie)
+    setTimeout(() => {
+      cardRef.current?.focus();
+    }, 0);
+
+    return () => {
+      document.body.style.overflow = prev;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, onClose, saving]);
+
   useEffect(() => {
     if (!open) return;
 
@@ -100,7 +128,7 @@ export default function TaskCreateEditModal({
   if (!open) return null;
 
   const cardBase =
-    "rounded-2xl border border-white/10 bg-[#0b1f17]/95 shadow-2xl backdrop-blur-md";
+    "rounded-2xl border border-white/10 bg-[#0b1f17]/95 shadow-2xl backdrop-blur-md outline-none";
 
   const labelCls = "text-xs font-semibold text-white/80";
   const hintCls = "mt-1 text-xs text-white/45";
@@ -123,11 +151,25 @@ export default function TaskCreateEditModal({
   return (
     <div className="fixed inset-0 z-[90]">
       {/* backdrop */}
-      <div className="absolute inset-0 bg-black/55" onClick={onClose} aria-hidden="true" />
+      <div
+        className="absolute inset-0 bg-black/55"
+        onClick={() => {
+          if (saving) return;
+          onClose();
+        }}
+        aria-hidden="true"
+      />
 
-      {/* modal */}
-      <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div className={"w-full max-w-xl " + cardBase}>
+      {/* modal (kotwica w środku + scroll wewnątrz) */}
+      <div className="absolute inset-0 grid place-items-center p-4">
+        <div
+          ref={cardRef}
+          tabIndex={-1}
+          className={"w-full max-w-xl " + cardBase}
+          role="dialog"
+          aria-modal="true"
+          aria-label={headerTitle}
+        >
           {/* header */}
           <div className="flex items-start justify-between gap-3 border-b border-white/10 p-4">
             <div className="min-w-0">
@@ -136,17 +178,23 @@ export default function TaskCreateEditModal({
             </div>
 
             <button
-              onClick={onClose}
-              className="shrink-0 rounded-xl border border-white/10 bg-white/5 p-2 text-white/80 hover:bg-white/10"
+              type="button"
+              onClick={() => {
+                if (saving) return;
+                onClose();
+              }}
+              className="shrink-0 rounded-xl border border-white/10 bg-white/5 p-2 text-white/80 hover:bg-white/10 disabled:opacity-60"
               aria-label="Zamknij"
+              disabled={!!saving}
             >
               <X size={18} />
             </button>
           </div>
 
-          {/* body */}
-          <div className="p-4 space-y-4">
+          {/* body: scroll tylko wewnątrz */}
+          <div className="max-h-[70vh] overflow-auto p-4 space-y-4">
             {formError ? <ErrorMessage>{formError}</ErrorMessage> : null}
+
             {/* Title */}
             <div>
               <div className={labelCls}>Tytuł</div>
@@ -155,6 +203,7 @@ export default function TaskCreateEditModal({
                 onChange={(e) => setTitle(e.target.value)}
                 className={inputBase}
                 placeholder='np. "Wybierz salę i podpisz umowę"'
+                disabled={!!saving}
               />
               <FieldError message={fieldErrors?.title} />
               <div className={hintCls}>Minimum 3 znaki. Najlepiej: „moduł: konkret”.</div>
@@ -167,9 +216,7 @@ export default function TaskCreateEditModal({
                 <Select
                   value={category ? String(category) : ""}
                   onChange={(v) => setCategory((v as TaskCategory) || "")}
-                  options={[
-                    ...CATEGORY_OPTIONS,
-                  ]}
+                  options={[...CATEGORY_OPTIONS]}
                   placeholder="Wybierz kategorię"
                 />
                 <FieldError message={fieldErrors?.category} />
@@ -204,6 +251,7 @@ export default function TaskCreateEditModal({
                     "text-xs text-white/80 hover:bg-white/10 transition"
                   }
                   title="Wstaw sekcje pomocnicze"
+                  disabled={!!saving}
                 >
                   <Sparkles size={14} />
                   Wstaw podpowiedzi
@@ -213,14 +261,12 @@ export default function TaskCreateEditModal({
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className={
-                  inputBase +
-                  " min-h-[120px] resize-y leading-6"
-                }
+                className={inputBase + " min-h-[120px] resize-y leading-6"}
                 placeholder={
                   "Opcjonalnie. Możesz użyć sekcji:\n" +
                   "CO I PO CO / JAK TO ZROBIC / KIEDY UZNAC ZA ZROBIONE / WSKAZOWKI"
                 }
+                disabled={!!saving}
               />
               <FieldError message={fieldErrors?.description} />
 
@@ -232,7 +278,15 @@ export default function TaskCreateEditModal({
 
           {/* footer */}
           <div className="flex items-center justify-end gap-2 border-t border-white/10 p-4">
-            <button type="button" onClick={onClose} className={btnGhost} disabled={!!saving}>
+            <button
+              type="button"
+              onClick={() => {
+                if (saving) return;
+                onClose();
+              }}
+              className={btnGhost}
+              disabled={!!saving}
+            >
               Anuluj
             </button>
 

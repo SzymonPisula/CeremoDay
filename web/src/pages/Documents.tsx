@@ -1,9 +1,10 @@
-// /CeremoDay/web/src/pages/Documents.tsx
+// CeremoDay/web/src/pages/Documents.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { FileText, Loader2, Plus, Trash2, X, AlertTriangle } from "lucide-react";
+import { FileText, Loader2, Plus, Trash2, X } from "lucide-react";
 
 import { api } from "../lib/api";
+import { useUiStore } from "../store/ui";
 import type { Document, DocumentStatus, DocumentType } from "../types/document";
 
 import DocumentStatusInline from "../components/documents/DocumentStatusInline";
@@ -34,21 +35,20 @@ function resolveCeremonyMode(interview: unknown): CeremonyMode {
   return "unknown";
 }
 
-type UiDialog =
-  | { open: false }
-  | {
-      open: true;
-      kind: "confirm" | "info";
-      title: string;
-      message: string;
-      confirmText?: string;
-      cancelText?: string;
-      danger?: boolean;
-      onConfirm?: () => void | Promise<void>;
-    };
+function statusLabel(s: DocumentStatus): string {
+  // Dopasuj do Waszych enumów, ale bezpiecznie:
+  const x = String(s);
+  if (x === "todo") return "Do zrobienia";
+  if (x === "in_progress") return "W trakcie";
+  if (x === "done") return "Ukończone";
+  return x;
+}
 
 export default function Documents() {
   const { id: eventId } = useParams<Params>();
+
+  const toast = useUiStore((s) => s.toast);
+  const confirmAsync = useUiStore((s) => s.confirmAsync);
 
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(false);
@@ -61,7 +61,6 @@ export default function Documents() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [dialog, setDialog] = useState<UiDialog>({ open: false });
 
   const generatedForRef = useRef<Set<CeremonyMode>>(new Set());
 
@@ -69,26 +68,6 @@ export default function Documents() {
     "rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md p-6 shadow-[0_24px_80px_rgba(0,0,0,0.45)]";
   const chip =
     "inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/10 bg-white/5 text-white/80 text-xs";
-
-  const openInfo = (title: string, message: string) => {
-    setDialog({ open: true, kind: "info", title, message, confirmText: "OK" });
-  };
-
-  const openConfirm = (cfg: Omit<Extract<UiDialog, { open: true }>, "open">) => {
-    setDialog({ open: true, ...cfg });
-  };
-
-  const closeDialog = () => setDialog({ open: false });
-
-  // blokada scrolla tła gdy dialog otwarty (żeby zachowywał się jak ten od dokumentu)
-  useEffect(() => {
-    if (!dialog.open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [dialog.open]);
 
   const fetchAll = async (opts?: { allowGenerate?: boolean }) => {
     if (!eventId) return;
@@ -103,7 +82,6 @@ export default function Documents() {
       const docs = await api.getDocuments(eventId);
 
       const allowGenerate = opts?.allowGenerate ?? true;
-
       const ceremonyForApi = mode === "civil" ? "civil" : mode === "concordat" ? "concordat" : null;
 
       const hasSystemForMode =
@@ -118,13 +96,19 @@ export default function Documents() {
         await api.generateDefaultDocuments(eventId, ceremonyForApi, true);
         const after = await api.getDocuments(eventId);
         setDocuments(after);
+
+        toast({
+          tone: "success",
+          title: "Dodano domyślne dokumenty",
+          message: "Lista została odświeżona na podstawie wywiadu.",
+        });
         return;
       }
 
       setDocuments(docs);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Nie udało się wczytać dokumentów.";
-      openInfo("Błąd", msg);
+      toast({ tone: "danger", title: "Błąd", message: msg });
     } finally {
       setLoading(false);
     }
@@ -169,9 +153,15 @@ export default function Documents() {
       setSavingId(doc.id);
       const updated = await api.changeDocumentStatus(doc.id, next);
       setDocuments((prev) => prev.map((d) => (d.id === doc.id ? updated : d)));
+
+      toast({
+        tone: "success",
+        title: "Zmieniono status",
+        message: `„${doc.name}” → ${statusLabel(next)}`,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Nie udało się zmienić statusu.";
-      openInfo("Zanim ukończysz dodaj co najmniej jeden plik", msg);
+      toast({ tone: "danger", title: "Nie udało się zmienić statusu", message: msg });
     } finally {
       setSavingId(null);
     }
@@ -182,38 +172,45 @@ export default function Documents() {
       setSavingId(doc.id);
       const updated = await api.setDocumentPinned(doc.id, toPinned);
       setDocuments((prev) => prev.map((d) => (d.id === doc.id ? updated : d)));
+
+      toast({
+        tone: "success",
+        title: "Zapisano",
+        message: toPinned ? "Przeniesiono do głównych." : "Przeniesiono do dodatkowych.",
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Nie udało się przenieść dokumentu.";
-      openInfo("Nie udało się zapisać", msg);
+      toast({ tone: "danger", title: "Nie udało się zapisać", message: msg });
     } finally {
       setSavingId(null);
     }
   };
 
-  const handleDeleteDoc = (doc: Document) => {
+  const handleDeleteDoc = async (doc: Document) => {
     if (doc.is_system) return;
 
-    openConfirm({
-      kind: "confirm",
+    const ok = await confirmAsync({
       title: "Usunąć dokument?",
-      message: `Dokument "${doc.name}" zostanie trwale usunięty wraz z przypiętymi plikami.`,
+      message: `Dokument „${doc.name}” zostanie trwale usunięty wraz z przypiętymi plikami.`,
       confirmText: "Usuń dokument",
       cancelText: "Anuluj",
-      danger: true,
-      onConfirm: async () => {
-        try {
-          setSavingId(doc.id);
-          await api.deleteDocument(doc.id);
-          setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
-          closeDialog();
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : "Nie udało się usunąć dokumentu.";
-          openInfo("Błąd", msg);
-        } finally {
-          setSavingId(null);
-        }
-      },
+      tone: "danger",
     });
+
+    if (!ok) return;
+
+    try {
+      setSavingId(doc.id);
+      await api.deleteDocument(doc.id);
+      setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+
+      toast({ tone: "success", title: "Usunięto dokument", message: `„${doc.name}”` });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Nie udało się usunąć dokumentu.";
+      toast({ tone: "danger", title: "Błąd", message: msg });
+    } finally {
+      setSavingId(null);
+    }
   };
 
   // -----------------------
@@ -247,7 +244,7 @@ export default function Documents() {
   const submitEdit = async () => {
     if (!editId) return;
     if (!editName.trim()) {
-      openInfo("Brak nazwy", "Wpisz nazwę dokumentu.");
+      toast({ tone: "danger", title: "Brak nazwy", message: "Wpisz nazwę dokumentu." });
       return;
     }
 
@@ -262,9 +259,11 @@ export default function Documents() {
       setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
       setEditOpen(false);
       resetEdit();
+
+      toast({ tone: "success", title: "Zapisano zmiany", message: `„${updated.name}”` });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Nie udało się zapisać zmian.";
-      openInfo("Błąd", msg);
+      toast({ tone: "danger", title: "Błąd", message: msg });
     } finally {
       setSavingId(null);
     }
@@ -285,7 +284,7 @@ export default function Documents() {
   const submitCreate = async () => {
     if (!eventId) return;
     if (!createName.trim()) {
-      openInfo("Brak nazwy", "Wpisz nazwę dokumentu.");
+      toast({ tone: "danger", title: "Brak nazwy", message: "Wpisz nazwę dokumentu." });
       return;
     }
 
@@ -302,9 +301,11 @@ export default function Documents() {
       setDocuments((prev) => [...prev, created]);
       setCreateOpen(false);
       resetCreate();
+
+      toast({ tone: "success", title: "Dodano dokument", message: `„${created.name}”` });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Nie udało się dodać dokumentu.";
-      openInfo("Błąd", msg);
+      toast({ tone: "danger", title: "Błąd", message: msg });
     } finally {
       setSavingId(null);
     }
@@ -313,75 +314,14 @@ export default function Documents() {
   const ceremonyBadge = useMemo(() => {
     if (!interviewLoaded) return null;
     if (ceremony === "civil") return { label: "Ślub cywilny", cls: "bg-white/5 border-white/10 text-white/70" };
-    if (ceremony === "concordat") return { label: "Ślub kościelny", cls: "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white" };
+    if (ceremony === "concordat")
+      return { label: "Ślub kościelny", cls: "bg-[#c8a04b]/15 border-[#c8a04b]/40 text-white" };
     if (ceremony === "reception") return { label: "Samo przyjęcie", cls: "bg-white/5 border-white/10 text-white/70" };
     return { label: "Brak danych z wywiadu", cls: "bg-white/5 border-white/10 text-white/60" };
   }, [ceremony, interviewLoaded]);
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      {/* Dialog (nasz, zamiast window.confirm/alert) */}
-      {dialog.open && (
-        <div className="fixed inset-0 z-[60]">
-          <div className="absolute inset-0 bg-black/60" onClick={closeDialog} />
-          <div className="absolute inset-0 grid place-items-center p-4">
-            <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0b1b14] shadow-[0_30px_120px_rgba(0,0,0,0.55)] overflow-hidden">
-              <div className="flex items-start justify-between gap-4 p-5 border-b border-white/10">
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 h-9 w-9 rounded-xl border border-white/10 bg-white/5 grid place-items-center">
-                    <AlertTriangle className={dialog.kind === "confirm" && dialog.danger ? "w-4 h-4 text-red-200" : "w-4 h-4 text-[#d7b45a]"} />
-                  </div>
-                  <div>
-                    <div className="text-white font-semibold">{dialog.title}</div>
-                    <div className="text-xs text-white/60 mt-1">{dialog.message}</div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={closeDialog}
-                  className="h-9 w-9 rounded-lg border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white"
-                  aria-label="Zamknij"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="p-5 flex items-center justify-end gap-2">
-                {dialog.kind === "confirm" && (
-                  <button
-                    type="button"
-                    onClick={closeDialog}
-                    className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-white/70 hover:text-white"
-                  >
-                    {dialog.cancelText ?? "Anuluj"}
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (dialog.kind === "info") {
-                      closeDialog();
-                      return;
-                    }
-                    if (dialog.onConfirm) await dialog.onConfirm();
-                  }}
-                  className={
-                    "px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-60 " +
-                    (dialog.kind === "confirm" && dialog.danger
-                      ? "border border-red-400/25 bg-red-500/10 text-red-100 hover:bg-red-500/15"
-                      : "bg-gradient-to-r from-[#d7b45a] to-[#b98b2f] text-[#0b1b14]")
-                  }
-                >
-                  {dialog.kind === "info" ? (dialog.confirmText ?? "OK") : (dialog.confirmText ?? "Potwierdź")}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
@@ -495,8 +435,8 @@ export default function Documents() {
 
                     {doc.description && <p className="text-sm text-white/60">{doc.description}</p>}
 
-                    {/* Files */}
-                    <DocumentFilesList documentId={doc.id} />
+                    {/* ✅ Files + toasty w samym komponencie */}
+                    <DocumentFilesList documentId={doc.id} documentName={doc.name ?? "Dokument"} />
                   </div>
 
                   <div className="flex items-center gap-3 shrink-0">
@@ -536,7 +476,7 @@ export default function Documents() {
                         <button
                           type="button"
                           disabled={isSaving}
-                          onClick={() => handleDeleteDoc(doc)}
+                          onClick={() => void handleDeleteDoc(doc)}
                           className="inline-flex items-center gap-2 justify-center px-3 py-1 rounded-lg text-xs font-medium border border-red-400/25 bg-red-500/10 text-red-100 hover:bg-red-500/15"
                           title="Usuń dokument"
                         >
@@ -547,7 +487,9 @@ export default function Documents() {
                     )}
 
                     {!canEditFields && (
-                      <span className="text-[11px] text-white/40 w-28 text-right">Domyślny dokument nie podlega edycji</span>
+                      <span className="text-[11px] text-white/40 w-28 text-right">
+                        Domyślny dokument nie podlega edycji
+                      </span>
                     )}
                   </div>
                 </div>
@@ -682,7 +624,10 @@ export default function Documents() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setEditOpen(false)}
+                  onClick={() => {
+                    setEditOpen(false);
+                    resetEdit();
+                  }}
                   className="h-9 w-9 rounded-lg border border-white/10 bg-white/5 grid place-items-center text-white/70 hover:text-white"
                 >
                   <X className="w-4 h-4" />

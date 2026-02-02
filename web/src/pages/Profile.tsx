@@ -55,9 +55,11 @@ export default function Profile() {
     if (wantsPasswordChange) {
       if (!currentPassword) e.currentPassword = "Podaj aktualne hasło.";
       if (!newPassword) e.newPassword = "Podaj nowe hasło.";
-      if (newPassword && newPassword.length < 6) e.newPassword = "Nowe hasło musi mieć minimum 6 znaków.";
+      if (newPassword && newPassword.length < 6)
+        e.newPassword = "Nowe hasło musi mieć minimum 6 znaków.";
       if (!newPassword2) e.newPassword2 = "Powtórz nowe hasło.";
-      if (newPassword && newPassword2 && newPassword !== newPassword2) e.newPassword2 = "Hasła nie są takie same.";
+      if (newPassword && newPassword2 && newPassword !== newPassword2)
+        e.newPassword2 = "Hasła nie są takie same.";
     }
 
     return e;
@@ -167,7 +169,9 @@ export default function Profile() {
                   placeholder="Np. Szymon"
                   leftIcon={<User2 className="w-4 h-4" />}
                 />
-                {errors.name ? <div className="mt-1 text-xs text-red-200">{errors.name}</div> : null}
+                {errors.name ? (
+                  <div className="mt-1 text-xs text-red-200">{errors.name}</div>
+                ) : null}
               </Field>
 
               <Field label="Email">
@@ -181,11 +185,15 @@ export default function Profile() {
                   placeholder="np. mail@domena.pl"
                   leftIcon={<AtSign className="w-4 h-4" />}
                 />
-                {errors.email ? <div className="mt-1 text-xs text-red-200">{errors.email}</div> : null}
+                {errors.email ? (
+                  <div className="mt-1 text-xs text-red-200">{errors.email}</div>
+                ) : null}
               </Field>
 
               <div className="md:col-span-2">
-                <div className="mb-2 text-sm font-semibold text-white">Zmiana hasła (opcjonalnie)</div>
+                <div className="mb-2 text-sm font-semibold text-white">
+                  Zmiana hasła (opcjonalnie)
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Field label="Aktualne hasło">
                     <Input
@@ -200,7 +208,9 @@ export default function Profile() {
                       leftIcon={<LockKeyhole className="w-4 h-4" />}
                     />
                     {errors.currentPassword ? (
-                      <div className="mt-1 text-xs text-red-200">{errors.currentPassword}</div>
+                      <div className="mt-1 text-xs text-red-200">
+                        {errors.currentPassword}
+                      </div>
                     ) : null}
                   </Field>
 
@@ -216,7 +226,9 @@ export default function Profile() {
                       placeholder="min. 6 znaków"
                       leftIcon={<LockKeyhole className="w-4 h-4" />}
                     />
-                    {errors.newPassword ? <div className="mt-1 text-xs text-red-200">{errors.newPassword}</div> : null}
+                    {errors.newPassword ? (
+                      <div className="mt-1 text-xs text-red-200">{errors.newPassword}</div>
+                    ) : null}
                   </Field>
 
                   <Field label="Powtórz nowe hasło">

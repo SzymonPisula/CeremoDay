@@ -1,3 +1,4 @@
+// CeremoDay/web/src/pages/Dashboard.tsx
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -38,8 +39,8 @@ interface JoinEventBody {
 
 interface JoinEventResponse {
   success?: boolean;
-  event?: Event;
-  status?: EventStatus;
+  event?: Partial<Event> | Event;
+  status?: EventStatus | string;
 }
 
 function StatusBadge({ status }: { status: EventStatus }) {
@@ -56,7 +57,11 @@ interface ApiErrorShape {
   message?: string;
 }
 
-function RoleBadge({ role }: { role: EventRole }) {
+/**
+ * ✅ Bezpieczny badge roli:
+ * - jeśli backend zwróci event bez role (po join), UI nie może się wywalić.
+ */
+function RoleBadge({ role }: { role: EventRole | undefined | null }) {
   const map: Record<EventRole, { label: string; className: string }> = {
     owner: {
       label: "Właściciel",
@@ -70,7 +75,16 @@ function RoleBadge({ role }: { role: EventRole }) {
     },
   };
 
-  const cfg = map[role];
+  const cfg = role ? map[role] : null;
+
+  if (!cfg) {
+    return (
+      <span className="inline-flex items-center rounded-full border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.06)] px-3 py-1 text-xs font-medium tracking-wide text-[rgba(245,246,248,0.86)]">
+        Uczestnik
+      </span>
+    );
+  }
+
   return (
     <span
       className={
@@ -81,6 +95,67 @@ function RoleBadge({ role }: { role: EventRole }) {
       {cfg.label}
     </span>
   );
+}
+
+/**
+ * ✅ Status bywa: "pending" / "PENDING" / "active" / "ACTIVE" itd.
+ */
+function normalizeStatus(input: unknown): EventStatus | undefined {
+  if (typeof input !== "string") return undefined;
+  const s = input.trim().toLowerCase();
+  if (s === "pending") return "pending";
+  if (s === "active") return "active";
+  if (s === "removed") return "removed";
+  return undefined;
+}
+
+/**
+ * ✅ Normalizacja eventu (lista z API też bywa niepełna)
+ */
+function normalizeEvent(input: unknown): Event {
+  const ev = (input ?? {}) as Partial<Event>;
+
+  return {
+    id: String(ev.id ?? ""),
+    name: String(ev.name ?? "Wydarzenie"),
+    access_code: String(ev.access_code ?? ""),
+    created_by_me: Boolean(ev.created_by_me ?? false),
+    role: (ev.role as EventRole) ?? "coorganizer",
+    status: normalizeStatus(ev.status),
+  };
+}
+
+/**
+ * ✅ Normalizacja eventu po join:
+ * - backend czasem zwraca event bez role/status
+ * - tu gwarantujemy stabilny shape do UI
+ */
+function normalizeJoinedEvent(input: Partial<Event> | Event, statusFromApi?: unknown): Event {
+  const base = normalizeEvent(input);
+  const status = normalizeStatus(statusFromApi) ?? base.status;
+
+  return {
+    ...base,
+    role: base.role ?? "coorganizer",
+    status,
+  };
+}
+
+/**
+ * ✅ getEvents() bywa: Event[] albo {events: Event[]} albo {data: Event[]}
+ */
+function unwrapEventsResponse(data: unknown): unknown[] {
+  if (Array.isArray(data)) return data;
+
+  if (data && typeof data === "object") {
+    const obj = data as Record<string, unknown>;
+
+    if (Array.isArray(obj.events)) return obj.events;
+    if (Array.isArray(obj.data)) return obj.data;
+    if (Array.isArray(obj.items)) return obj.items;
+  }
+
+  return [];
 }
 
 export default function Dashboard() {
@@ -108,9 +183,12 @@ export default function Dashboard() {
     if (!token) return;
     setLoading(true);
     setError(null);
+
     try {
-      const data = (await api.getEvents()) as Event[];
-      setEvents(data);
+      const raw = await api.getEvents();
+      const list = unwrapEventsResponse(raw).map(normalizeEvent).filter((e) => !!e.id);
+
+      setEvents(list);
     } catch (err: unknown) {
       console.error(err);
       const apiError = err as ApiErrorShape;
@@ -127,7 +205,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!token) return;
-    refreshEvents();
+    void refreshEvents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -150,19 +228,23 @@ export default function Dashboard() {
 
       const response = (await api.createEvent(body)) as CreateEventResponse | Event;
 
-      const created =
+      const createdRaw =
         typeof response === "object" && response !== null && "event" in response && response.event
-          ? ((response as CreateEventResponse).event as Event)
+          ? (response as CreateEventResponse).event
           : (response as Event);
 
-      setEvents((prev) => [...prev, created]);
+      const created = normalizeEvent(createdRaw);
+
+      setEvents((prev) => {
+        if (prev.some((ev) => ev.id === created.id)) return prev;
+        return [...prev, created];
+      });
 
       setNewEventName("");
       setNewEventDate("");
       setNewEventLocation("");
       setSuccessMessage("Wydarzenie zostało utworzone.");
 
-      // ✅ KLUCZ: od razu wchodzimy do wydarzenia (a tam odpali się wywiad / panel)
       navigate(`/event/${created.id}`, { replace: true });
     } catch (err: unknown) {
       console.error(err);
@@ -184,33 +266,35 @@ export default function Dashboard() {
       const response = (await api.joinEvent(body)) as JoinEventResponse | Event;
 
       const wrapped = typeof response === "object" && response !== null && "event" in response;
-      const joined = wrapped && (response as JoinEventResponse).event
-        ? ((response as JoinEventResponse).event as Event)
-        : (response as Event);
-
-      // Jeśli backend zwrócił status (np. "pending") – dopinamy go do obiektu eventu
       const statusFromApi = wrapped ? (response as JoinEventResponse).status : undefined;
-      if (statusFromApi) {
-        joined.status = statusFromApi;
-      }
+
+      const rawEvent =
+        wrapped && (response as JoinEventResponse).event
+          ? (response as JoinEventResponse).event
+          : (response as Event);
+
+      const joined = normalizeJoinedEvent(rawEvent as Partial<Event> | Event, statusFromApi);
 
       setEvents((prev) => {
         if (prev.some((ev) => ev.id === joined.id)) return prev;
         return [...prev, joined];
       });
 
-      // ✅ od razu dociągnij pełną listę z API (eliminuje "pusty ekran" po dołączeniu)
+      // dociągnij spójne dane (role/statusy z listy)
       await refreshEvents();
 
       setJoinCode("");
-      if (joined.status === "pending") {
-        setSuccessMessage("Wysłano prośbę o dołączenie. Czekasz na akceptację właściciela.");
-        // Nie wchodzimy do panelu, dopóki nie będzie aktywne
-      } else {
-        setSuccessMessage("Dołączono do wydarzenia.");
-        // ✅ UX: po dołączeniu od razu wchodzimy do panelu
-        navigate(`/event/${joined.id}`, { replace: true });
+
+      // ✅ Nie wchodzimy, jeśli pending albo status nieznany (bezpiecznie)
+      if (joined.status !== "active") {
+        setSuccessMessage(
+          "Wysłano prośbę o dołączenie. Czekasz na akceptację właściciela (lub odśwież listę wydarzeń)."
+        );
+        return;
       }
+
+      setSuccessMessage("Dołączono do wydarzenia.");
+      navigate(`/event/${joined.id}`, { replace: true });
     } catch (err: unknown) {
       console.error(err);
       const apiError = err as ApiErrorShape;
@@ -250,9 +334,7 @@ export default function Dashboard() {
           <h2 className="text-xl font-semibold tracking-tight text-[rgba(245,246,248,0.94)]">
             Twoje wydarzenia
           </h2>
-          {loading ? (
-            <div className="text-sm text-[rgba(245,246,248,0.60)]">Ładuję…</div>
-          ) : null}
+          {loading ? <div className="text-sm text-[rgba(245,246,248,0.60)]">Ładuję…</div> : null}
         </div>
 
         {events.length === 0 ? (
@@ -265,60 +347,58 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {events.map((ev) => {
               const isPending = ev.status === "pending" && !ev.created_by_me;
+
               return (
-              <Card
-                key={ev.id}
-                className={
-                  "p-6 sm:p-7 transition-[transform,filter] duration-200 flex flex-col min-h-[178px] " +
-                  (isPending
-                    ? "cursor-not-allowed opacity-90"
-                    : "cursor-pointer hover:brightness-105 hover:-translate-y-[1px]")
-                }
-                onClick={() => {
-                  if (isPending) return;
-                  navigate(`/event/${ev.id}`);
-                }}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="text-xs font-medium tracking-wide text-[rgba(245,246,248,0.60)]">
-                      Wydarzenie
-                    </div>
-
-                    {/* ✅ 2 linie zamiast ucinania */}
-                    <div
-                      className="mt-2 text-xl font-semibold tracking-tight text-[rgba(245,246,248,0.96)] line-clamp-2"
-                      title={ev.name}
-                    >
-                      {ev.name}
-                    </div>
-
-                    {ev.role === "owner" ? (
-                      <div className="mt-3 text-sm text-[rgba(245,246,248,0.66)]">
-                        Kod dostępu:{" "}
-                        <span className="text-[rgba(246,226,122,0.92)]">{ev.access_code}</span>
+                <Card
+                  key={ev.id}
+                  className={
+                    "p-6 sm:p-7 transition-[transform,filter] duration-200 flex flex-col min-h-[178px] " +
+                    (isPending
+                      ? "cursor-not-allowed opacity-90"
+                      : "cursor-pointer hover:brightness-105 hover:-translate-y-[1px]")
+                  }
+                  onClick={() => {
+                    if (isPending) return;
+                    navigate(`/event/${ev.id}`);
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium tracking-wide text-[rgba(245,246,248,0.60)]">
+                        Wydarzenie
                       </div>
-                    ) : null}
 
+                      <div
+                        className="mt-2 text-xl font-semibold tracking-tight text-[rgba(245,246,248,0.96)] line-clamp-2"
+                        title={ev.name}
+                      >
+                        {ev.name}
+                      </div>
+
+                      {ev.role === "owner" ? (
+                        <div className="mt-3 text-sm text-[rgba(245,246,248,0.66)]">
+                          Kod dostępu:{" "}
+                          <span className="text-[rgba(246,226,122,0.92)]">{ev.access_code}</span>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="flex flex-col items-end gap-2">
+                      <RoleBadge role={ev.role} />
+                      {ev.status ? <StatusBadge status={ev.status} /> : null}
+                    </div>
                   </div>
 
-                  <div className="flex flex-col items-end gap-2">
-                    <RoleBadge role={ev.role} />
-                    {ev.status ? <StatusBadge status={ev.status} /> : null}
+                  <div className="mt-auto pt-6 flex items-center justify-between">
+                    <div className="text-xs text-[rgba(245,246,248,0.55)]">
+                      {isPending ? "Oczekuje na akceptację właściciela" : "Kliknij, aby otworzyć panel"}
+                    </div>
+                    <div className="text-sm font-medium text-[rgba(246,226,122,0.92)]">
+                      {isPending ? "—" : "Otwórz →"}
+                    </div>
                   </div>
-                </div>
-
-                {/* ✅ stopka zawsze na dole */}
-                <div className="mt-auto pt-6 flex items-center justify-between">
-                  <div className="text-xs text-[rgba(245,246,248,0.55)]">
-                    {isPending ? "Oczekuje na akceptację właściciela" : "Kliknij, aby otworzyć panel"}
-                  </div>
-                  <div className="text-sm font-medium text-[rgba(246,226,122,0.92)]">
-                    {isPending ? "—" : "Otwórz →"}
-                  </div>
-                </div>
-              </Card>
-            );
+                </Card>
+              );
             })}
           </div>
         )}

@@ -28,16 +28,11 @@ const ORDER: TaskStatus[] = ["pending", "in_progress", "done"];
 function getOptions(current: TaskStatus, forwardOnly?: boolean): TaskStatus[] {
   if (!forwardOnly) return ORDER;
   const idx = ORDER.indexOf(current);
-  return idx === -1 ? ORDER : ORDER.slice(idx);
+  if (idx === -1) return ORDER;
+  return ORDER.slice(idx);
 }
 
-export default function TaskStatusInline({
-  value,
-  onChange,
-  disabled,
-  isSaving,
-  forwardOnly,
-}: Props) {
+export default function TaskStatusInline({ value, onChange, disabled, isSaving, forwardOnly }: Props) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -55,7 +50,7 @@ export default function TaskStatusInline({
   }, [open]);
 
   const options = getOptions(value, forwardOnly);
-  const canChange = options.length > 1; // są statusy "do przodu"
+  const canChange = options.length > 1;
   const isEffectivelyDisabled = !!disabled || !!isSaving || !canChange;
 
   const tooltipText = STATUS_HELP[value];
@@ -65,8 +60,8 @@ export default function TaskStatusInline({
     (value === "done"
       ? "bg-emerald-500/15 border-emerald-400/40 text-emerald-200"
       : value === "in_progress"
-      ? "bg-amber-500/15 border-amber-400/40 text-amber-200"
-      : "bg-white/5 border-white/10 text-white/70") +
+        ? "bg-amber-500/15 border-amber-400/40 text-amber-200"
+        : "bg-white/5 border-white/10 text-white/70") +
     (isEffectivelyDisabled ? " opacity-60 cursor-not-allowed" : " hover:bg-white/10");
 
   return (
@@ -83,7 +78,7 @@ export default function TaskStatusInline({
         {canChange && <ChevronDown className="w-3 h-3 opacity-60" />}
       </button>
 
-      {/* Tooltip (jak w Dokumentach) */}
+      {/* Tooltip */}
       {!open && (
         <div
           className="
@@ -106,7 +101,7 @@ export default function TaskStatusInline({
             group-hover:scale-100
             transition
             whitespace-nowrap
-            z-50
+            z-[60]
           "
         >
           {tooltipText}
@@ -114,7 +109,7 @@ export default function TaskStatusInline({
       )}
 
       {open && !isEffectivelyDisabled && (
-        <div className="absolute right-0 z-20 mt-2 rounded-xl border border-white/10 bg-[#0b1b14] shadow-xl overflow-hidden min-w-[160px]">
+        <div className="absolute right-0 z-[70] mt-2 rounded-xl border border-white/10 bg-[#0b1b14] shadow-xl overflow-hidden min-w-[160px]">
           {options
             .filter((s) => s !== value)
             .map((s) => (
