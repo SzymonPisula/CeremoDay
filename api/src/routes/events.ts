@@ -26,6 +26,20 @@ import { WeddingDayContact } from "../models/WeddingDayContact";
 
 
 const router = Router();
+function paramString(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : undefined;
+  return undefined;
+}
+
+function requireParam(res: Response, value: unknown, label: string): string | null {
+  const v = paramString(value);
+  if (!v) {
+    res.status(400).json({ message: `Brak ${label}` });
+    return null;
+  }
+  return v;
+}
 
 /**
  * POST /events
@@ -235,7 +249,10 @@ router.post("/join", authMiddleware, validateBody(eventJoinSchema), async (req: 
 });
 
 router.get("/:id", async (req, res) => {
-  const event = await Event.findByPk(req.params.id);
+const eventId = requireParam(res, req.params.id, "id wydarzenia");
+if (!eventId) return;
+
+const event = await Event.findByPk(eventId);
   if (!event) return res.status(404).json({ message: "Event not found" });
   return res.json(event);
 });
@@ -458,7 +475,7 @@ router.patch(
 );
 
 router.get("/:id/wedding-day", authMiddleware, async (req: AuthRequest, res) => {
-  const eventId = req.params.id;
+  const eventId = paramString(req.params.id) ?? "";
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
 
   const member = await requireActiveMember(eventId, req.userId);
@@ -478,7 +495,7 @@ router.post(
   authMiddleware,
   validateBody(weddingDayScheduleCreateSchema),
   async (req: AuthRequest, res) => {
-  const eventId = req.params.id;
+  const eventId = paramString(req.params.id) ?? "";
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
 
   const member = await requireActiveMember(eventId, req.userId);
@@ -504,8 +521,8 @@ router.patch(
   authMiddleware,
   validateBody(weddingDayScheduleUpdateSchema),
   async (req: AuthRequest, res) => {
-  const eventId = req.params.id;
-  const itemId = req.params.itemId;
+  const eventId = paramString(req.params.id) ?? "";
+  const itemId = paramString(req.params.itemId) ?? "";
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
 
   const member = await requireActiveMember(eventId, req.userId);
@@ -527,8 +544,8 @@ router.patch(
 });
 
 router.delete("/:id/wedding-day/schedule/:itemId", authMiddleware, async (req: AuthRequest, res) => {
-  const eventId = req.params.id;
-  const itemId = req.params.itemId;
+  const eventId = paramString(req.params.id) ?? "";
+  const itemId = paramString(req.params.itemId) ?? "";
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
 
   const member = await requireActiveMember(eventId, req.userId);
@@ -550,7 +567,7 @@ router.post(
   authMiddleware,
   validateBody(weddingDayChecklistCreateSchema),
   async (req: AuthRequest, res) => {
-  const eventId = req.params.id;
+  const eventId = paramString(req.params.id) ?? "";
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
 
   const member = await requireActiveMember(eventId, req.userId);
@@ -574,8 +591,8 @@ router.patch(
   authMiddleware,
   validateBody(weddingDayChecklistUpdateSchema),
   async (req: AuthRequest, res) => {
-  const eventId = req.params.id;
-  const itemId = req.params.itemId;
+  const eventId = paramString(req.params.id) ?? "";
+  const itemId = paramString(req.params.itemId) ?? "";
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
 
   const member = await requireActiveMember(eventId, req.userId);
@@ -595,8 +612,8 @@ router.patch(
 });
 
 router.delete("/:id/wedding-day/checklist/:itemId", authMiddleware, async (req: AuthRequest, res) => {
-  const eventId = req.params.id;
-  const itemId = req.params.itemId;
+  const eventId = paramString(req.params.id) ?? "";
+  const itemId = paramString(req.params.itemId) ?? "";
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
 
   const member = await requireActiveMember(eventId, req.userId);
@@ -611,7 +628,7 @@ router.post(
   authMiddleware,
   validateBody(weddingDayContactCreateSchema),
   async (req: AuthRequest, res) => {
-  const eventId = req.params.id;
+  const eventId = paramString(req.params.id) ?? "";
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
 
   const member = await requireActiveMember(eventId, req.userId);
@@ -636,8 +653,8 @@ router.patch(
   authMiddleware,
   validateBody(weddingDayContactUpdateSchema),
   async (req: AuthRequest, res) => {
-  const eventId = req.params.id;
-  const contactId = req.params.contactId;
+  const eventId = paramString(req.params.id) ?? "";
+  const contactId = paramString(req.params.contactId) ?? "";
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
 
   const member = await requireActiveMember(eventId, req.userId);
@@ -658,8 +675,8 @@ router.patch(
 });
 
 router.delete("/:id/wedding-day/contacts/:contactId", authMiddleware, async (req: AuthRequest, res) => {
-  const eventId = req.params.id;
-  const contactId = req.params.contactId;
+  const eventId = paramString(req.params.id) ?? "";
+  const contactId = paramString(req.params.contactId) ?? "";
   if (!req.userId) return res.status(401).json({ message: "Brak autoryzacji" });
 
   const member = await requireActiveMember(eventId, req.userId);
@@ -672,7 +689,7 @@ router.delete("/:id/wedding-day/contacts/:contactId", authMiddleware, async (req
 // POST /events/:id/leave  — użytkownik opuszcza wydarzenie (status=removed)
 router.post("/:id/leave", authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const eventId = req.params.id;
+    const eventId = paramString(req.params.id) ?? "";
 // CeremoDay/api/src/routes/events.ts
 const userId =
   // najczęstsze warianty w projektach

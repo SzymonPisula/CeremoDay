@@ -1,13 +1,33 @@
-import { Model, DataTypes } from "sequelize";
+import { DataTypes, Model, Optional } from "sequelize";
 import { sequelize } from "../config/database";
 import { Event } from "./Event";
 import { User } from "./User";
 
-export class EventUser extends Model {
-  public event_id!: string;
-  public user_id!: string;
-  public role!: "owner" | "coorganizer";
-  public status!: "pending" | "active" | "removed";
+export type EventUserRole = "owner" | "coorganizer";
+export type EventUserStatus = "pending" | "active" | "removed";
+
+export interface EventUserAttributes {
+  event_id: string;
+  user_id: string;
+  role: EventUserRole;
+  status: EventUserStatus;
+}
+
+export type EventUserCreationAttributes = Optional<EventUserAttributes, "status" | "role">;
+
+/**
+ * WAŻNE:
+ * Używamy `declare` zamiast `public ...!:`, żeby NIE shadowować getterów Sequelize.
+ * Shadowing powoduje "losowe" undefined np. na `user_id`, mimo że rekord istnieje w DB.
+ */
+export class EventUser
+  extends Model<EventUserAttributes, EventUserCreationAttributes>
+  implements EventUserAttributes
+{
+  declare event_id: string;
+  declare user_id: string;
+  declare role: EventUserRole;
+  declare status: EventUserStatus;
 }
 
 EventUser.init(

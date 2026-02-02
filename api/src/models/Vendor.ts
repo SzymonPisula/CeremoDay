@@ -62,34 +62,34 @@ export class Vendor
   extends Model<VendorAttributes, VendorCreationAttributes>
   implements VendorAttributes
 {
-  public id!: string;
-  public event_id!: string;
+  declare id: string;
+  declare event_id: string;
 
-  public name!: string;
-  public type!: string | null;
+  declare name: string;
+  declare type: string | null;
 
-  public address!: string | null;
-  public phone!: string | null;
-  public email!: string | null;
-  public website!: string | null;
-  public google_maps_url!: string | null;
+  declare address: string | null;
+  declare phone: string | null;
+  declare email: string | null;
+  declare website: string | null;
+  declare google_maps_url: string | null;
 
-  public notes!: string | null;
+  declare notes: string | null;
 
-  public county!: string | null;
-  public max_participants!: number | null;
-  public equipment!: string | null;
-  public pricing!: string | null;
-  public rental_info!: string | null;
-  public commune_office!: string | null;
-  public rural_type!: string | null;
-  public usable_area!: number | null;
+  declare county: string | null;
+  declare max_participants: number | null;
+  declare equipment: string | null;
+  declare pricing: string | null;
+  declare rental_info: string | null;
+  declare commune_office: string | null;
+  declare rural_type: string | null;
+  declare usable_area: number | null;
 
-  public lat!: number | null;
-  public lng!: number | null;
+  declare lat: number | null;
+  declare lng: number | null;
 
-  public readonly created_at!: Date;
-  public readonly updated_at!: Date;
+  declare created_at: Date;
+  declare updated_at: Date;
 }
 
 Vendor.init(

@@ -2,6 +2,7 @@ import type { Response } from "express";
 import type { AuthRequest } from "../middleware/auth";
 import { EventUser } from "../models/EventUser";
 import { runGeneration } from "../services/generation/runGeneration";
+import { paramString } from "../utils/http";
 
 /**
  * Bezpieczne pobranie userId z requesta — różne wersje auth middleware
@@ -31,7 +32,7 @@ async function requireActiveMember(eventId: string, userId: string) {
 }
 
 export async function generateForEvent(req: AuthRequest, res: Response) {
-  const eventId = req.params.id;
+  const eventId = paramString(req, "id");
 
   const userId = getAuthUserId(req);
   if (!userId) {

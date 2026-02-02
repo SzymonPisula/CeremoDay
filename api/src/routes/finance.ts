@@ -9,6 +9,7 @@ import Budget from "../models/Budget";
 import Expense from "../models/Expense";
 import { requireActiveMemberForModel } from "../middleware/requireActiveMemberForModel";
 import * as XLSX from "xlsx";
+import { paramString } from "../utils/http";
 
 const router = Router();
 
@@ -68,7 +69,7 @@ router.get(
   requireActiveMember("eventId"),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { eventId } = req.params;
+      const eventId = paramString(req, "eventId");
 
       const budget = await Budget.findOne({
         where: { event_id: eventId },
@@ -90,7 +91,7 @@ router.post(
   validateBody(budgetUpdateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { eventId } = req.params;
+      const eventId = paramString(req, "eventId");
 
       const {
         initial_budget,
@@ -132,7 +133,7 @@ router.get(
   requireActiveMember("eventId"),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { eventId } = req.params;
+      const eventId = paramString(req, "eventId");
 
       const expenses = await Expense.findAll({
         where: { event_id: eventId },
@@ -185,7 +186,7 @@ router.get(
   requireActiveMember("eventId"),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { eventId } = req.params;
+      const eventId = paramString(req, "eventId");
 
       const expenses = await Expense.findAll({
         where: { event_id: eventId },
@@ -208,7 +209,7 @@ router.post(
   validateBody(expenseCreateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { eventId } = req.params;
+      const eventId = paramString(req, "eventId");
 
       const body = req.body as {
         name: string;
@@ -355,7 +356,7 @@ router.get(
   requireActiveMember("eventId"),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { eventId } = req.params;
+      const eventId = paramString(req, "eventId");
 
       const [budgetRow, expenseRows] = await Promise.all([
         Budget.findOne({ where: { event_id: eventId } }),

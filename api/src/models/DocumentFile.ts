@@ -36,22 +36,27 @@ export class DocumentFile
   extends Model<DocumentFileAttributes, DocumentFileCreationAttributes>
   implements DocumentFileAttributes
 {
-  public id!: string;
-  public event_id!: string;
-  public document_id!: string;
-  public user_id!: string;
+  /**
+   * WAŻNE:
+   * Używamy `declare` zamiast `public ...!:`, żeby NIE shadowować getterów Sequelize.
+   * Shadowing potrafi dawać "losowe" undefined (np. `user_id`) i ucinać funkcjonalności.
+   */
+  declare id: string;
+  declare event_id: string;
+  declare document_id: string;
+  declare user_id: string;
 
-  public storage_location!: StorageLocation;
-  public storage_key!: string | null;
+  declare storage_location: StorageLocation;
+  declare storage_key: string | null;
 
-  public original_name!: string;
-  public mime_type!: string;
-  public size!: number;
+  declare original_name: string;
+  declare mime_type: string;
+  declare size: number;
 
-  public person!: FilePerson | null;
+  declare person: FilePerson | null;
 
-  public readonly created_at!: Date;
-  public readonly updated_at!: Date;
+  declare created_at: Date;
+  declare updated_at: Date;
 }
 
 DocumentFile.init(

@@ -47,20 +47,20 @@ export class InspirationItem
   extends Model<InspirationItemAttributes, InspirationItemCreationAttributes>
   implements InspirationItemAttributes
 {
-  public id!: string;
-  public board_id!: string;
+  declare id: string;
+  declare board_id: string;
 
-  public title!: string;
-  public description!: string | null;
+  declare title: string;
+  declare description: string | null;
 
-  public category!: InspirationCategory | null;
-  public tags!: string | null;
+  declare category: InspirationCategory | null;
+  declare tags: string | null;
 
-  public image_url!: string | null;
-  public source_url!: string | null;
+  declare image_url: string | null;
+  declare source_url: string | null;
 
-  public readonly created_at!: Date;
-  public readonly updated_at!: Date;
+  declare created_at: Date;
+  declare updated_at: Date;
 }
 
 InspirationItem.init(

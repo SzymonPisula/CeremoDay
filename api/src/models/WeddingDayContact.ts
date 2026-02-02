@@ -18,17 +18,17 @@ type Attrs = {
 type Creation = Optional<Attrs, "id" | "role" | "phone" | "email" | "note" | "created_at" | "updated_at">;
 
 export class WeddingDayContact extends Model<Attrs, Creation> implements Attrs {
-  public id!: string;
-  public event_id!: string;
+  declare id: string;
+  declare event_id: string;
 
-  public name!: string;
-  public role?: string | null;
-  public phone?: string | null;
-  public email?: string | null;
-  public note?: string | null;
+  declare name: string;
+  declare role?: string | null;
+  declare phone?: string | null;
+  declare email?: string | null;
+  declare note?: string | null;
 
-  public readonly created_at?: Date;
-  public readonly updated_at?: Date;
+  declare created_at?: Date;
+  declare updated_at?: Date;
 }
 
 WeddingDayContact.init(

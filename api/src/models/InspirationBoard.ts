@@ -30,17 +30,17 @@ export class InspirationBoard
   extends Model<InspirationBoardAttributes, InspirationBoardCreationAttributes>
   implements InspirationBoardAttributes
 {
-  public id!: string;
-  public event_id!: string;
+  declare id: string;
+  declare event_id: string;
 
-  public name!: string;
-  public description!: string | null;
+  declare name: string;
+  declare description: string | null;
 
-  public color!: string | null;
-  public emoji!: string | null;
+  declare color: string | null;
+  declare emoji: string | null;
 
-  public readonly created_at!: Date;
-  public readonly updated_at!: Date;
+  declare created_at: Date;
+  declare updated_at: Date;
 }
 
 InspirationBoard.init(

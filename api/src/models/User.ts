@@ -21,16 +21,25 @@ export type UserCreationAttributes = Optional<
   "id" | "name" | "role" | "created_at" | "updated_at"
 >;
 
-export class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
-  public id!: string;
-  public email!: string;
-  public password_hash!: string;
-  public name!: string | null;
+/**
+ * WAŻNE (Docker + Sequelize):
+ * Nie używamy "public class fields" (public id!: ...), bo one potrafią
+ * shadowować gettery/settery Sequelize i dawać undefined na atrybutach.
+ * Używamy "declare", żeby TS znał typy, ale runtime nie tworzył pól.
+ */
+export class User
+  extends Model<UserAttributes, UserCreationAttributes>
+  implements UserAttributes
+{
+  declare id: string;
+  declare email: string;
+  declare password_hash: string;
+  declare name: string | null;
 
-  public role!: UserRole;
+  declare role: UserRole;
 
-  public readonly created_at!: Date;
-  public readonly updated_at!: Date;
+  declare created_at: Date;
+  declare updated_at: Date;
 }
 
 User.init(
@@ -49,5 +58,9 @@ User.init(
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
   },
-  { sequelize, tableName: "users", timestamps: true }
+  {
+    sequelize,
+    tableName: "users",
+    timestamps: true,
+  }
 );

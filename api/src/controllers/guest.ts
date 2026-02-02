@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { Op } from "sequelize";
 import { Guest } from "../models/Guest";
 import { sequelize } from "../config/database";
+import { paramString } from "../utils/http";
 
 type ImportItem = {
   type: "guest" | "subguest";
@@ -39,7 +40,7 @@ const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 
 export const getGuests = async (req: Request, res: Response) => {
   try {
-    const { eventId } = req.params;
+    const eventId = paramString(req, "eventId");
     const guests = await Guest.findAll({
       where: { event_id: eventId, parent_guest_id: null },
       include: [{ model: Guest, as: "SubGuests" }],
@@ -63,7 +64,8 @@ export const createGuest = async (req: Request, res: Response) => {
 
 export const updateGuest = async (req: Request, res: Response) => {
   try {
-    const guest = await Guest.findByPk(req.params.id);
+    const id = paramString(req, "id");
+    const guest = await Guest.findByPk(id);
     if (!guest) return res.status(404).json({ message: "Nie znaleziono gościa" });
     await guest.update(req.body);
     res.json(guest);
@@ -75,7 +77,8 @@ export const updateGuest = async (req: Request, res: Response) => {
 
 export const deleteGuest = async (req: Request, res: Response) => {
   try {
-    const guest = await Guest.findByPk(req.params.id);
+    const id = paramString(req, "id");
+    const guest = await Guest.findByPk(id);
     if (!guest) return res.status(404).json({ message: "Nie znaleziono gościa" });
     await guest.destroy();
     res.json({ success: true });
@@ -86,7 +89,7 @@ export const deleteGuest = async (req: Request, res: Response) => {
 };
 
 export async function importGuests(req: Request, res: Response) {
-  const { eventId } = req.params;
+  const eventId = paramString(req, "eventId");
   const items = (req.body?.items ?? []) as ImportItem[];
 
   if (!eventId) return res.status(400).json({ success: false, message: "Brak eventId" });

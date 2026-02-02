@@ -27,14 +27,14 @@ export class Budget
   extends Model<BudgetAttributes, BudgetCreationAttributes>
   implements BudgetAttributes
 {
-  public id!: string;
-  public event_id!: string;
-  public initial_budget!: number | null;
-  public currency!: string;
-  public notes!: string | null;
+  declare id: string;
+  declare event_id: string;
+  declare initial_budget: number | null;
+  declare currency: string;
+  declare notes: string | null;
 
-  public readonly created_at!: Date;
-  public readonly updated_at!: Date;
+  declare created_at: Date;
+  declare updated_at: Date;
 }
 
 Budget.init(

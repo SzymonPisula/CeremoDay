@@ -5,9 +5,7 @@ const router = express.Router();
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 
-if (!GOOGLE_API_KEY) {
-  console.warn("⚠️ GOOGLE_API_KEY nie jest ustawiony w środowisku!");
-}
+
 
 router.get("/places", async (req, res) => {
   const { location, radius, type } = req.query;

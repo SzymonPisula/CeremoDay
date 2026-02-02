@@ -2,18 +2,18 @@ import { DataTypes, Model } from "sequelize";
 import { sequelize } from "../config/database";
 
 export class Guest extends Model {
-  public id!: string;
-  public event_id!: string;
-  public parent_guest_id?: string;
-  public first_name?: string;
-  public last_name?: string;
-  public phone?: string;
-  public email?: string;
-  public relation?: string;
-  public side?: string;
-  public rsvp?: string;
-  public allergens?: string;
-  public notes?: string;
+  declare id: string;
+  declare event_id: string;
+  declare parent_guest_id?: string;
+  declare first_name?: string;
+  declare last_name?: string;
+  declare phone?: string;
+  declare email?: string;
+  declare relation?: string;
+  declare side?: string;
+  declare rsvp?: string;
+  declare allergens?: string;
+  declare notes?: string;
 }
 
 Guest.init(

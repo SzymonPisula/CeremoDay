@@ -52,27 +52,27 @@ export class RuralVenue
   extends Model<RuralVenueAttributes, RuralVenueCreationAttributes>
   implements RuralVenueAttributes
 {
-  public id!: string;
+  declare id: string;
 
-  public commune_office!: string;
-  public name!: string;
-  public address!: string;
-  public type!: string | null;
+  declare commune_office: string;
+  declare name: string;
+  declare address: string;
+  declare type: string | null;
 
-  public usable_area!: string | null;
-  public max_participants!: number | null;
+  declare usable_area: string | null;
+  declare max_participants: number | null;
 
-  public equipment!: string | null;
-  public rental_info!: string | null;
-  public pricing!: string | null;
-  public county!: string | null;
-  public notes!: string | null;
+  declare equipment: string | null;
+  declare rental_info: string | null;
+  declare pricing: string | null;
+  declare county: string | null;
+  declare notes: string | null;
 
-  public lat!: number | null;
-  public lng!: number | null;
+  declare lat: number | null;
+  declare lng: number | null;
 
-  public readonly created_at!: Date;
-  public readonly updated_at!: Date;
+  declare created_at: Date;
+  declare updated_at: Date;
 }
 
 RuralVenue.init(

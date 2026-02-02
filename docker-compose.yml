@@ -1,0 +1,69 @@
+# docker-compose.yml
+# (version jest dziś ignorowane, możesz usunąć, ale może zostać)
+version: "3.9"
+
+services:
+  db:
+    image: mysql:8.4
+    container_name: ceremoday-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ceremoday
+      MYSQL_USER: ceremo
+      MYSQL_PASSWORD: ceremo
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      # UWAGA: w CMD (nie shell) zmienne nie są rozwijane, tu jest OK bo masz hasło na sztywno
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  adminer:
+    image: adminer:4
+    container_name: ceremoday-adminer
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "8080:8080"
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: ceremoday-api
+    depends_on:
+      - db
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ceremoday
+      DB_USER: ceremo
+      DB_PASSWORD: ceremo
+      RUN_DB_SYNC: "true"
+      JWT_SECRET: super-secret
+      CORS_ORIGIN: "http://localhost"
+    ports:
+      - "4000:4000"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    container_name: ceremoday-web
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+
+volumes:
+  db_data:

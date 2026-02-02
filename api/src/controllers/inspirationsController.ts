@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import { InspirationBoard } from "../models/InspirationBoard";
 import { InspirationItem } from "../models/InspirationItem";
 import { generateThumbnail } from "../helpers/generateThumbnail";
+import { paramString } from "../utils/http";
 
 /**
  * Bezpieczne mapowanie pól:
@@ -50,8 +51,10 @@ export const getBoards = async (req: Request, res: Response) => {
   try {
     const positionCol = COL.position();
 
+    const eventId = paramString(req, "eventId");
+
     const boards = await InspirationBoard.findAll({
-      where: { event_id: req.params.eventId },
+      where: { event_id: eventId },
       include: [{ model: InspirationItem, as: "items" }],
       order: positionCol
         ? [[{ model: InspirationItem, as: "items" }, positionCol as string, "ASC"]]
@@ -71,8 +74,9 @@ export const getBoards = async (req: Request, res: Response) => {
 
 export const createBoard = async (req: Request, res: Response) => {
   try {
+    const eventId = paramString(req, "eventId");
     const board = await InspirationBoard.create({
-      event_id: req.params.eventId,
+      event_id: eventId,
       name: req.body.name,
       description: req.body.description || null,
     });
@@ -86,7 +90,8 @@ export const createBoard = async (req: Request, res: Response) => {
 
 export const updateBoard = async (req: Request, res: Response) => {
   try {
-    const board = await InspirationBoard.findByPk(req.params.id);
+    const id = paramString(req, "id");
+    const board = await InspirationBoard.findByPk(id);
     if (!board) return res.status(404).json({ error: "Not found" });
 
     await board.update(req.body);
@@ -99,8 +104,9 @@ export const updateBoard = async (req: Request, res: Response) => {
 
 export const deleteBoard = async (req: Request, res: Response) => {
   try {
-    await InspirationItem.destroy({ where: { board_id: req.params.id } });
-    await InspirationBoard.destroy({ where: { id: req.params.id } });
+    const id = paramString(req, "id");
+    await InspirationItem.destroy({ where: { board_id: id } });
+    await InspirationBoard.destroy({ where: { id } });
     res.json({ success: true });
   } catch (error) {
     console.error(error);
@@ -129,11 +135,11 @@ export const createItem = async (req: Request, res: Response) => {
     }
 
     const payload: ItemAttributesMap = {
-      board_id: req.params.boardId,
+      board_id: paramString(req, "boardId"),
     };
 
     // event_id tylko jeśli model to wspiera
-    if (eventIdCol) payload[eventIdCol] = req.params.eventId;
+    if (eventIdCol) payload[eventIdCol] = paramString(req, "eventId");
 
     if (fileCol) payload[fileCol] = fileValue;
     if (thumbCol) payload[thumbCol] = thumbValue;

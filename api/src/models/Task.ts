@@ -58,25 +58,25 @@ export class Task
   extends Model<TaskAttributes, TaskCreationAttributes>
   implements TaskAttributes
 {
-  public id!: string;
-  public event_id!: string;
+  declare id: string;
+  declare event_id: string;
 
-  public title!: string;
-  public description!: string | null;
+  declare title: string;
+  declare description: string | null;
 
-  public status!: TaskStatus;
-  public category!: TaskCategory | null;
+  declare status: TaskStatus;
+  declare category: TaskCategory | null;
 
-  public due_date!: Date | null;
+  declare due_date: Date | null;
 
-  public auto_generated!: boolean;
-  public generated_from!: string | null;
+  declare auto_generated: boolean;
+  declare generated_from: string | null;
 
-  public source!: "generator" | "manual" | "document";
-  public linked_document_id!: string | null;
+  declare source: "generator" | "manual" | "document";
+  declare linked_document_id: string | null;
 
-  public readonly created_at!: Date;
-  public readonly updated_at!: Date;
+  declare created_at: Date;
+  declare updated_at: Date;
 }
 
 Task.init(

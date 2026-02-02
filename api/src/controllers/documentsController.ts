@@ -1,10 +1,15 @@
 import { Request, Response } from "express";
 import { Document } from "../models/Document";
+import { paramString } from "../utils/http";
 
 export const createDocument = async (req: Request, res: Response) => {
   try {
-    const { eventId } = req.params;
+    const eventId = paramString(req, "eventId");
     const { name, description, type, status } = req.body;
+
+    if (!eventId) {
+      return res.status(400).json({ message: "Brak eventId" });
+    }
 
     if (!name || !type) {
       return res.status(400).json({ message: "Brak wymaganych pól" });

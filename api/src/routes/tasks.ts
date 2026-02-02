@@ -10,6 +10,22 @@ import { requireActiveMemberForModel } from "../middleware/requireActiveMemberFo
 
 const router = Router();
 
+function firstString(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : undefined;
+  return undefined;
+}
+
+function requireId(res: Response, value: unknown, label: string): string | null {
+  const id = firstString(value);
+  if (!id) {
+    res.status(400).json({ message: `Brak ${label}` });
+    return null;
+  }
+  return id;
+}
+
+
 /**
  * GET /tasks/event/:eventId
  * Zwraca wszystkie zadania dla danego wydarzenia
@@ -120,11 +136,16 @@ router.post(
 router.put(
   "/:taskId",
   authMiddleware,
-  requireActiveMemberForModel({ model: Task as any, idParam: "taskId", label: "zadanie" }),
+  requireActiveMemberForModel({
+    model: Task as any,
+    idParam: "taskId",
+    label: "zadanie",
+  }),
   validateBody(taskUpdateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
       const { taskId } = req.params;
+
       const {
         title,
         description,
@@ -133,7 +154,7 @@ router.put(
         due_date,
       } = req.body as {
         title?: string;
-        description?: string;
+        description?: string | null;
         status?: "pending" | "in_progress" | "done";
         category?:
           | "FORMALNOSCI"
@@ -141,28 +162,35 @@ router.put(
           | "USLUGI"
           | "DEKORACJE"
           | "LOGISTYKA"
-          | "DZIEN_SLUBU";
+          | "DZIEN_SLUBU"
+          | null;
         due_date?: string | null;
       };
 
-      const task = await Task.findByPk(taskId);
-      if (!task) {
-        return res
-          .status(404)
-          .json({ message: "Zadanie nie zostało znalezione" });
-      }
+const id = requireId(res, req.params.taskId, "id zadania");
+if (!id) return;
+
+const task = await Task.findByPk(id);
+if (!task) {
+  return res.status(404).json({ message: "Zadanie nie zostało znalezione" });
+}
+
+
+
 
       const t = task as any;
 
       if (title !== undefined) t.title = title.trim();
-if (description !== undefined) {
-  if (description === null) {
-    t.description = null;
-  } else if (typeof description === "string") {
-    const trimmed = description.trim();
-    t.description = trimmed.length ? trimmed : null;
-  }
-}
+
+      if (description !== undefined) {
+        if (description === null) {
+          t.description = null;
+        } else if (typeof description === "string") {
+          const trimmed = description.trim();
+          t.description = trimmed.length ? trimmed : null;
+        }
+      }
+
       if (status !== undefined) t.status = status;
       if (category !== undefined) t.category = category ?? null;
 
@@ -181,9 +209,7 @@ if (description !== undefined) {
       return res.json(task);
     } catch (err) {
       console.error("Error updating task:", err);
-      return res
-        .status(500)
-        .json({ message: "Błąd aktualizacji zadania" });
+      return res.status(500).json({ message: "Błąd aktualizacji zadania" });
     }
   }
 );
@@ -198,14 +224,14 @@ router.delete(
   requireActiveMemberForModel({ model: Task as any, idParam: "taskId", label: "zadanie" }),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { taskId } = req.params;
+      const id = requireId(res, req.params.taskId, "id zadania");
+if (!id) return;
 
-      const task = await Task.findByPk(taskId);
-      if (!task) {
-        return res
-          .status(404)
-          .json({ message: "Zadanie nie zostało znalezione" });
-      }
+const task = await Task.findByPk(id);
+if (!task) {
+  return res.status(404).json({ message: "Zadanie nie zostało znalezione" });
+}
+
 
       await task.destroy();
       return res.status(204).send();

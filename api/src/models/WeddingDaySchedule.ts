@@ -2,14 +2,14 @@ import { DataTypes, Model } from "sequelize";
 import { sequelize } from "../config/database";
 
 export class WeddingDaySchedule extends Model {
-  public id!: string;
-  public event_id!: string;
-  public time?: Date;
-  public title?: string;
-  public description?: string;
-  public responsible?: string;
-  public completed?: boolean;
-  public created_at?: Date;
+  declare id: string;
+  declare event_id: string;
+  declare time?: Date;
+  declare title?: string;
+  declare description?: string;
+  declare responsible?: string;
+  declare completed?: boolean;
+  declare created_at?: Date;
 }
 
 WeddingDaySchedule.init(

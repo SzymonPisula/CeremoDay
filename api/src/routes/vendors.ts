@@ -15,6 +15,21 @@ import { vendorCreateApiSchema, vendorUpdateApiSchema } from "../validation/vend
 
 const router = Router();
 
+function firstString(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : undefined;
+  return undefined;
+}
+
+function requireId(res: Response, value: unknown, label: string): string | null {
+  const id = firstString(value);
+  if (!id) {
+    res.status(400).json({ message: `Brak ${label}` });
+    return null;
+  }
+  return id;
+}
+
 /**
  * GET /vendors?event_id=...
  * Lista usługodawców przypiętych do wydarzenia.
@@ -102,8 +117,11 @@ requireActiveMemberForModel({
 }),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { id } = req.params;
-      const vendor = await Vendor.findByPk(id);
+      const id = requireId(res, req.params.id, "id usługodawcy");
+if (!id) return;
+
+const vendor = await Vendor.findByPk(id);
+
       if (!vendor) {
         throw new ApiError(404, "NOT_FOUND", "Usługodawca nie został znaleziony");
       }
@@ -157,8 +175,11 @@ requireActiveMemberForModel({
 }),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { id } = req.params;
-      const vendor = await Vendor.findByPk(id);
+      const id = requireId(res, req.params.id, "id usługodawcy");
+if (!id) return;
+
+const vendor = await Vendor.findByPk(id);
+
       if (!vendor) {
         throw new ApiError(404, "NOT_FOUND", "Usługodawca nie został znaleziony");
       }

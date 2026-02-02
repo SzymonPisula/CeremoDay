@@ -11,6 +11,7 @@ import { Document, type DocumentStatus } from "../models/Document";
 import { DocumentFile, StorageLocation } from "../models/DocumentFile";
 import { storageService } from "../services/storageService";
 import { getTemplatesForCeremony, CeremonyType } from "../config/documentTemplates";
+import { requireString } from "../utils/reqString";
 
 const router = Router();
 const upload = multer();
@@ -50,7 +51,8 @@ router.post(
   validateBody(documentGenerateDefaultSchema),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { eventId } = req.params;
+const eventId = requireString(res, req.params.eventId, "id wydarzenia");
+if (!eventId) return;
       const { ceremony_type, include_extras } = req.body as { ceremony_type: CeremonyType; include_extras?: boolean };
 
       // UWAGA: nie blokujemy generowania po samej nazwie,
@@ -115,7 +117,8 @@ router.get(
   async (req: AuthRequest, res: Response) => {
 
     try {
-      const { eventId } = req.params;
+const eventId = requireString(res, req.params.eventId, "id wydarzenia");
+if (!eventId) return;
 
       // Bezpieczne sortowanie (nie uzależniamy się od created_at vs createdAt)
       const docs = await Document.findAll({
@@ -146,7 +149,8 @@ router.post(
   validateBody(documentCreateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { eventId } = req.params;
+const eventId = requireString(res, req.params.eventId, "id wydarzenia");
+if (!eventId) return;
       const {
   name,
   description,
@@ -215,9 +219,11 @@ router.put(
   validateBody(documentUpdateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { documentId } = req.params;
+      const documentId = requireString(res, req.params.documentId, "id dokumentu");
+if (!documentId) return;
 
-      const doc = await Document.findByPk(documentId);
+const doc = await Document.findByPk(documentId);
+
       if (!doc) {
         return res.status(404).json({ message: "Dokument nie znaleziony" });
       }
@@ -299,8 +305,11 @@ router.delete(
   requireActiveMemberForModel({ model: Document as any, idParam: "documentId", label: "dokument" }),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { documentId } = req.params;
-      const doc = await Document.findByPk(documentId);
+      const documentId = requireString(res, req.params.documentId, "id dokumentu");
+if (!documentId) return;
+
+const doc = await Document.findByPk(documentId);
+
 
       if (!doc) return res.status(404).json({ message: "Dokument nie znaleziony" });
       if (doc.is_system) throw new ApiError(400, "VALIDATION_ERROR", "Popraw pola w formularzu.", { _global: "Nie można usuwać dokumentów systemowych" });
@@ -343,7 +352,8 @@ router.post(
   upload.single("file"),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { documentId } = req.params;
+const documentId = requireString(res, req.params.documentId, "id dokumentu");
+if (!documentId) return;
       const userId = req.userId;
 
       if (!userId) return res.status(401).json({ message: "Nieautoryzowany" });
@@ -413,8 +423,11 @@ router.delete(
   requireActiveMemberForModel({ model: DocumentFile as any, idParam: "fileId", label: "plik dokumentu" }),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { fileId } = req.params;
-      const file = await DocumentFile.findByPk(fileId);
+      const fileId = requireString(res, req.params.fileId, "id pliku");
+if (!fileId) return;
+
+const file = await DocumentFile.findByPk(fileId);
+
 
       if (!file) return res.status(404).json({ message: "Plik nie znaleziony" });
 
@@ -436,8 +449,11 @@ router.get(
   authMiddleware,
   async (req: AuthRequest, res: Response) => {
     try {
-      const { fileId } = req.params;
-      const file = await DocumentFile.findByPk(fileId);
+      const fileId = requireString(res, req.params.fileId, "id pliku");
+if (!fileId) return;
+
+const file = await DocumentFile.findByPk(fileId);
+
 
       if (!file) return res.status(404).json({ message: "Plik nie znaleziony" });
 

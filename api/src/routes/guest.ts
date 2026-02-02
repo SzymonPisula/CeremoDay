@@ -11,6 +11,7 @@ import { validateBody } from "../middleware/validate";
 import { requireActiveMemberFromBody, requireActiveMember } from "../middleware/requireActiveMember";
 
 import { guestCreateApiSchema, guestUpdateApiSchema } from "../validation/guest.schema";
+import { paramString } from "../utils/http";
 
 const router = Router();
 
@@ -47,7 +48,7 @@ router.get(
   authMiddleware,
   requireActiveMember("eventId"),
   async (req: AuthRequest, res) => {
-    const { eventId } = req.params;
+    const eventId = paramString(req, "eventId");
 
     const guests = await Guest.findAll({
       where: { event_id: eventId },
@@ -87,7 +88,7 @@ router.post(
   authMiddleware,
   requireActiveMember("eventId"),
   async (req: AuthRequest, res) => {
-    const { eventId } = req.params;
+    const eventId = paramString(req, "eventId");
 
     const userId = req.user?.id;
     if (!userId) {
@@ -335,7 +336,7 @@ router.put(
   authMiddleware,
   validateBody(guestUpdateApiSchema),
   async (req: AuthRequest, res) => {
-    const guest = await Guest.findByPk(req.params.id);
+    const guest = await Guest.findByPk(paramString(req, "id"));
     if (!guest) {
       return res.status(404).json({
         ok: false,
@@ -380,7 +381,7 @@ router.delete(
   "/:id",
   authMiddleware,
   async (req: AuthRequest, res) => {
-    const guest = await Guest.findByPk(req.params.id);
+    const guest = await Guest.findByPk(paramString(req, "id"));
     if (!guest) {
       return res.status(404).json({
         ok: false,

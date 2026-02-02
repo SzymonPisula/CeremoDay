@@ -2,13 +2,13 @@ import { DataTypes, Model } from "sequelize";
 import { sequelize } from "../config/database";
 
 export class File extends Model {
-  public id!: string;
-  public event_id!: string;
-  public file_name?: string;
-  public file_path?: string;
-  public mime_type?: string;
-  public size?: number;
-  public created_at?: Date;
+  declare id: string;
+  declare event_id: string;
+  declare file_name?: string;
+  declare file_path?: string;
+  declare mime_type?: string;
+  declare size?: number;
+  declare created_at?: Date;
 }
 
 File.init(

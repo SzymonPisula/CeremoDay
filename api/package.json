@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run -c vitest.config.ts src/**/*.unit.test.ts",
+    "test:integration": "vitest run -c vitest.config.ts src/**/*.int.test.ts",
+    "test:api": "vitest run -c vitest.config.ts src/**/*.api.test.ts",
     "import:rural-venues": "npx ts-node src/scripts/importRuralVenues.ts",
     "geocode:rural-venues": "npx ts-node src/scripts/geocodeRuralVenues.ts"
   },
@@ -46,6 +50,10 @@
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.0.0",
+    "tsx": "^4.20.0",
+    "vitest": "^3.2.0"
   }
 }

@@ -1,12 +1,28 @@
-import { DataTypes, Model } from "sequelize";
+import { DataTypes, Model, Optional } from "sequelize";
 import { sequelize } from "../config/database";
 
-export class UserSetting extends Model {
-  public id!: string;
-  public user_id!: string;
-  public language?: string;
-  public theme?: string;
-  public notifications_enabled?: boolean;
+export interface UserSettingAttributes {
+  id: string;
+  user_id: string;
+  language: string | null;
+  theme: string | null;
+  notifications_enabled: boolean | null;
+}
+
+export type UserSettingCreationAttributes = Optional<
+  UserSettingAttributes,
+  "id" | "language" | "theme" | "notifications_enabled"
+>;
+
+export class UserSetting
+  extends Model<UserSettingAttributes, UserSettingCreationAttributes>
+  implements UserSettingAttributes
+{
+  declare id: string;
+  declare user_id: string;
+  declare language: string | null;
+  declare theme: string | null;
+  declare notifications_enabled: boolean | null;
 }
 
 UserSetting.init(

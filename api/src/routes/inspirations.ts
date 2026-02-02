@@ -17,6 +17,7 @@ import {
   inspirationItemCreateSchema,
   inspirationItemUpdateSchema,
 } from "../validation";
+import { paramString } from "../utils/http";
 
 const router = Router();
 
@@ -79,7 +80,7 @@ router.get(
   requireActiveMember("eventId"),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { eventId } = req.params;
+      const eventId = paramString(req, "eventId");
 
       const boards = await InspirationBoard.findAll({
         where: { event_id: eventId },
@@ -105,7 +106,7 @@ router.post(
   validateBody(inspirationBoardCreateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { eventId } = req.params;
+      const eventId = paramString(req, "eventId");
       const { name, description, color, emoji } = req.body as {
         name: string;
         description?: string;
@@ -145,7 +146,7 @@ router.put(
   validateBody(inspirationBoardUpdateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { boardId } = req.params;
+      const boardId = paramString(req, "boardId");
       const { name, description, color, emoji } = req.body as {
         name?: string;
         description?: string;
@@ -189,7 +190,7 @@ router.delete(
   }),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { boardId } = req.params;
+      const boardId = paramString(req, "boardId");
 
       const board = await InspirationBoard.findByPk(boardId);
       if (!board) {
@@ -228,7 +229,7 @@ router.get(
   }),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { boardId } = req.params;
+      const boardId = paramString(req, "boardId");
 
       const items = await InspirationItem.findAll({
         where: { board_id: boardId },
@@ -258,7 +259,7 @@ router.post(
   validateBody(inspirationItemCreateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { boardId } = req.params;
+      const boardId = paramString(req, "boardId");
       const { title, description, category, tags, source_url } = req.body as {
         title: string;
         description?: string;
@@ -302,7 +303,7 @@ router.put(
   validateBody(inspirationItemUpdateSchema),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { itemId } = req.params;
+      const itemId = paramString(req, "itemId");
       const { title, description, category, tags, source_url } = req.body as {
         title?: string;
         description?: string;
@@ -350,7 +351,7 @@ router.delete(
   }),
   async (req: AuthRequest, res: Response) => {
     try {
-      const { itemId } = req.params;
+      const itemId = paramString(req, "itemId");
 
       const item = await InspirationItem.findByPk(itemId);
       if (!item) {
@@ -373,7 +374,7 @@ router.delete(
 // ✅ Middleware: wyciągamy eventId przez: item -> board -> event_id
 async function resolveEventFromItem(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const { itemId } = req.params;
+    const itemId = paramString(req, "itemId");
 
     const item = await InspirationItem.findByPk(itemId);
     if (!item) {

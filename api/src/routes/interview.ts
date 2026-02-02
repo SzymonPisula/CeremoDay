@@ -4,6 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import { interviewSaveSchema } from "../validation/schemas";
 import { requireActiveMember } from "../middleware/requireActiveMember";
+import { paramString } from "../utils/http";
 import Budget from "../models/Budget";
 
 import EventInterview, {
@@ -26,7 +27,6 @@ import type {
   VendorKey,
   MusicProviderChoice,
   VenueChoice,
-  
 } from "../types/interview";
 
 const router = Router();
@@ -355,7 +355,7 @@ async function upsertFinanceBudgetFromInterview(eventId: string, initialBudget: 
 // GET /interview/:eventId
 router.get("/:eventId", authMiddleware, requireActiveMember("eventId"), async (req: AuthRequest, res: Response) => {
   try {
-    const { eventId } = req.params;
+    const eventId = paramString(req, "eventId");
     const interview = await EventInterview.findOne({ where: { event_id: eventId } });
     return res.json(interview ? toResponse(interview) : null);
   } catch (err) {
@@ -367,7 +367,7 @@ router.get("/:eventId", authMiddleware, requireActiveMember("eventId"), async (r
 // PUT /interview/:eventId (upsert)
 router.put("/:eventId", authMiddleware, requireActiveMember("eventId"), validateBody(interviewSaveSchema), async (req: AuthRequest, res: Response) => {
   try {
-    const { eventId } = req.params;
+    const eventId = paramString(req, "eventId");
 
     // validateBody(interviewSaveSchema) gwarantuje poprawny payload + normalizuje wartości
     const payload = req.body as InterviewPayload;
@@ -398,13 +398,11 @@ router.put("/:eventId", authMiddleware, requireActiveMember("eventId"), validate
     if (!existing) {
       const created = await EventInterview.create(dbPayload);
 
-// >>> DOPISZ TO
-if (payload.finance_initial_budget != null) {
-  await upsertFinanceBudgetFromInterview(eventId, payload.finance_initial_budget);
-}
+      if (payload.finance_initial_budget != null) {
+        await upsertFinanceBudgetFromInterview(eventId, payload.finance_initial_budget);
+      }
 
-return res.status(201).json(toResponse(created));
-
+      return res.status(201).json(toResponse(created));
     }
 
     existing.ceremony_type = dbPayload.ceremony_type;
@@ -425,9 +423,11 @@ return res.status(201).json(toResponse(created));
     existing.notification_frequency = dbPayload.notification_frequency;
 
     await existing.save();
+
     if (payload.finance_initial_budget != null) {
-  await upsertFinanceBudgetFromInterview(eventId, payload.finance_initial_budget);
-}
+      await upsertFinanceBudgetFromInterview(eventId, payload.finance_initial_budget);
+    }
+
     return res.json(toResponse(existing));
   } catch (err) {
     console.error("Error saving interview", err);

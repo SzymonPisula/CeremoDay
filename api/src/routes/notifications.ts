@@ -7,6 +7,7 @@ import Task from "../models/Task";
 import { Notification } from "../models/Notification";
 import EventInterview from "../models/EventInterview";
 import { notificationsMarkReadSchema } from "../validation/schemas";
+import { paramString } from "../utils/http";
 
 const router = Router();
 
@@ -144,7 +145,7 @@ router.get(
   requireActiveMember("id"),
   async (req: AuthRequest, res: Response) => {
   try {
-    const eventId = req.params.id;
+    const eventId = paramString(req, "id");
     const userId = req.userId as string;
 
     await ensureNotificationsForUserEvent({ eventId, userId });
@@ -173,7 +174,7 @@ router.post(
   validateBody(notificationsMarkReadSchema),
   async (req: AuthRequest, res: Response) => {
     try {
-      const eventId = req.params.id;
+      const eventId = paramString(req, "id");
       const userId = req.userId;
       if (!userId) return res.status(401).json({ message: "Nieautoryzowany" });
 

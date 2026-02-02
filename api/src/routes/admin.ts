@@ -8,6 +8,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { ApiError } from "../utils/apiError";
 import { User } from "../models/User";
 import { adminCreateUserSchema, adminPatchUserSchema } from "../validation/schemas";
+import { requireString } from "../utils/reqString";
 
 const router = Router();
 
@@ -104,8 +105,11 @@ router.patch(
       role?: "user" | "admin" | null;
       password?: string;
     };
+const id = requireString(res, (req.params as any).id ?? (req.query as any).id, "id");
+if (!id) return;
 
-    const user = await User.findByPk(userId);
+const user = await User.findByPk(id); // albo co tam masz
+
     if (!user) throw new ApiError(404, "NOT_FOUND", "Użytkownik nie znaleziony");
 
     // email: sprawdź unikalność

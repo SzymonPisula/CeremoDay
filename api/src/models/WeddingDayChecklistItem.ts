@@ -22,18 +22,18 @@ type Creation = Optional<
 >;
 
 export class WeddingDayChecklistItem extends Model<Attrs, Creation> implements Attrs {
-  public id!: string;
-  public event_id!: string;
+  declare id: string;
+  declare event_id: string;
 
-  public title!: string;
-  public note?: string | null;
+  declare title: string;
+  declare note?: string | null;
 
-  public schedule_item_id?: string | null;
+  declare schedule_item_id?: string | null;
 
-  public done!: boolean;
+  declare done: boolean;
 
-  public readonly created_at?: Date;
-  public readonly updated_at?: Date;
+  declare created_at?: Date;
+  declare updated_at?: Date;
 }
 
 WeddingDayChecklistItem.init(

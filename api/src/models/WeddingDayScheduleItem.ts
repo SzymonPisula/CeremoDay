@@ -25,19 +25,19 @@ type Creation = Optional<
 >;
 
 class WeddingDayScheduleItem extends Model<Attrs, Creation> implements Attrs {
-  public id!: string;
-  public event_id!: string;
+  declare id: string;
+  declare event_id: string;
 
-  public time!: string;
-  public title!: string;
-  public description?: string | null;
-  public location?: string | null;
-  public responsible?: string | null;
+  declare time: string;
+  declare title: string;
+  declare description?: string | null;
+  declare location?: string | null;
+  declare responsible?: string | null;
 
-  public status!: WeddingDayScheduleStatus;
+  declare status: WeddingDayScheduleStatus;
 
-  public readonly created_at?: Date;
-  public readonly updated_at?: Date;
+  declare created_at?: Date;
+  declare updated_at?: Date;
 }
 
 WeddingDayScheduleItem.init(

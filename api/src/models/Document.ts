@@ -47,26 +47,26 @@ export class Document
   extends Model<DocumentAttributes, DocumentCreationAttributes>
   implements DocumentAttributes
 {
-  public id!: string;
-  public event_id!: string;
+  declare id: string;
+  declare event_id: string;
 
-  public name!: string;
-  public description!: string | null;
+  declare name: string;
+  declare description: string | null;
 
-  public category!: string | null;
-  public holder!: string | null;
+  declare category: string | null;
+  declare holder: string | null;
 
-  public type!: DocumentType;
-  public status!: DocumentStatus;
+  declare type: DocumentType;
+  declare status: DocumentStatus;
 
-  public due_date!: Date | null;
-  public valid_until!: Date | null;
+  declare due_date: Date | null;
+  declare valid_until: Date | null;
 
-  public is_system!: boolean;
-  public is_pinned!: boolean;
+  declare is_system: boolean;
+  declare is_pinned: boolean;
 
-  public readonly created_at!: Date;
-  public readonly updated_at!: Date;
+  declare created_at: Date;
+  declare updated_at: Date;
 }
 
 Document.init(

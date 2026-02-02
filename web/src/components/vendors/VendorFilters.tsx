@@ -7,19 +7,17 @@ interface VendorFiltersProps {
 }
 
 /**
- * VendorType w projekcie:
- * "HALL" | "CATERING" | "DJ" | "BAND" | "PHOTO" | "VIDEO" | "DECOR" | "TRANSPORT" | "OTHER"
+ * VendorType w projekcie (web/src/types/vendor.ts):
+ * "venue" | "catering" | "music" | "photo_video" | "decorations" | "transport" | "other"
  */
 const categories: VendorType[] = [
-  "HALL",
-  "CATERING",
-  "DJ",
-  "BAND",
-  "PHOTO",
-  "VIDEO",
-  "DECOR",
-  "TRANSPORT",
-  "OTHER",
+  "venue",
+  "catering",
+  "music",
+  "photo_video",
+  "decorations",
+  "transport",
+  "other",
 ];
 
 export default function VendorFilters({ selected, onSelect }: VendorFiltersProps) {
@@ -44,23 +42,19 @@ export default function VendorFilters({ selected, onSelect }: VendorFiltersProps
 
 function label(cat: VendorType) {
   switch (cat) {
-    case "HALL":
+    case "venue":
       return "Sala / miejsce";
-    case "CATERING":
+    case "catering":
       return "Catering";
-    case "DJ":
-      return "DJ";
-    case "BAND":
-      return "Zespół";
-    case "PHOTO":
-      return "Fotograf";
-    case "VIDEO":
-      return "Kamerzysta";
-    case "DECOR":
+    case "music":
+      return "Muzyka (DJ / zespół)";
+    case "photo_video":
+      return "Foto / wideo";
+    case "decorations":
       return "Dekoracje / florystyka";
-    case "TRANSPORT":
+    case "transport":
       return "Transport";
-    case "OTHER":
+    case "other":
       return "Inne";
     default:
       return String(cat);

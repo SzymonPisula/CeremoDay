@@ -42,25 +42,25 @@ export type ExpenseCreationAttributes = Optional<
 >;
 
 export class Expense extends Model<ExpenseAttributes, ExpenseCreationAttributes> implements ExpenseAttributes {
-  public id!: string;
-  public event_id!: string;
+  declare id: string;
+  declare event_id: string;
 
-  public name!: string;
-  public category!: ExpenseCategory;
+  declare name: string;
+  declare category: ExpenseCategory;
 
-  public status!: ExpenseStatus;
+  declare status: ExpenseStatus;
 
-  public planned_amount!: number | null;
-  public actual_amount!: number | null;
+  declare planned_amount: number | null;
+  declare actual_amount: number | null;
 
-  public due_date!: Date | null;
-  public paid_date!: Date | null;
+  declare due_date: Date | null;
+  declare paid_date: Date | null;
 
-  public vendor_name!: string | null;
-  public notes!: string | null;
+  declare vendor_name: string | null;
+  declare notes: string | null;
 
-  public readonly created_at!: Date;
-  public readonly updated_at!: Date;
+  declare created_at: Date;
+  declare updated_at: Date;
 }
 
 Expense.init(
