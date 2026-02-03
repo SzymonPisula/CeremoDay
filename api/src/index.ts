@@ -5,6 +5,7 @@ dotenv.config();
 import { sequelize } from "./config/database";
 import { applyAssociations } from "./models/Associations";
 import { createApp } from "./app";
+import { seedRuralVenuesIfEmpty } from "./scripts/seedRuralVenues";
 
 // Side-effect imports modeli (ważne dla sequelize.sync)
 import "./models/RuralVenue";
@@ -19,15 +20,14 @@ async function initDB() {
   await sequelize.authenticate();
   console.log("✅ Połączono z bazą danych!");
 
-  // W Dockerze najczęściej chcesz mieć tabele od razu.
-  // Jeśli kiedyś będziesz chciał to wyłączyć: RUN_DB_SYNC=false
   const shouldSync = (process.env.RUN_DB_SYNC ?? "true") === "true";
   if (shouldSync) {
     await sequelize.sync({ alter: true });
     console.log("✅ Baza danych zsynchronizowana");
-  } else {
-    console.log("ℹ️ RUN_DB_SYNC=false — pomijam sequelize.sync()");
   }
+
+  // seed dopiero po sync (żeby tabela istniała)
+  await seedRuralVenuesIfEmpty();
 }
 
 async function bootstrap() {
