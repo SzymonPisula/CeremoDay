@@ -1,14 +1,5 @@
 // CeremoDay/web/src/types/eventUsers.ts
 
-/**
- * FIX: casing conflict on Windows / TS
- * Było:
- *   import type { UserPublic } from "./user";
- * A w projekcie istnieje też "./User.ts"
- *
- * Zostawiamy JEDEN kanoniczny plik: User.ts
- * i wszędzie importujemy z "./User"
- */
 
 import type { UserPublic } from "./user";
 

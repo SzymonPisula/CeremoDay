@@ -1,6 +1,7 @@
 services:
   db:
     image: mysql:8.4
+    command: ["--max_allowed_packet=256M"]
     container_name: ceremoday-db
     restart: unless-stopped
     environment:
