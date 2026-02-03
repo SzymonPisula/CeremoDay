@@ -1,3 +1,4 @@
+// CeremoDay/web/src/pages/Register.tsx
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -8,6 +9,32 @@ import Button from "../ui/Button";
 import Input from "../ui/Input";
 import FieldError from "../ui/FieldError";
 import { useApiError } from "../hooks/useApiError";
+
+/**
+ * Wymusza wielką pierwszą literę imienia.
+ * - nie ucina spacji w środku
+ * - jeśli ktoś wklei "   jan", to zrobi "   Jan"
+ * - zmienia tylko pierwszą literę (resztę zostawia jak user wpisał)
+ */
+function enforceFirstLetterUpper(value: string): string {
+  if (!value) return value;
+
+  // znajdź pierwszą literę/znak alfanumeryczny, pomijając spacje z przodu
+  // (działa też dla polskich znaków)
+  const chars = Array.from(value);
+  const idx = chars.findIndex((ch) => ch.trim().length > 0);
+
+  if (idx === -1) return value;
+
+  const first = chars[idx];
+  const upper = first.toLocaleUpperCase("pl-PL");
+
+  // jeśli już jest OK, nie ruszaj (mniej “skakania” kursora w input)
+  if (first === upper) return value;
+
+  chars[idx] = upper;
+  return chars.join("");
+}
 
 export default function Register() {
   const navigate = useNavigate();
@@ -23,7 +50,11 @@ export default function Register() {
     setLoading(true);
 
     try {
-      await api.register(form);
+      await api.register({
+        ...form,
+        // na wszelki wypadek jeszcze raz “dociskamy” regułę przed wysyłką
+        name: enforceFirstLetterUpper(form.name),
+      });
       // Wymaganie: po rejestracji -> logowanie (bez auto-login)
       navigate("/login", { replace: true });
     } catch (err: unknown) {
@@ -60,7 +91,18 @@ export default function Register() {
                 value={form.name}
                 placeholder="Twoje imię"
                 autoComplete="name"
-                onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
+                onChange={(e) =>
+                  setForm((s) => ({
+                    ...s,
+                    name: enforceFirstLetterUpper(e.target.value),
+                  }))
+                }
+                onBlur={(e) =>
+                  setForm((s) => ({
+                    ...s,
+                    name: enforceFirstLetterUpper(e.target.value),
+                  }))
+                }
               />
               <FieldError message={fieldErrors.name} />
             </div>
@@ -75,7 +117,9 @@ export default function Register() {
                 value={form.email}
                 autoComplete="email"
                 placeholder="twoj@email.pl"
-                onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))}
+                onChange={(e) =>
+                  setForm((s) => ({ ...s, email: e.target.value }))
+                }
               />
               <FieldError message={fieldErrors.email} />
             </div>
