@@ -1,10 +1,9 @@
 // CeremoDay/api/src/scripts/seedRuralVenues.ts
 import fs from "fs";
 import path from "path";
-import type { Sequelize } from "sequelize";
-import { sequelize as defaultSequelize } from "../config/database";
+import { sequelize } from "../config/database";
 
-export async function seedRuralVenuesIfEmpty(sequelize: Sequelize = defaultSequelize) {
+export async function seedRuralVenuesIfEmpty() {
   const [rows] = await sequelize.query("SELECT COUNT(*) as cnt FROM rural_venues");
   const cnt = Array.isArray(rows) ? (rows as any)[0]?.cnt : 0;
   if (Number(cnt) > 0) return;

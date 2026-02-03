@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "check:env": "node scripts/check-env.js",
+    "setup": "npm run check:env && npm run setup:web && npm run setup:api",
+    "setup:web": "cd web && npm ci",
+    "setup:api": "cd api && npm ci"
+  }
+}
