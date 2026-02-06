@@ -1,13 +1,14 @@
 FROM node:20-bullseye-slim
 
 WORKDIR /app
-ENV NODE_ENV=production
 
 COPY api/package*.json ./
 RUN npm ci
 
 COPY api ./
 RUN npm run build
+
+ENV NODE_ENV=production
 
 RUN mkdir -p /app/data
 COPY api/src/data/rural_venues.sql /app/data/rural_venues.sql
